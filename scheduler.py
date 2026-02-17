@@ -66,6 +66,39 @@ def _run_auto_updates(app):
                 logger.error(f"Auto-update failed for {guest.name}: {output}")
 
 
+def _check_mastodon_release(app):
+    """Check for new Mastodon releases and optionally auto-upgrade."""
+    with app.app_context():
+        from models import Setting
+
+        # Only check if a Mastodon guest is configured
+        if not Setting.get("mastodon_guest_id"):
+            return
+
+        from mastodon import check_mastodon_release
+        update_available, latest, release_url = check_mastodon_release()
+
+        if not update_available:
+            return
+
+        current = Setting.get("mastodon_current_version", "")
+        logger.info(f"Mastodon update available: v{current} -> v{latest}")
+
+        # Send email notification
+        from notifier import send_mastodon_update_notification
+        send_mastodon_update_notification(current, latest, release_url)
+
+        # Auto-upgrade if enabled
+        if Setting.get("mastodon_auto_upgrade", "false") == "true":
+            logger.info("Auto-upgrade enabled, starting Mastodon upgrade...")
+            from mastodon import run_mastodon_upgrade
+            ok, log_output = run_mastodon_upgrade()
+            if ok:
+                logger.info("Mastodon auto-upgrade completed successfully")
+            else:
+                logger.error(f"Mastodon auto-upgrade failed")
+
+
 def init_scheduler(app):
     global _scheduler
 
@@ -98,7 +131,17 @@ def init_scheduler(app):
         replace_existing=True,
     )
 
+    # Mastodon release check - runs alongside the scan job
+    _scheduler.add_job(
+        _check_mastodon_release,
+        trigger=IntervalTrigger(hours=interval_hours),
+        args=[app],
+        id="mastodon_check",
+        name="Check for Mastodon releases",
+        replace_existing=True,
+    )
+
     _scheduler.start()
-    logger.info(f"Scheduler started: scan every {interval_hours}h, auto-update check every 15m")
+    logger.info(f"Scheduler started: scan every {interval_hours}h, auto-update check every 15m, mastodon check every {interval_hours}h")
 
     return _scheduler

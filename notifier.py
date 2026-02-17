@@ -153,3 +153,46 @@ def send_update_notification(scan_results):
         logger.info(f"Update notification sent to {len(config['recipients'])} recipient(s)")
     else:
         logger.error(f"Failed to send update notification: {msg}")
+
+
+def send_mastodon_update_notification(current_version, new_version, release_url):
+    """Send email notification about a new Mastodon release."""
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #1a1a2e; color: #e0e0e0; padding: 20px; border-radius: 8px;">
+            <h2 style="color: #4fc3f7; margin-top: 0;">Mastodon Update Available</h2>
+
+            <div style="background: #16213e; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 6px 0; color: #888;">Current Version</td>
+                        <td style="padding: 6px 0; font-weight: bold;">v{current_version or 'unknown'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #888;">New Version</td>
+                        <td style="padding: 6px 0; font-weight: bold; color: #ffc107;">v{new_version}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <p>A new Mastodon release is available. {"Auto-upgrade is enabled and will run shortly." if _mastodon_auto_enabled() else "Log in to LambNet Update Manager to upgrade."}</p>
+
+            {f'<p><a href="{release_url}" style="color: #4fc3f7;">View release notes on GitHub</a></p>' if release_url else ''}
+
+            <p style="margin-top: 16px; color: #888; font-size: 12px;">
+                Sent by LambNet Proxmox Update Manager
+            </p>
+        </div>
+    </div>
+    """
+    subject = f"[LambNet] Mastodon update available: v{new_version}"
+    ok, msg = _send_email(subject, html)
+    if ok:
+        logger.info(f"Mastodon update notification sent for v{new_version}")
+    else:
+        logger.error(f"Failed to send Mastodon update notification: {msg}")
+    return ok, msg
+
+
+def _mastodon_auto_enabled():
+    return Setting.get("mastodon_auto_upgrade", "false") == "true"

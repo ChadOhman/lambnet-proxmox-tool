@@ -45,6 +45,7 @@ def create_app():
     from routes.schedules import bp as schedules_bp
     from routes.users import bp as users_bp
     from routes.terminal import bp as terminal_bp
+    from routes.mastodon import bp as mastodon_bp
     from routes.api import bp as api_bp
 
     app.register_blueprint(auth_bp)
@@ -56,6 +57,7 @@ def create_app():
     app.register_blueprint(schedules_bp, url_prefix="/schedules")
     app.register_blueprint(users_bp, url_prefix="/users")
     app.register_blueprint(terminal_bp, url_prefix="/terminal")
+    app.register_blueprint(mastodon_bp, url_prefix="/mastodon")
     app.register_blueprint(api_bp, url_prefix="/api")
 
     # Initialize WebSocket for terminal

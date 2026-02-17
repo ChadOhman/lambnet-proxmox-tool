@@ -125,6 +125,29 @@ class ProxmoxClient:
         except Exception as e:
             return None, str(e)
 
+    def create_snapshot(self, node, vmid, guest_type, snapname, description=""):
+        """Create a snapshot of a VM or CT. Returns (success, message)."""
+        try:
+            if guest_type == "vm":
+                self.api.nodes(node).qemu(vmid).snapshot.post(
+                    snapname=snapname, description=description
+                )
+            else:
+                self.api.nodes(node).lxc(vmid).snapshot.post(
+                    snapname=snapname, description=description
+                )
+            return True, f"Snapshot '{snapname}' created for {guest_type}/{vmid}"
+        except Exception as e:
+            logger.error(f"Failed to create snapshot for {guest_type}/{vmid}: {e}")
+            return False, str(e)
+
+    def find_guest_node(self, vmid):
+        """Find which node a guest (VM or CT) is running on. Returns node name or None."""
+        for guest in self.get_all_guests():
+            if guest.get("vmid") == vmid:
+                return guest.get("node")
+        return None
+
     def test_connection(self):
         """Test API connectivity and return version info."""
         try:

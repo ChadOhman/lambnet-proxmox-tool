@@ -58,9 +58,21 @@ fi
 
 echo ""
 echo "[2/4] Pulling latest code..."
-if [ -d ".git" ]; then
+# Find the git root (may be parent dir if nested repo structure)
+GIT_DIR="$APP_DIR"
+if [ ! -d "$APP_DIR/.git" ]; then
+    # Check parent directory for .git
+    PARENT_DIR=$(dirname "$APP_DIR")
+    if [ -d "$PARENT_DIR/.git" ]; then
+        GIT_DIR="$PARENT_DIR"
+    fi
+fi
+
+if [ -d "$GIT_DIR/.git" ]; then
+    cd "$GIT_DIR"
     git fetch --quiet origin
     git reset --hard origin/main --quiet
+    cd "$APP_DIR"
     echo "  Code updated from GitHub."
 else
     echo "  WARNING: Not a git repository. Manual update may be needed."
@@ -78,6 +90,7 @@ echo "[3/4] Updating Python dependencies..."
 source venv/bin/activate
 pip install --quiet --upgrade pip
 pip install --quiet -r requirements.txt
+pip install --quiet gevent gevent-websocket
 echo "  Done."
 
 echo ""

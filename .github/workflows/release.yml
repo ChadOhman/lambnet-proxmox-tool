@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Verify VERSION file matches tag
+        run: |
+          FILE_VERSION=$(cat lambnet-proxmox-tool/VERSION | tr -d '[:space:]')
+          TAG_VERSION=${{ steps.version.outputs.version }}
+          if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
+            echo "ERROR: VERSION file ($FILE_VERSION) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Create release archive
+        run: |
+          cd lambnet-proxmox-tool
+          tar -czf ../lambnet-proxmox-tool-${{ steps.version.outputs.version }}.tar.gz \
+            --exclude='.git' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.github' \
+            .
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          echo "## LambNet Proxmox Update Manager v${{ steps.version.outputs.version }}" > release_notes.md
+          echo "" >> release_notes.md
+          echo "### Quick Install" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "**Option 1: One-command CT creation (run on Proxmox host):**" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/lambnet-proxmox-tool/main/lambnet-proxmox-tool/create-ct.sh)\" -- --hostname lambnet --ip dhcp" >> release_notes.md
+          echo '```' >> release_notes.md
+          echo "" >> release_notes.md
+          echo "**Option 2: Manual setup (inside an existing Debian/Ubuntu CT):**" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "apt-get update && apt-get install -y git" >> release_notes.md
+          echo "git clone https://github.com/ChadOhman/lambnet-proxmox-tool.git /tmp/lambnet" >> release_notes.md
+          echo "cd /tmp/lambnet/lambnet-proxmox-tool && bash setup.sh" >> release_notes.md
+          echo '```' >> release_notes.md
+          echo "" >> release_notes.md
+          echo "**Upgrade existing installation:**" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "bash /opt/lambnet/update.sh" >> release_notes.md
+          echo '```' >> release_notes.md
+          echo "Or use the **Check for Updates** button in Settings." >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Default Credentials" >> release_notes.md
+          echo "- Username: \`admin\`" >> release_notes.md
+          echo "- Password: \`admin\`" >> release_notes.md
+          echo "- **Change immediately after first login!**" >> release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          files: lambnet-proxmox-tool-${{ steps.version.outputs.version }}.tar.gz
+          draft: false
+          prerelease: false

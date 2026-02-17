@@ -105,8 +105,10 @@ chmod 700 "$SECRET_DIR"
 echo "  Done."
 
 echo ""
-echo "[5/$TOTAL_STEPS] Generating encryption key..."
+echo "[5/$TOTAL_STEPS] Generating encryption key and Flask secret..."
 if [ ! -f "$SECRET_DIR/secret.key" ]; then
+    cd "$APP_DIR"
+    source venv/bin/activate
     python3 -c "
 from cryptography.fernet import Fernet
 key = Fernet.generate_key()
@@ -117,6 +119,13 @@ with open('$SECRET_DIR/secret.key', 'wb') as f:
     echo "  New encryption key generated."
 else
     echo "  Encryption key already exists, keeping existing."
+fi
+
+# Generate a random Flask secret key if not already set
+if [ ! -f "$SECRET_DIR/flask_secret" ]; then
+    python3 -c "import secrets; print(secrets.token_hex(32))" > "$SECRET_DIR/flask_secret"
+    chmod 600 "$SECRET_DIR/flask_secret"
+    echo "  Flask secret key generated."
 fi
 
 echo ""
@@ -142,6 +151,7 @@ User=root
 WorkingDirectory=$APP_DIR
 Environment=LAMBNET_DATA_DIR=$DATA_DIR
 Environment=LAMBNET_SECRET_KEY=$SECRET_DIR/secret.key
+Environment=FLASK_SECRET_KEY_FILE=$SECRET_DIR/flask_secret
 ExecStart=$APP_DIR/venv/bin/gunicorn --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker --bind 0.0.0.0:5000 --workers 1 --timeout 120 "app:create_app()"
 Restart=always
 RestartSec=5

@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Mastodon - LambNet Update Manager{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-rocket-takeoff"></i> Mastodon Upgrade</h2>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card bg-dark">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-gear"></i> Configuration</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/mastodon/save">
+                    <div class="mb-3">
+                        <label class="form-label">Mastodon App Guest (Puma/Sidekiq)</label>
+                        <select class="form-select" name="mastodon_guest_id">
+                            <option value="">-- Select Guest --</option>
+                            {% for guest in guests %}
+                            <option value="{{ guest.id }}" {{ 'selected' if settings.guest_id == guest.id|string }}>
+                                {{ guest.name }} ({{ guest.ip_address or 'no IP' }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">The VM/CT running the Mastodon application.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">PostgreSQL Guest</label>
+                        <select class="form-select" name="mastodon_db_guest_id">
+                            <option value="">-- Select Guest --</option>
+                            {% for guest in guests %}
+                            <option value="{{ guest.id }}" {{ 'selected' if settings.db_guest_id == guest.id|string }}>
+                                {{ guest.name }} ({{ guest.ip_address or 'no IP' }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">The VM/CT running PostgreSQL. Will be snapshotted before upgrade.</div>
+                    </div>
+
+                    <hr class="border-secondary">
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Mastodon System User</label>
+                            <input type="text" class="form-control font-monospace" name="mastodon_user" value="{{ settings.user or 'mastodon' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">App Directory</label>
+                            <input type="text" class="form-control font-monospace" name="mastodon_app_dir" value="{{ settings.app_dir or '/home/mastodon/live' }}">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Current Installed Version</label>
+                        <input type="text" class="form-control" name="mastodon_current_version" value="{{ settings.current_version }}" placeholder="e.g. 4.3.4">
+                        <div class="form-text">Set this to your currently running Mastodon version to enable update detection.</div>
+                    </div>
+
+                    <hr class="border-secondary">
+                    <h6 class="text-muted mb-3">Database Connection Swap</h6>
+                    <div class="alert alert-info py-2 mb-3">
+                        <small>
+                            <i class="bi bi-info-circle"></i>
+                            During migrations, <code>DB_HOST</code> and <code>DB_PORT</code> in <code>.env.production</code>
+                            are swapped from PGBouncer to direct PostgreSQL, then restored after.
+                        </small>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">PGBouncer DB_HOST</label>
+                            <input type="text" class="form-control font-monospace" name="mastodon_pgbouncer_host" value="{{ settings.pgbouncer_host }}" placeholder="e.g. 127.0.0.1">
+                            <div class="form-text">Normal operation (via PGBouncer)</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">PGBouncer DB_PORT</label>
+                            <input type="text" class="form-control font-monospace" name="mastodon_pgbouncer_port" value="{{ settings.pgbouncer_port }}" placeholder="e.g. 6432">
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Direct DB_HOST</label>
+                            <input type="text" class="form-control font-monospace" name="mastodon_direct_db_host" value="{{ settings.direct_db_host }}" placeholder="e.g. 10.0.0.50">
+                            <div class="form-text">Direct PostgreSQL (for migrations)</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Direct DB_PORT</label>
+                            <input type="text" class="form-control font-monospace" name="mastodon_direct_db_port" value="{{ settings.direct_db_port or '5432' }}" placeholder="5432">
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary">
+
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" name="mastodon_auto_upgrade" id="autoUpgrade" {{ 'checked' if settings.auto_upgrade == 'true' }}>
+                        <label class="form-check-label" for="autoUpgrade"><strong>Enable automatic upgrades</strong></label>
+                        <div class="form-text text-warning">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            When enabled, upgrades will run automatically when a new release is detected.
+                            Snapshots are always taken before upgrading.
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Save Configuration</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <!-- Version Status -->
+        <div class="card bg-dark">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-arrow-repeat"></i> Version Status</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-dark table-sm mb-3">
+                    <tr>
+                        <td class="text-muted" style="width: 40%">Current Version</td>
+                        <td>
+                            {% if settings.current_version %}
+                            <span class="badge bg-primary">v{{ settings.current_version }}</span>
+                            {% else %}
+                            <span class="text-muted">Not set</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Latest Available</td>
+                        <td>
+                            {% if settings.latest_version %}
+                            <span class="badge bg-info">v{{ settings.latest_version }}</span>
+                            {% if settings.latest_release_url %}
+                            <a href="{{ settings.latest_release_url }}" target="_blank" class="ms-2 small">
+                                <i class="bi bi-box-arrow-up-right"></i> Release Notes
+                            </a>
+                            {% endif %}
+                            {% else %}
+                            <span class="text-muted">Not checked</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Auto-Upgrade</td>
+                        <td>
+                            {% if settings.auto_upgrade == 'true' %}
+                            <span class="badge bg-success">Enabled</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Disabled</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+
+                {% if settings.current_version and settings.latest_version and settings.current_version != settings.latest_version %}
+                <div class="alert alert-warning py-2 mb-3">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>Update available:</strong> v{{ settings.current_version }} &rarr; v{{ settings.latest_version }}
+                </div>
+                {% elif settings.current_version and settings.latest_version %}
+                <div class="alert alert-success py-2 mb-3">
+                    <i class="bi bi-check-circle"></i> Mastodon is up to date.
+                </div>
+                {% endif %}
+
+                <div class="d-flex gap-2">
+                    <form method="post" action="/mastodon/check">
+                        <button type="submit" class="btn btn-outline-info">
+                            <i class="bi bi-arrow-repeat"></i> Check for Updates
+                        </button>
+                    </form>
+                    {% if settings.guest_id and settings.db_guest_id %}
+                    <form method="post" action="/mastodon/upgrade"
+                          onsubmit="return confirm('This will:\n1. Snapshot both VMs/CTs\n2. Run the full Mastodon upgrade\n3. Restart all services\n\nContinue?')">
+                        <button type="submit" class="btn btn-warning">
+                            <i class="bi bi-rocket-takeoff"></i> Upgrade Now
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Last Upgrade Log -->
+        <div class="card bg-dark mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-terminal"></i> Last Upgrade
+                    {% if settings.last_upgrade_status == 'success' %}
+                    <span class="badge bg-success ms-2">Success</span>
+                    {% elif settings.last_upgrade_status == 'error' %}
+                    <span class="badge bg-danger ms-2">Failed</span>
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if settings.last_upgrade_at %}
+                <p class="text-muted mb-2">
+                    <small><i class="bi bi-clock"></i> {{ settings.last_upgrade_at }}</small>
+                </p>
+                {% endif %}
+
+                {% if settings.last_upgrade_log %}
+                <pre class="bg-dark border border-secondary rounded p-3 mb-0" style="max-height: 500px; overflow-y: auto; font-size: 0.85em; white-space: pre-wrap;">{{ settings.last_upgrade_log }}</pre>
+                {% else %}
+                <p class="text-muted mb-0">No upgrades have been run yet.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Upgrade Steps Reference -->
+        <div class="card bg-dark mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-list-ol"></i> Upgrade Steps</h5>
+            </div>
+            <div class="card-body">
+                <ol class="small mb-0">
+                    <li>Snapshot Mastodon app + PostgreSQL guests</li>
+                    <li><code>git stash</code> (save local changes)</li>
+                    <li>Swap <code>.env.production</code> to direct DB</li>
+                    <li><code>git pull</code> (fetch latest glitch-soc)</li>
+                    <li><code>git stash pop</code> (restore local changes)</li>
+                    <li><code>bundle install</code></li>
+                    <li><code>yarn install --frozen-lockfile</code></li>
+                    <li>Pre-deployment migrations (<code>SKIP_POST_DEPLOYMENT_MIGRATIONS=true</code>)</li>
+                    <li>Asset precompilation</li>
+                    <li>Reload/restart Mastodon services</li>
+                    <li>Clear cache (<code>tootctl cache clear</code>)</li>
+                    <li>Post-deployment migrations</li>
+                    <li>Restore <code>.env.production</code> to PGBouncer</li>
+                    <li>Final service restart</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

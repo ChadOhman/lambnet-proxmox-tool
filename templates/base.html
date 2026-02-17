@@ -56,6 +56,11 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.blueprint == 'mastodon' %}active{% endif %}" href="/mastodon">
+                            <i class="bi bi-rocket-takeoff"></i> Mastodon
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'users' %}active{% endif %}" href="/users">
                             <i class="bi bi-people"></i> Users
                         </a>
