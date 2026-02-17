@@ -1,6 +1,6 @@
 import subprocess
 from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
-from flask_login import login_required
+from flask_login import login_required, current_user
 from models import db, Setting
 from credential_store import encrypt
 from config import BASE_DIR
@@ -11,7 +11,9 @@ bp = Blueprint("settings", __name__)
 @bp.before_request
 @login_required
 def _require_login():
-    pass
+    if not current_user.can_manage_settings:
+        flash("Super admin access required.", "error")
+        return redirect(url_for("dashboard.index"))
 
 
 def _get_settings_dict():
@@ -29,6 +31,14 @@ def _get_settings_dict():
         "cf_access_bypass_local_auth": Setting.get("cf_access_bypass_local_auth", "false"),
         "local_bypass_enabled": Setting.get("local_bypass_enabled", "true"),
         "trusted_subnets": Setting.get("trusted_subnets", "10.0.0.0/8"),
+        "unifi_enabled": Setting.get("unifi_enabled", "false"),
+        "unifi_base_url": Setting.get("unifi_base_url", ""),
+        "unifi_username": Setting.get("unifi_username", ""),
+        "unifi_password": Setting.get("unifi_password", ""),
+        "unifi_site": Setting.get("unifi_site", "default"),
+        "unifi_is_udm": Setting.get("unifi_is_udm", "true"),
+        "unifi_filter_subnet": Setting.get("unifi_filter_subnet", ""),
+        "app_auto_update": Setting.get("app_auto_update", "false"),
     }
 
 
@@ -132,10 +142,74 @@ def save_cloudflare():
     return redirect(url_for("settings.index"))
 
 
+@bp.route("/unifi", methods=["POST"])
+def save_unifi():
+    enabled = "unifi_enabled" in request.form
+    base_url = request.form.get("unifi_base_url", "").strip()
+    username = request.form.get("unifi_username", "").strip()
+    password = request.form.get("unifi_password", "").strip()
+    site = request.form.get("unifi_site", "default").strip()
+    is_udm = "unifi_is_udm" in request.form
+    filter_subnet = request.form.get("unifi_filter_subnet", "").strip()
+
+    Setting.set("unifi_enabled", "true" if enabled else "false")
+    Setting.set("unifi_base_url", base_url)
+    Setting.set("unifi_username", username)
+    if password:
+        Setting.set("unifi_password", encrypt(password))
+    Setting.set("unifi_site", site or "default")
+    Setting.set("unifi_is_udm", "true" if is_udm else "false")
+    Setting.set("unifi_filter_subnet", filter_subnet)
+
+    flash("UniFi settings saved.", "success")
+    return redirect(url_for("settings.index"))
+
+
+@bp.route("/unifi/test", methods=["POST"])
+def test_unifi():
+    save_unifi()
+
+    from credential_store import decrypt
+    from unifi_client import UniFiClient
+
+    base_url = Setting.get("unifi_base_url", "")
+    username = Setting.get("unifi_username", "")
+    encrypted_pw = Setting.get("unifi_password", "")
+    site = Setting.get("unifi_site", "default")
+    is_udm = Setting.get("unifi_is_udm", "true") == "true"
+
+    if not base_url or not username or not encrypted_pw:
+        flash("UniFi controller URL, username, and password are required.", "error")
+        return redirect(url_for("settings.index"))
+
+    password = decrypt(encrypted_pw)
+    client = UniFiClient(base_url, username, password, site=site, is_udm=is_udm)
+    ok, msg = client.test_connection()
+
+    if ok:
+        flash(f"UniFi connection successful: {msg}", "success")
+    else:
+        flash(f"UniFi connection failed: {msg}", "error")
+
+    return redirect(url_for("settings.index"))
+
+
+@bp.route("/app-update-mode", methods=["POST"])
+def save_app_update_mode():
+    auto_update = "app_auto_update" in request.form
+    Setting.set("app_auto_update", "true" if auto_update else "false")
+    flash(f"Application auto-update {'enabled' if auto_update else 'disabled'}.", "success")
+    return redirect(url_for("settings.index"))
+
+
 @bp.route("/check-update", methods=["POST"])
 def check_update():
     import urllib.request
     import json
+
+    # Also save the auto-update toggle if submitted from the same form
+    auto_update = "app_auto_update" in request.form
+    Setting.set("app_auto_update", "true" if auto_update else "false")
 
     repo = current_app.config.get("GITHUB_REPO", "")
     current_version = current_app.config.get("APP_VERSION", "0.0.0")

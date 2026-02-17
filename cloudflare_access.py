@@ -123,9 +123,7 @@ def _get_or_create_cf_user(email, name=None):
     user = User(
         username=email,
         display_name=name or email.split("@")[0],
-        is_admin=False,
-        can_ssh=False,
-        can_update=False,
+        role="viewer",
     )
     # Set a random unusable password (login is via CF Access)
     import secrets

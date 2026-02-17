@@ -1,20 +1,26 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
-from flask_login import login_required
+from flask_login import login_required, current_user
 from models import db, Credential
 from credential_store import encrypt
 
 bp = Blueprint("credentials", __name__)
 
 
-@bp.route("/")
+@bp.before_request
 @login_required
+def _require_login():
+    if not current_user.can_manage_credentials:
+        flash("Super admin access required.", "error")
+        return redirect(url_for("dashboard.index"))
+
+
+@bp.route("/")
 def index():
     credentials = Credential.query.order_by(Credential.is_default.desc(), Credential.name).all()
     return render_template("credentials.html", credentials=credentials)
 
 
 @bp.route("/add", methods=["POST"])
-@login_required
 def add():
     name = request.form.get("name", "").strip()
     username = request.form.get("username", "root").strip()
@@ -53,7 +59,6 @@ def add():
 
 
 @bp.route("/<int:cred_id>/set-default", methods=["POST"])
-@login_required
 def set_default(cred_id):
     Credential.query.filter_by(is_default=True).update({"is_default": False})
     cred = Credential.query.get_or_404(cred_id)
@@ -64,7 +69,6 @@ def set_default(cred_id):
 
 
 @bp.route("/<int:cred_id>/delete", methods=["POST"])
-@login_required
 def delete(cred_id):
     cred = Credential.query.get_or_404(cred_id)
     name = cred.name

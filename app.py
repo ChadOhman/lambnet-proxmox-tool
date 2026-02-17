@@ -1,8 +1,11 @@
 import os
+import logging
 from flask import Flask
 from flask_login import LoginManager
 from config import Config, BASE_DIR, DATA_DIR
 from models import db, User
+
+logger = logging.getLogger(__name__)
 
 
 def create_app():
@@ -26,6 +29,7 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _migrate_roles()
         _ensure_default_admin()
 
     # Read version
@@ -47,6 +51,7 @@ def create_app():
     from routes.terminal import bp as terminal_bp
     from routes.mastodon import bp as mastodon_bp
     from routes.api import bp as api_bp
+    from routes.unifi import bp as unifi_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -58,6 +63,7 @@ def create_app():
     app.register_blueprint(users_bp, url_prefix="/users")
     app.register_blueprint(terminal_bp, url_prefix="/terminal")
     app.register_blueprint(mastodon_bp, url_prefix="/mastodon")
+    app.register_blueprint(unifi_bp, url_prefix="/unifi")
     app.register_blueprint(api_bp, url_prefix="/api")
 
     # Initialize WebSocket for terminal
@@ -86,15 +92,76 @@ def create_app():
     return app
 
 
+def _migrate_roles():
+    """Migrate from old boolean permission columns to role-based model."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+    columns = [c["name"] for c in inspector.get_columns("users")]
+
+    if "is_admin" not in columns:
+        return  # Already migrated
+
+    logger.info("Migrating user permissions to role-based model...")
+
+    # Read old data
+    rows = db.session.execute(
+        text("SELECT id, is_admin, can_ssh, can_update FROM users ORDER BY id")
+    ).fetchall()
+
+    # Add role column if it doesn't exist
+    if "role" not in columns:
+        db.session.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(16) DEFAULT 'viewer'"))
+        db.session.commit()
+
+    # Assign roles: first admin becomes super_admin, rest admin, etc.
+    first_admin_set = False
+    for row in rows:
+        user_id, is_admin, can_ssh, can_update = row
+        if is_admin and not first_admin_set:
+            role = "super_admin"
+            first_admin_set = True
+        elif is_admin:
+            role = "admin"
+        elif can_ssh or can_update:
+            role = "operator"
+        else:
+            role = "viewer"
+        db.session.execute(
+            text("UPDATE users SET role = :role WHERE id = :id"),
+            {"role": role, "id": user_id},
+        )
+
+    db.session.commit()
+
+    # Drop old columns (SQLite requires table recreation)
+    db.session.execute(text("""
+        CREATE TABLE users_new (
+            id INTEGER PRIMARY KEY,
+            username VARCHAR(64) UNIQUE NOT NULL,
+            display_name VARCHAR(128),
+            password_hash VARCHAR(256) NOT NULL,
+            role VARCHAR(16) NOT NULL DEFAULT 'viewer',
+            is_active_user BOOLEAN DEFAULT 1,
+            created_at DATETIME
+        )
+    """))
+    db.session.execute(text("""
+        INSERT INTO users_new (id, username, display_name, password_hash, role, is_active_user, created_at)
+        SELECT id, username, display_name, password_hash, role, is_active_user, created_at FROM users
+    """))
+    db.session.execute(text("DROP TABLE users"))
+    db.session.execute(text("ALTER TABLE users_new RENAME TO users"))
+    db.session.commit()
+    logger.info("Role migration complete.")
+
+
 def _ensure_default_admin():
     """Create default admin user if no users exist."""
     if User.query.count() == 0:
         admin = User(
             username="admin",
             display_name="Administrator",
-            is_admin=True,
-            can_ssh=True,
-            can_update=True,
+            role="super_admin",
         )
         admin.set_password("admin")
         db.session.add(admin)

@@ -6,10 +6,11 @@ A datacenter-wide update management tool for Proxmox environments. Runs as an LX
 
 - **Datacenter-wide update scanning** — Scan all hosts, VMs, and CTs for available APT updates with severity detection
 - **Web SSH terminal** — Browser-based SSH sessions to any managed guest
+- **UniFi network visibility** — View all UniFi devices and clients with subnet filtering and device restart support
 - **Mastodon (glitch-soc) upgrade automation** — One-click upgrades with PGBouncer swap, git stash/pop, Proxmox snapshots, and auto-upgrade support
 - **Gmail notifications** — Email alerts when updates are available, with severity breakdown
 - **Scheduled scans & auto-updates** — Configurable scan intervals and maintenance windows
-- **Tag-based access control** — Users can only access VMs/CTs matching their assigned Proxmox tags
+- **4-tier role-based access control** — Super Admin, Admin, Operator, and Viewer roles with tag-based guest filtering
 - **Encrypted credential storage** — SSH passwords and API tokens encrypted at rest with Fernet
 - **Cloudflare Zero Trust** — Optional SSO authentication via Cloudflare Access
 - **Local network bypass** — Trusted subnets skip authentication entirely
@@ -100,7 +101,7 @@ Guests not managed by Proxmox (e.g. bare-metal servers) can be added manually un
 
 ### Credentials
 
-Under **Credentials**, add SSH credentials (password or private key) that will be used to connect to your guests. You can assign a specific credential to each guest, or set one as the default.
+Under **Credentials** (super admin only), add SSH credentials (password or private key) that will be used to connect to your guests. You can assign a specific credential to each guest, or set one as the default.
 
 ### Gmail Notifications
 
@@ -116,6 +117,27 @@ Under **Settings > Scan Settings**, configure how often to automatically scan fo
 ### Maintenance Windows & Auto-Updates
 
 Under **Schedules**, create maintenance windows specifying day, time range, and update type (`upgrade` or `dist-upgrade`). Assign windows to guests, then enable auto-update on each guest to have updates applied automatically during their window.
+
+## UniFi Network Visibility
+
+The **Network** page shows all devices and clients from your Ubiquiti UniFi controller.
+
+### Setup
+
+1. Go to **Settings > UniFi Controller** (super admin only)
+2. Enter your controller URL (e.g. `https://10.0.4.1`), username, and password
+3. Set the site name (default: `default`) and optionally filter by subnet (e.g. `10.0.4.0/24`)
+4. Check **UDM / UniFi OS** if running on a UDM, UDM Pro, or UniFi OS Console; uncheck for standalone controller software
+5. Click **Test Connection** to verify, then enable and save
+
+### Capabilities
+
+- **View devices** — All adopted UniFi network devices with name, model, IP, MAC, status, uptime, and firmware version
+- **View clients** — All active clients with hostname, IP, MAC, network, connection type (wired/wireless), signal, and uptime
+- **Restart devices** — Admins can restart individual devices (with confirmation)
+- **Subnet filtering** — Optionally filter devices and clients to a specific subnet
+
+All logged-in users can view the Network page. Only admins and super admins can restart devices.
 
 ## Mastodon Upgrades
 
@@ -148,11 +170,33 @@ Enable **automatic upgrades** to have this run whenever a new release is detecte
 
 ## User Management & Access Control
 
-Admins can manage users under **Users**:
+### Roles
 
-- **Tags** map to Proxmox guest tags. Create tags, assign them to users, and users will only see guests that share their tags.
-- **Permissions**: `can_ssh` (terminal access), `can_update` (apply updates), `is_admin` (full access)
-- Admins see all guests regardless of tags
+LambNet uses a 4-tier role system:
+
+| Role | Level | Capabilities |
+|------|-------|-------------|
+| **Super Admin** | 4 | Full access. Configure API keys (UniFi, Proxmox), manage settings, credentials, users, app updates |
+| **Admin** | 3 | Manage guests, hosts, schedules, apply updates, scan all, restart UniFi devices, manage non-super users |
+| **Operator** | 2 | SSH into assigned guests, scan/apply updates on assigned guests, view network, view dashboard |
+| **Viewer** | 1 | Read-only dashboard, view assigned guests and network devices |
+
+### Tags
+
+Tags map to Proxmox guest tags and control which guests non-admin users can access:
+
+- Create tags under **Users** and assign them to users
+- Users can only see and manage guests that share their assigned tags
+- Admins and super admins see all guests regardless of tags
+- Untagged guests are accessible to admins only
+
+### User Management
+
+Admins and super admins can manage users under **Users**:
+
+- Create users with a role and optional tag assignments
+- Users can only edit/delete users with a lower role level
+- Super admins can assign any role; admins can assign operator and viewer roles
 
 ## Cloudflare Zero Trust
 
@@ -181,7 +225,7 @@ If you don't have a tunnel yet:
 
 ### Options
 
-- **Auto-provision users** — automatically creates accounts for new CF Access users (no permissions until admin assigns tags)
+- **Auto-provision users** — automatically creates accounts for new CF Access users (viewer role, no tags until admin assigns them)
 - **CF Access as sole authentication** — disables local login entirely (ensure CF Access is working first)
 
 ## Local Network Bypass
@@ -210,11 +254,12 @@ Flask Web UI (:5000)
 ├── Hosts ─────── Proxmox node management + guest discovery
 ├── Guests ────── VM/CT list with update status
 ├── Terminal ──── browser-based SSH (xterm.js + WebSocket)
+├── Network ───── UniFi device/client visibility
 ├── Mastodon ──── glitch-soc upgrade automation
 ├── Credentials ─ encrypted SSH key/password storage
 ├── Schedules ─── maintenance windows for auto-updates
-├── Users ─────── tag-based RBAC
-└── Settings ──── email, scan, CF Access, local bypass
+├── Users ─────── 4-tier RBAC with tag-based filtering
+└── Settings ──── email, scan, UniFi, CF Access, local bypass
 
 Background Services (APScheduler)
 ├── Update scanner ─── periodic APT check across all guests
@@ -244,7 +289,7 @@ Installed automatically by `setup.sh`:
 | flask-sock | 0.7.0 | WebSocket support for SSH terminal |
 | SQLAlchemy | 2.0.36 | Database ORM |
 | proxmoxer | 2.1.0 | Proxmox API client |
-| requests | 2.32.3 | HTTP client (used by proxmoxer) |
+| requests | 2.32.3 | HTTP client (used by proxmoxer and UniFi API) |
 | paramiko | 3.5.0 | SSH client for remote command execution |
 | cryptography | 44.0.0 | Fernet encryption for stored credentials |
 | APScheduler | 3.10.4 | Background job scheduling |
@@ -270,8 +315,8 @@ Installed automatically by `setup.sh`:
 - **Backend:** Python 3.11+, Flask, SQLAlchemy, APScheduler
 - **Frontend:** Bootstrap 5 (dark theme), htmx, xterm.js
 - **Database:** SQLite
-- **Connections:** proxmoxer (Proxmox API), paramiko (SSH)
-- **Security:** Fernet encryption, PyJWT (Cloudflare Access)
+- **Connections:** proxmoxer (Proxmox API), paramiko (SSH), UniFi Controller API
+- **Security:** Fernet encryption, PyJWT (Cloudflare Access), 4-tier RBAC
 - **Production server:** gunicorn with gevent-websocket worker
 
 ## File Layout
@@ -284,4 +329,4 @@ Installed automatically by `setup.sh`:
 
 ## License
 
-MIT
+This project is licensed under the GNU General Public License v3.0 — see the [LICENSE](LICENSE) file for details.

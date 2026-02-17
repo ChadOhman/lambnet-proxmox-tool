@@ -7,25 +7,21 @@ from proxmox_api import ProxmoxClient
 bp = Blueprint("hosts", __name__)
 
 
-def _admin_required():
-    if not current_user.is_admin:
+@bp.before_request
+@login_required
+def _require_login():
+    if not current_user.can_manage_hosts:
         flash("Admin access required.", "error")
         return redirect(url_for("dashboard.index"))
-    return None
 
 
 @bp.route("/")
-@login_required
 def index():
-    r = _admin_required()
-    if r:
-        return r
     hosts = ProxmoxHost.query.all()
     return render_template("hosts.html", hosts=hosts)
 
 
 @bp.route("/add", methods=["POST"])
-@login_required
 def add():
     name = request.form.get("name", "").strip()
     hostname = request.form.get("hostname", "").strip()
@@ -61,7 +57,6 @@ def add():
 
 
 @bp.route("/<int:host_id>/test", methods=["POST"])
-@login_required
 def test_connection(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
     client = ProxmoxClient(host)
@@ -76,7 +71,6 @@ def test_connection(host_id):
 
 
 @bp.route("/<int:host_id>/discover", methods=["POST"])
-@login_required
 def discover(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
     client = ProxmoxClient(host)
@@ -134,7 +128,6 @@ def discover(host_id):
 
 
 @bp.route("/<int:host_id>/delete", methods=["POST"])
-@login_required
 def delete(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
     name = host.name

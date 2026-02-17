@@ -224,10 +224,18 @@
                     <tr><td class="text-muted">Version</td><td>v{{ config.get('APP_VERSION', 'unknown') }}</td></tr>
                     <tr><td class="text-muted">GitHub</td><td><a href="https://github.com/{{ config.get('GITHUB_REPO', '') }}" target="_blank">{{ config.get('GITHUB_REPO', '') }}</a></td></tr>
                 </table>
-                <form method="post" action="/settings/check-update">
-                    <button type="submit" class="btn btn-outline-info">
-                        <i class="bi bi-arrow-repeat"></i> Check for Updates
-                    </button>
+                <form method="post" action="/settings/app-update-mode">
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" name="app_auto_update" id="appAutoUpdate" {{ 'checked' if settings.app_auto_update == 'true' }}>
+                        <label class="form-check-label" for="appAutoUpdate"><strong>Enable automatic updates</strong></label>
+                        <div class="form-text">When enabled, LambNet will check for new releases every 6 hours and automatically update and restart.</div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                        <button type="submit" formaction="/settings/check-update" class="btn btn-outline-info btn-sm">
+                            <i class="bi bi-arrow-repeat"></i> Check for Updates
+                        </button>
+                    </div>
                 </form>
                 {% if update_available %}
                 <div class="alert alert-info mt-3 mb-0">
@@ -239,6 +247,61 @@
                     </form>
                 </div>
                 {% endif %}
+            </div>
+        </div>
+
+        <!-- UniFi Controller -->
+        <div class="card bg-dark mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-router"></i> UniFi Controller
+                    {% if settings.unifi_enabled == 'true' %}
+                    <span class="badge bg-success ms-2">Active</span>
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/settings/unifi">
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" name="unifi_enabled" id="unifiEnabled" {{ 'checked' if settings.unifi_enabled == 'true' }}>
+                        <label class="form-check-label" for="unifiEnabled"><strong>Enable UniFi Integration</strong></label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Controller URL</label>
+                        <input type="text" class="form-control" name="unifi_base_url" value="{{ settings.unifi_base_url or '' }}" placeholder="https://10.0.4.1">
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Username</label>
+                            <input type="text" class="form-control" name="unifi_username" value="{{ settings.unifi_username or '' }}" placeholder="admin">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Password</label>
+                            <input type="password" class="form-control" name="unifi_password" placeholder="{{ '********' if settings.unifi_password else '' }}">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Site</label>
+                            <input type="text" class="form-control" name="unifi_site" value="{{ settings.unifi_site or 'default' }}" placeholder="default">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Subnet Filter</label>
+                            <input type="text" class="form-control font-monospace" name="unifi_filter_subnet" value="{{ settings.unifi_filter_subnet or '' }}" placeholder="10.0.4.0/24 (blank=all)">
+                        </div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" name="unifi_is_udm" id="unifiIsUdm" {{ 'checked' if settings.unifi_is_udm != 'false' }}>
+                        <label class="form-check-label" for="unifiIsUdm">UDM / UniFi OS (uses <code>/proxy/network</code> prefix)</label>
+                        <div class="form-text">Uncheck for standalone UniFi Controller software.</div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">Save UniFi Settings</button>
+                        <button type="submit" formaction="/settings/unifi/test" class="btn btn-outline-secondary">
+                            <i class="bi bi-plug"></i> Test Connection
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
 

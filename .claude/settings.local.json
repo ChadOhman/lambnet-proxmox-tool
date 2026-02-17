@@ -2,6 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(git commit:*)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }

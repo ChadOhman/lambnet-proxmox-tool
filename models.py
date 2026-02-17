@@ -23,14 +23,19 @@ guest_tags = db.Table(
 class User(UserMixin, db.Model):
     __tablename__ = "users"
 
+    ROLE_LEVELS = {
+        "super_admin": 4,
+        "admin": 3,
+        "operator": 2,
+        "viewer": 1,
+    }
+
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), unique=True, nullable=False)
     display_name = db.Column(db.String(128))
     password_hash = db.Column(db.String(256), nullable=False)
-    is_admin = db.Column(db.Boolean, default=False)
+    role = db.Column(db.String(16), nullable=False, default="viewer")
     is_active_user = db.Column(db.Boolean, default=True)
-    can_ssh = db.Column(db.Boolean, default=False)  # permission to use web SSH
-    can_update = db.Column(db.Boolean, default=False)  # permission to apply updates
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Tags this user has access to
@@ -45,6 +50,50 @@ class User(UserMixin, db.Model):
     @property
     def is_active(self):
         return self.is_active_user
+
+    @property
+    def role_level(self):
+        return self.ROLE_LEVELS.get(self.role, 1)
+
+    @property
+    def is_super_admin(self):
+        return self.role == "super_admin"
+
+    @property
+    def is_admin(self):
+        return self.role in ("super_admin", "admin")
+
+    @property
+    def can_ssh(self):
+        return self.role in ("super_admin", "admin", "operator")
+
+    @property
+    def can_update(self):
+        return self.role in ("super_admin", "admin", "operator")
+
+    @property
+    def can_manage_users(self):
+        return self.role in ("super_admin", "admin")
+
+    @property
+    def can_manage_settings(self):
+        return self.role == "super_admin"
+
+    @property
+    def can_manage_credentials(self):
+        return self.role == "super_admin"
+
+    @property
+    def can_manage_hosts(self):
+        return self.role in ("super_admin", "admin")
+
+    @property
+    def can_restart_unifi(self):
+        return self.role in ("super_admin", "admin")
+
+    @property
+    def role_display(self):
+        return self.role.replace("_", " ").title()
 
     def can_access_guest(self, guest):
         """Check if user can access a guest based on tag permissions."""
@@ -68,6 +117,12 @@ class User(UserMixin, db.Model):
             .filter(Guest.tags.any(Tag.id.in_(user_tag_ids)))
             .all()
         )
+
+    def can_edit_user(self, other_user):
+        """Check if this user can edit another user."""
+        if self.id == other_user.id:
+            return True
+        return self.role_level > other_user.role_level
 
     def __repr__(self):
         return f"<User {self.username}>"

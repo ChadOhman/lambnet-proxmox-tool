@@ -99,6 +99,52 @@ def _check_mastodon_release(app):
                 logger.error(f"Mastodon auto-upgrade failed")
 
 
+def _check_app_update(app):
+    """Check for new LambNet releases and optionally auto-update."""
+    with app.app_context():
+        from models import Setting
+        import urllib.request
+        import json
+        import subprocess
+        import os
+
+        if Setting.get("app_auto_update", "false") != "true":
+            return
+
+        repo = app.config.get("GITHUB_REPO", "")
+        current_version = app.config.get("APP_VERSION", "0.0.0")
+
+        if not repo or current_version == "unknown":
+            return
+
+        try:
+            url = f"https://api.github.com/repos/{repo}/releases/latest"
+            req = urllib.request.Request(url, headers={"User-Agent": "LambNet-Update-Manager"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                latest = data.get("tag_name", "").lstrip("v")
+
+                if not latest or latest == current_version:
+                    return
+
+                logger.info(f"New LambNet version available: v{current_version} -> v{latest}")
+
+                # Send email notification if configured
+                from notifier import send_app_update_notification
+                send_app_update_notification(current_version, latest)
+
+                # Run update.sh
+                from config import BASE_DIR
+                update_script = os.path.join(BASE_DIR, "update.sh")
+                if os.path.exists(update_script):
+                    logger.info("Auto-update enabled, running update.sh...")
+                    subprocess.Popen(["bash", update_script], cwd=BASE_DIR)
+                else:
+                    logger.warning("update.sh not found, cannot auto-update")
+        except Exception as e:
+            logger.error(f"Failed to check for app updates: {e}")
+
+
 def init_scheduler(app):
     global _scheduler
 
@@ -141,7 +187,17 @@ def init_scheduler(app):
         replace_existing=True,
     )
 
+    # App self-update check - runs every 6 hours
+    _scheduler.add_job(
+        _check_app_update,
+        trigger=IntervalTrigger(hours=6),
+        args=[app],
+        id="app_update_check",
+        name="Check for LambNet updates",
+        replace_existing=True,
+    )
+
     _scheduler.start()
-    logger.info(f"Scheduler started: scan every {interval_hours}h, auto-update check every 15m, mastodon check every {interval_hours}h")
+    logger.info(f"Scheduler started: scan every {interval_hours}h, auto-update check every 15m, mastodon check every {interval_hours}h, app update check every 6h")
 
     return _scheduler

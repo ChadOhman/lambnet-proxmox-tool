@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
-from flask_login import login_required
+from flask_login import login_required, current_user
 from models import db, MaintenanceWindow
 
 bp = Blueprint("schedules", __name__)
@@ -8,7 +8,9 @@ bp = Blueprint("schedules", __name__)
 @bp.before_request
 @login_required
 def _require_login():
-    pass
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("dashboard.index"))
 
 
 @bp.route("/")

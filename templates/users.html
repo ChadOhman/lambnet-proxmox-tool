@@ -22,7 +22,6 @@
                                 <th>Username</th>
                                 <th>Display Name</th>
                                 <th>Role</th>
-                                <th>Permissions</th>
                                 <th>Tags</th>
                                 <th>Status</th>
                                 <th>Actions</th>
@@ -34,18 +33,14 @@
                                 <td><code>{{ user.username }}</code></td>
                                 <td>{{ user.display_name or '-' }}</td>
                                 <td>
-                                    {% if user.is_admin %}
-                                    <span class="badge bg-danger">Admin</span>
+                                    {% if user.role == 'super_admin' %}
+                                    <span class="badge bg-danger">Super Admin</span>
+                                    {% elif user.role == 'admin' %}
+                                    <span class="badge bg-warning text-dark">Admin</span>
+                                    {% elif user.role == 'operator' %}
+                                    <span class="badge bg-info">Operator</span>
                                     {% else %}
-                                    <span class="badge bg-secondary">User</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if user.can_ssh %}
-                                    <span class="badge bg-info">SSH</span>
-                                    {% endif %}
-                                    {% if user.can_update %}
-                                    <span class="badge bg-warning text-dark">Update</span>
+                                    <span class="badge bg-secondary">Viewer</span>
                                     {% endif %}
                                 </td>
                                 <td>
@@ -66,10 +61,12 @@
                                     {% endif %}
                                 </td>
                                 <td>
+                                    {% if current_user.can_edit_user(user) %}
                                     <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editUser{{ user.id }}">
                                         <i class="bi bi-pencil"></i>
                                     </button>
-                                    {% if user.id != current_user.id %}
+                                    {% endif %}
+                                    {% if user.id != current_user.id and current_user.can_edit_user(user) %}
                                     <form method="post" action="/users/{{ user.id }}/delete" class="d-inline" onsubmit="return confirm('Delete user {{ user.username }}?')">
                                         <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                                     </form>
@@ -116,16 +113,17 @@
 
         <div class="card bg-dark mt-4">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-info-circle"></i> How Tags Work</h5>
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Role Permissions</h5>
             </div>
             <div class="card-body">
                 <ul class="mb-0 ps-3">
-                    <li>Tags are matched against Proxmox guest tags</li>
-                    <li>Assign tags to users to grant access to matching VMs/CTs</li>
-                    <li>Users can only see and manage guests with their assigned tags</li>
-                    <li>Admins have access to all guests regardless of tags</li>
-                    <li>Untagged guests are accessible to admins only</li>
+                    <li><strong>Super Admin</strong> &mdash; Full access including settings, API keys, credentials</li>
+                    <li><strong>Admin</strong> &mdash; Manage guests, hosts, schedules, users, restart UniFi devices</li>
+                    <li><strong>Operator</strong> &mdash; SSH, apply updates on assigned guests, view network</li>
+                    <li><strong>Viewer</strong> &mdash; Read-only dashboard and guest/network visibility</li>
                 </ul>
+                <hr class="border-secondary">
+                <small class="text-muted">Tags control which guests operators/viewers can see. Admins see all guests.</small>
             </div>
         </div>
     </div>
@@ -154,19 +152,14 @@
                         <input type="password" class="form-control" name="password" required minlength="8">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label d-block">Permissions</label>
-                        <div class="form-check form-check-inline">
-                            <input type="checkbox" class="form-check-input" name="is_admin" id="newUserAdmin">
-                            <label class="form-check-label" for="newUserAdmin">Admin</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input type="checkbox" class="form-check-input" name="can_ssh" id="newUserSsh" checked>
-                            <label class="form-check-label" for="newUserSsh">SSH Terminal</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input type="checkbox" class="form-check-input" name="can_update" id="newUserUpdate">
-                            <label class="form-check-label" for="newUserUpdate">Apply Updates</label>
-                        </div>
+                        <label class="form-label">Role</label>
+                        <select class="form-select" name="role">
+                            {% if current_user.is_super_admin %}
+                            <option value="admin">Admin</option>
+                            {% endif %}
+                            <option value="operator" selected>Operator</option>
+                            <option value="viewer">Viewer</option>
+                        </select>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Allowed Tags</label>
@@ -221,6 +214,7 @@
 
 <!-- Edit User Modals -->
 {% for user in users %}
+{% if current_user.can_edit_user(user) %}
 <div class="modal fade" id="editUser{{ user.id }}" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content bg-dark">
@@ -238,25 +232,25 @@
                         <label class="form-label">New Password (leave blank to keep)</label>
                         <input type="password" class="form-control" name="new_password" minlength="8">
                     </div>
+                    {% if user.id != current_user.id %}
                     <div class="mb-3">
-                        <label class="form-label d-block">Permissions</label>
-                        <div class="form-check form-check-inline">
-                            <input type="checkbox" class="form-check-input" name="is_admin" {{ 'checked' if user.is_admin }}>
-                            <label class="form-check-label">Admin</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input type="checkbox" class="form-check-input" name="can_ssh" {{ 'checked' if user.can_ssh }}>
-                            <label class="form-check-label">SSH</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input type="checkbox" class="form-check-input" name="can_update" {{ 'checked' if user.can_update }}>
-                            <label class="form-check-label">Update</label>
-                        </div>
-                        <div class="form-check form-check-inline">
+                        <label class="form-label">Role</label>
+                        <select class="form-select" name="role">
+                            {% if current_user.is_super_admin %}
+                            <option value="super_admin" {{ 'selected' if user.role == 'super_admin' }}>Super Admin</option>
+                            <option value="admin" {{ 'selected' if user.role == 'admin' }}>Admin</option>
+                            {% endif %}
+                            <option value="operator" {{ 'selected' if user.role == 'operator' }}>Operator</option>
+                            <option value="viewer" {{ 'selected' if user.role == 'viewer' }}>Viewer</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
                             <input type="checkbox" class="form-check-input" name="is_active" {{ 'checked' if user.is_active }}>
                             <label class="form-check-label">Active</label>
                         </div>
                     </div>
+                    {% endif %}
                     <div class="mb-3">
                         <label class="form-label">Allowed Tags</label>
                         {% set user_tag_ids = user.allowed_tags | map(attribute='id') | list %}
@@ -278,5 +272,6 @@
         </div>
     </div>
 </div>
+{% endif %}
 {% endfor %}
 {% endblock %}

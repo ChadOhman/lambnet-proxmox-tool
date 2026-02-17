@@ -37,19 +37,26 @@
                             <i class="bi bi-pc-display"></i> Guests
                         </a>
                     </li>
-                    {% if current_user.can_ssh or current_user.is_admin %}
+                    {% if current_user.can_ssh %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'terminal' %}active{% endif %}" href="/terminal">
                             <i class="bi bi-terminal"></i> Terminal
                         </a>
                     </li>
                     {% endif %}
-                    {% if current_user.is_admin %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.blueprint == 'unifi' %}active{% endif %}" href="/unifi">
+                            <i class="bi bi-router"></i> Network
+                        </a>
+                    </li>
+                    {% if current_user.is_super_admin %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'credentials' %}active{% endif %}" href="/credentials">
                             <i class="bi bi-key"></i> Credentials
                         </a>
                     </li>
+                    {% endif %}
+                    {% if current_user.is_admin %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'schedules' %}active{% endif %}" href="/schedules">
                             <i class="bi bi-calendar-check"></i> Schedules
@@ -65,6 +72,8 @@
                             <i class="bi bi-people"></i> Users
                         </a>
                     </li>
+                    {% endif %}
+                    {% if current_user.is_super_admin %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'settings' %}active{% endif %}" href="/settings">
                             <i class="bi bi-gear"></i> Settings

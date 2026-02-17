@@ -196,3 +196,41 @@ def send_mastodon_update_notification(current_version, new_version, release_url)
 
 def _mastodon_auto_enabled():
     return Setting.get("mastodon_auto_upgrade", "false") == "true"
+
+
+def send_app_update_notification(current_version, new_version):
+    """Send email notification about a new LambNet release."""
+    auto_update = Setting.get("app_auto_update", "false") == "true"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #1a1a2e; color: #e0e0e0; padding: 20px; border-radius: 8px;">
+            <h2 style="color: #4fc3f7; margin-top: 0;">LambNet Update Available</h2>
+
+            <div style="background: #16213e; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 6px 0; color: #888;">Current Version</td>
+                        <td style="padding: 6px 0; font-weight: bold;">v{current_version}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #888;">New Version</td>
+                        <td style="padding: 6px 0; font-weight: bold; color: #ffc107;">v{new_version}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <p>{"Auto-update is enabled. The application will update and restart shortly." if auto_update else "Log in to LambNet Update Manager and go to Settings to apply the update."}</p>
+
+            <p style="margin-top: 16px; color: #888; font-size: 12px;">
+                Sent by LambNet Proxmox Update Manager
+            </p>
+        </div>
+    </div>
+    """
+    subject = f"[LambNet] Application update available: v{new_version}"
+    ok, msg = _send_email(subject, html)
+    if ok:
+        logger.info(f"App update notification sent for v{new_version}")
+    else:
+        logger.error(f"Failed to send app update notification: {msg}")
+    return ok, msg

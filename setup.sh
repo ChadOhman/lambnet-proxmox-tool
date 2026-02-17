@@ -64,28 +64,19 @@ echo "  Done."
 
 echo ""
 echo "[2/$TOTAL_STEPS] Setting up application directory..."
-if [ -d "$APP_DIR" ]; then
-    echo "  Directory $APP_DIR already exists. Updating..."
+if [ -d "$APP_DIR" ] && [ -d "$APP_DIR/.git" ]; then
+    echo "  Directory $APP_DIR already exists with git. Updating..."
     cd "$APP_DIR"
-    if [ -d ".git" ]; then
-        git pull --quiet
-    fi
+    git pull --quiet
+elif [ -d "$APP_DIR" ] && [ ! -d "$APP_DIR/.git" ]; then
+    echo "  Directory $APP_DIR exists but has no git repo. Re-cloning..."
+    rm -rf "$APP_DIR"
+    git clone --quiet "$REPO_URL" "$APP_DIR"
 else
-    # Check if we're running from the repo directory
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    if [ -f "$SCRIPT_DIR/app.py" ]; then
-        echo "  Installing from local directory..."
-        cp -r "$SCRIPT_DIR" "$APP_DIR"
-    else
-        echo "  Cloning from GitHub..."
-        git clone --quiet "$REPO_URL" "$APP_DIR"
-        cd "$APP_DIR"
-        # Navigate into the nested directory if it exists
-        if [ -d "lambnet-proxmox-tool" ]; then
-            APP_DIR="$APP_DIR/lambnet-proxmox-tool"
-        fi
-    fi
+    echo "  Cloning from GitHub..."
+    git clone --quiet "$REPO_URL" "$APP_DIR"
 fi
+cd "$APP_DIR"
 echo "  Done."
 
 echo ""

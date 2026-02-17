@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Network - LambNet Update Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-router"></i> Network Devices</h2>
+    {% if enabled %}
+    <form method="post" action="/unifi/refresh" class="d-inline">
+        <button type="submit" class="btn btn-outline-light btn-sm">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+    </form>
+    {% endif %}
+</div>
+
+{% if not enabled %}
+<div class="card bg-dark">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-router display-1 text-muted"></i>
+        <h4 class="mt-3 text-muted">UniFi Integration Not Configured</h4>
+        <p class="text-muted">
+            {% if current_user.is_super_admin %}
+            Go to <a href="/settings">Settings</a> to configure your UniFi controller.
+            {% else %}
+            Ask a super admin to configure the UniFi controller in Settings.
+            {% endif %}
+        </p>
+    </div>
+</div>
+{% else %}
+
+{% if subnet_filter %}
+<p class="text-muted mb-3"><i class="bi bi-funnel"></i> Filtered to subnet: <code>{{ subnet_filter }}</code></p>
+{% endif %}
+
+<div class="row g-4">
+    <!-- Devices -->
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-hdd-network"></i> Devices <span class="badge bg-secondary">{{ devices|length }}</span></h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Model</th>
+                                <th>IP</th>
+                                <th>MAC</th>
+                                <th>Status</th>
+                                <th>Uptime</th>
+                                <th>Firmware</th>
+                                {% if current_user.can_restart_unifi %}
+                                <th>Actions</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for device in devices %}
+                            <tr>
+                                <td><strong>{{ device.name }}</strong></td>
+                                <td><code>{{ device.model }}</code></td>
+                                <td><code>{{ device.ip }}</code></td>
+                                <td><small class="text-muted">{{ device.mac }}</small></td>
+                                <td>
+                                    {% if device.state == 1 %}
+                                    <span class="badge bg-success">Online</span>
+                                    {% elif device.state == 0 %}
+                                    <span class="badge bg-danger">Offline</span>
+                                    {% else %}
+                                    <span class="badge bg-warning text-dark">{{ device.state }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if device.uptime %}
+                                    {% set days = device.uptime // 86400 %}
+                                    {% set hours = (device.uptime % 86400) // 3600 %}
+                                    {% set mins = (device.uptime % 3600) // 60 %}
+                                    {% if days > 0 %}{{ days }}d {% endif %}{{ hours }}h {{ mins }}m
+                                    {% else %}-{% endif %}
+                                </td>
+                                <td><small>{{ device.version or '-' }}</small></td>
+                                {% if current_user.can_restart_unifi %}
+                                <td>
+                                    {% if device.state == 1 %}
+                                    <form method="post" action="/unifi/restart/{{ device.mac }}" class="d-inline" onsubmit="return confirm('Restart {{ device.name }}?')">
+                                        <button type="submit" class="btn btn-sm btn-outline-warning" title="Restart">
+                                            <i class="bi bi-arrow-repeat"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="8" class="text-center text-muted py-3">No devices found.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Clients -->
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-people"></i> Active Clients <span class="badge bg-secondary">{{ clients|length }}</span></h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Hostname</th>
+                                <th>IP</th>
+                                <th>MAC</th>
+                                <th>Network</th>
+                                <th>Type</th>
+                                <th>Signal</th>
+                                <th>Uptime</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for client in clients %}
+                            <tr>
+                                <td>{{ client.hostname }}</td>
+                                <td><code>{{ client.ip }}</code></td>
+                                <td><small class="text-muted">{{ client.mac }}</small></td>
+                                <td>{{ client.network or '-' }}</td>
+                                <td>
+                                    {% if client.is_wired %}
+                                    <i class="bi bi-ethernet" title="Wired"></i> Wired
+                                    {% else %}
+                                    <i class="bi bi-wifi" title="Wireless"></i> Wireless
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if client.signal is not none and not client.is_wired %}
+                                    {{ client.signal }} dBm
+                                    {% else %}-{% endif %}
+                                </td>
+                                <td>
+                                    {% if client.uptime %}
+                                    {% set days = client.uptime // 86400 %}
+                                    {% set hours = (client.uptime % 86400) // 3600 %}
+                                    {% set mins = (client.uptime % 3600) // 60 %}
+                                    {% if days > 0 %}{{ days }}d {% endif %}{{ hours }}h {{ mins }}m
+                                    {% else %}-{% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="7" class="text-center text-muted py-3">No clients found.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}

@@ -94,7 +94,10 @@ def init_local_bypass(app):
             return
 
         # Auto-login as admin
-        admin = User.query.filter_by(username="admin", is_admin=True).first()
+        admin = User.query.filter(
+            User.username == "admin",
+            User.role.in_(("super_admin", "admin")),
+        ).first()
         if admin and admin.is_active:
             login_user(admin)
             g.local_bypass = True
