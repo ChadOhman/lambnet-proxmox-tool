@@ -160,7 +160,7 @@ pct exec "$CTID" -- bash -c "apt-get update -qq && apt-get install -y -qq git cu
 pct exec "$CTID" -- bash -c "git clone --quiet '$REPO_URL' /tmp/lambnet-install"
 
 # Run setup.sh from the cloned repo
-pct exec "$CTID" -- bash -c "cd /tmp/lambnet-install/lambnet-proxmox-tool && bash setup.sh $INSTALL_CLOUDFLARED"
+pct exec "$CTID" -- bash -c "cd /tmp/lambnet-install && bash setup.sh $INSTALL_CLOUDFLARED"
 
 # Cleanup install temp
 pct exec "$CTID" -- bash -c "rm -rf /tmp/lambnet-install"
