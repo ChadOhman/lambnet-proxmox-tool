@@ -156,17 +156,33 @@ Admins can manage users under **Users**:
 
 ## Cloudflare Zero Trust
 
-For secure external access without a VPN:
+For secure external access without a VPN. LambNet validates Cloudflare Access JWTs — it doesn't matter where `cloudflared` runs.
 
-1. Go to **Settings > Cloudflare Zero Trust**
-2. Enter your team domain (e.g. `myteam.cloudflareaccess.com`) and Application Audience (AUD) tag
-3. Enable CF Access authentication
+### Using an Existing Tunnel
 
-Options:
-- **Auto-provision users** — automatically creates accounts for new CF Access users
+If you already have `cloudflared` running on another CT, VM, or your Proxmox host:
+
+1. Open the **Cloudflare Zero Trust dashboard** > Networks > Tunnels
+2. Select your existing tunnel and click **Configure**
+3. Add a **Public Hostname** entry pointing to `http://<LambNet-CT-IP>:5000`
+4. Go to **Access > Applications**, create an application for the hostname
+5. Copy the **Application Audience (AUD)** tag
+6. In LambNet, go to **Settings > Cloudflare Zero Trust**, enter your team domain and AUD tag, and enable
+
+### Creating a New Tunnel
+
+If you don't have a tunnel yet:
+
+1. Run `bash setup.sh --cloudflared` inside the LambNet CT to install cloudflared
+2. `cloudflared tunnel login` and `cloudflared tunnel create lambnet`
+3. Configure the tunnel to route to `http://localhost:5000`
+4. Create an Access Application in the Zero Trust dashboard
+5. Enter the team domain and AUD tag in LambNet settings
+
+### Options
+
+- **Auto-provision users** — automatically creates accounts for new CF Access users (no permissions until admin assigns tags)
 - **CF Access as sole authentication** — disables local login entirely (ensure CF Access is working first)
-
-Setup requires a Cloudflare Tunnel. Run `bash setup.sh --cloudflared` to install cloudflared, then follow the setup guide shown in the settings page.
 
 ## Local Network Bypass
 
