@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}{{ guest.name }} - LambNet Update Manager{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/guests">Guests</a></li>
+        <li class="breadcrumb-item active">{{ guest.name }}</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>
+            {% if guest.status == 'up-to-date' %}
+            <span class="text-success"><i class="bi bi-check-circle-fill"></i></span>
+            {% elif guest.status == 'updates-available' %}
+            <span class="text-warning"><i class="bi bi-exclamation-circle-fill"></i></span>
+            {% elif guest.status == 'error' %}
+            <span class="text-danger"><i class="bi bi-x-circle-fill"></i></span>
+            {% else %}
+            <span class="text-muted"><i class="bi bi-question-circle-fill"></i></span>
+            {% endif %}
+            {{ guest.name }}
+            <span class="badge bg-{{ 'primary' if guest.guest_type == 'vm' else 'success' }}">{{ guest.guest_type|upper }}</span>
+        </h2>
+    </div>
+    <div>
+        {% if guest.ip_address and (current_user.can_ssh or current_user.is_admin) %}
+        <a href="/terminal/{{ guest.id }}" class="btn btn-outline-success">
+            <i class="bi bi-terminal"></i> SSH
+        </a>
+        {% endif %}
+        <form method="post" action="/api/scan/{{ guest.id }}" class="d-inline">
+            <button type="submit" class="btn btn-outline-primary"><i class="bi bi-arrow-clockwise"></i> Scan</button>
+        </form>
+        {% if guest.pending_updates()|length > 0 %}
+        <form method="post" action="/api/apply/{{ guest.id }}" class="d-inline" onsubmit="return confirm('Apply all updates?')">
+            <button type="submit" class="btn btn-warning"><i class="bi bi-download"></i> Apply All Updates</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/guests/{{ guest.id }}/delete" class="d-inline" onsubmit="return confirm('Delete this guest?')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+        </form>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card bg-dark">
+            <div class="card-header"><h5 class="mb-0">Guest Info</h5></div>
+            <div class="card-body">
+                <table class="table table-dark table-sm mb-0">
+                    <tr><td class="text-muted" style="width:40%">IP Address</td><td>{{ guest.ip_address or 'Not set' }}</td></tr>
+                    <tr><td class="text-muted">VMID</td><td>{{ guest.vmid or 'N/A' }}</td></tr>
+                    <tr><td class="text-muted">Host</td><td>{{ guest.proxmox_host.name if guest.proxmox_host else 'Standalone' }}</td></tr>
+                    <tr><td class="text-muted">Connection</td><td>{{ guest.connection_method }}</td></tr>
+                    <tr><td class="text-muted">Credential</td><td>{{ guest.credential.name if guest.credential else 'Default' }}</td></tr>
+                    <tr><td class="text-muted">Auto-Update</td><td>{{ 'Enabled' if guest.auto_update else 'Disabled' }}</td></tr>
+                    <tr><td class="text-muted">Last Scan</td><td>{{ guest.last_scan.strftime('%Y-%m-%d %H:%M:%S') if guest.last_scan else 'Never' }}</td></tr>
+                    <tr>
+                        <td class="text-muted">Tags</td>
+                        <td>
+                            {% for tag in guest.tags %}
+                            <span class="badge" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
+                            {% else %}
+                            <span class="text-muted">None</span>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-dark">
+            <div class="card-header"><h5 class="mb-0">Edit Guest</h5></div>
+            <div class="card-body">
+                <form method="post" action="/guests/{{ guest.id }}/edit">
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">IP Address</label>
+                        <input type="text" class="form-control form-control-sm" name="ip_address" value="{{ guest.ip_address or '' }}">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">Connection Method</label>
+                        <select class="form-select form-select-sm" name="connection_method">
+                            <option value="ssh" {{ 'selected' if guest.connection_method == 'ssh' }}>SSH</option>
+                            <option value="agent" {{ 'selected' if guest.connection_method == 'agent' }}>QEMU Agent</option>
+                            <option value="auto" {{ 'selected' if guest.connection_method == 'auto' }}>Auto</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">Credential</label>
+                        <select class="form-select form-select-sm" name="credential_id">
+                            <option value="">Use default</option>
+                            {% for cred in credentials %}
+                            <option value="{{ cred.id }}" {{ 'selected' if guest.credential_id == cred.id }}>{{ cred.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" name="auto_update" id="autoUpdate" {{ 'checked' if guest.auto_update }}>
+                        <label class="form-check-label" for="autoUpdate">Enable Auto-Update</label>
+                    </div>
+                    {% if current_user.is_admin %}
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">Tags</label>
+                        {% set guest_tag_ids = guest.tags | map(attribute='id') | list %}
+                        {% for tag in tags %}
+                        <div class="form-check form-check-inline">
+                            <input type="checkbox" class="form-check-input" name="tag_ids" value="{{ tag.id }}" {{ 'checked' if tag.id in guest_tag_ids }}>
+                            <label class="form-check-label"><span class="badge" style="background-color: {{ tag.color }};">{{ tag.name }}</span></label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <button type="submit" class="btn btn-sm btn-primary">Save Changes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card bg-dark">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-box-seam"></i> Pending Updates ({{ guest.pending_updates()|length }})</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Package</th>
+                        <th>Current Version</th>
+                        <th>Available Version</th>
+                        <th>Severity</th>
+                        <th>Discovered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pkg in guest.pending_updates() %}
+                    <tr>
+                        <td>{{ pkg.package_name }}</td>
+                        <td><code>{{ pkg.current_version }}</code></td>
+                        <td><code>{{ pkg.available_version }}</code></td>
+                        <td>
+                            <span class="badge badge-{{ pkg.severity }}">{{ pkg.severity }}</span>
+                        </td>
+                        <td>{{ pkg.discovered_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-3">No pending updates</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

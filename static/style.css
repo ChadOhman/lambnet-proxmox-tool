@@ -1,0 +1,93 @@
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+.card {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-card {
+    transition: transform 0.15s ease-in-out;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+}
+
+.stat-card .stat-number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.stat-card .stat-label {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.8;
+}
+
+.severity-critical {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+.severity-important {
+    color: #ffc107;
+}
+
+.severity-normal {
+    color: #6c757d;
+}
+
+.badge-critical {
+    background-color: #dc3545 !important;
+}
+
+.badge-important {
+    background-color: #ffc107 !important;
+    color: #000 !important;
+}
+
+.badge-normal {
+    background-color: #6c757d !important;
+}
+
+.status-up-to-date {
+    color: #198754;
+}
+
+.status-updates-available {
+    color: #ffc107;
+}
+
+.status-error {
+    color: #dc3545;
+}
+
+.status-unknown {
+    color: #6c757d;
+}
+
+.htmx-indicator {
+    display: none;
+}
+
+.htmx-request .htmx-indicator {
+    display: inline-block;
+}
+
+.spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+}
+
+.table > :not(caption) > * > * {
+    vertical-align: middle;
+}

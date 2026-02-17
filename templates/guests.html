@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}Guests - LambNet Update Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-pc-display"></i> Managed Guests</h2>
+    <div>
+        <form method="post" action="/api/scan-all" class="d-inline">
+            <button type="submit" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-clockwise"></i> Scan All
+            </button>
+        </form>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addGuestModal">
+            <i class="bi bi-plus-lg"></i> Add Guest
+        </button>
+    </div>
+</div>
+
+<div class="card bg-dark">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>VMID</th>
+                        <th>IP Address</th>
+                        <th>Host</th>
+                        <th>Connection</th>
+                        <th>Updates</th>
+                        <th>Security</th>
+                        <th>Auto-Update</th>
+                        <th>Last Scan</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for guest in guests %}
+                    <tr>
+                        <td>
+                            {% if guest.status == 'up-to-date' %}
+                            <span class="text-success" title="Up to date"><i class="bi bi-check-circle-fill"></i></span>
+                            {% elif guest.status == 'updates-available' %}
+                            <span class="text-warning" title="Updates available"><i class="bi bi-exclamation-circle-fill"></i></span>
+                            {% elif guest.status == 'error' %}
+                            <span class="text-danger" title="Error"><i class="bi bi-x-circle-fill"></i></span>
+                            {% else %}
+                            <span class="text-muted" title="Unknown"><i class="bi bi-question-circle-fill"></i></span>
+                            {% endif %}
+                        </td>
+                        <td><a href="/guests/{{ guest.id }}" class="text-light text-decoration-none">{{ guest.name }}</a></td>
+                        <td>
+                            <span class="badge bg-{{ 'primary' if guest.guest_type == 'vm' else 'success' }}">
+                                {{ guest.guest_type|upper }}
+                            </span>
+                        </td>
+                        <td>{{ guest.vmid or '-' }}</td>
+                        <td>{{ guest.ip_address or '-' }}</td>
+                        <td>{{ guest.proxmox_host.name if guest.proxmox_host else '-' }}</td>
+                        <td><span class="badge bg-secondary">{{ guest.connection_method }}</span></td>
+                        <td>{{ guest.pending_updates()|length }}</td>
+                        <td>
+                            {% set sec = guest.security_updates()|length %}
+                            {% if sec > 0 %}
+                            <span class="badge badge-critical">{{ sec }}</span>
+                            {% else %}
+                            0
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if guest.auto_update %}
+                            <span class="text-success"><i class="bi bi-check-lg"></i></span>
+                            {% else %}
+                            <span class="text-muted"><i class="bi bi-dash"></i></span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if guest.last_scan %}
+                            {{ guest.last_scan.strftime('%m/%d %H:%M') }}
+                            {% else %}
+                            <span class="text-muted">Never</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="/guests/{{ guest.id }}" class="btn btn-outline-light" title="View">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <form method="post" action="/api/scan/{{ guest.id }}" class="d-inline">
+                                    <button type="submit" class="btn btn-outline-primary" title="Scan">
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    </button>
+                                </form>
+                                {% if guest.pending_updates()|length > 0 %}
+                                <form method="post" action="/api/apply/{{ guest.id }}" class="d-inline" onsubmit="return confirm('Apply all updates to {{ guest.name }}?')">
+                                    <button type="submit" class="btn btn-outline-warning" title="Apply Updates">
+                                        <i class="bi bi-download"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="12" class="text-center text-muted py-4">
+                            No guests configured. <a href="/hosts">Add a Proxmox host</a> and discover guests, or add one manually.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Guest Modal -->
+<div class="modal fade" id="addGuestModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <form method="post" action="/guests/add">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title">Add Guest Manually</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" name="name" required placeholder="e.g. web-server-01">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type</label>
+                        <select class="form-select" name="guest_type">
+                            <option value="vm">Virtual Machine (VM)</option>
+                            <option value="ct">Container (CT)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">IP Address</label>
+                        <input type="text" class="form-control" name="ip_address" required placeholder="e.g. 192.168.1.100">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Proxmox Host (optional)</label>
+                        <select class="form-select" name="proxmox_host_id">
+                            <option value="">None (standalone)</option>
+                            {% for host in hosts %}
+                            <option value="{{ host.id }}">{{ host.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">VMID (optional)</label>
+                        <input type="number" class="form-control" name="vmid" placeholder="e.g. 100">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Connection Method</label>
+                        <select class="form-select" name="connection_method">
+                            <option value="ssh">SSH</option>
+                            <option value="agent">QEMU Guest Agent</option>
+                            <option value="auto">Auto (try both)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Credential</label>
+                        <select class="form-select" name="credential_id">
+                            <option value="">Use default</option>
+                            {% for cred in credentials %}
+                            <option value="{{ cred.id }}">{{ cred.name }} ({{ cred.username }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Guest</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

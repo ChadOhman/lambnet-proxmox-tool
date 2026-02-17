@@ -1,0 +1,29 @@
+<tr id="guest-{{ guest.id }}">
+    <td>
+        {% if guest.status == 'up-to-date' %}
+        <span class="text-success"><i class="bi bi-check-circle-fill"></i></span>
+        {% elif guest.status == 'updates-available' %}
+        <span class="text-warning"><i class="bi bi-exclamation-circle-fill"></i></span>
+        {% elif guest.status == 'error' %}
+        <span class="text-danger"><i class="bi bi-x-circle-fill"></i></span>
+        {% else %}
+        <span class="text-muted"><i class="bi bi-question-circle-fill"></i></span>
+        {% endif %}
+    </td>
+    <td><a href="/guests/{{ guest.id }}" class="text-light text-decoration-none">{{ guest.name }}</a></td>
+    <td><span class="badge bg-{{ 'primary' if guest.guest_type == 'vm' else 'success' }}">{{ guest.guest_type|upper }}</span></td>
+    <td>{{ guest.pending_updates()|length }}</td>
+    <td>
+        {% set sec = guest.security_updates()|length %}
+        {% if sec > 0 %}
+        <span class="badge badge-critical">{{ sec }}</span>
+        {% else %}0{% endif %}
+    </td>
+    <td>
+        {% if guest.last_scan %}
+        {{ guest.last_scan.strftime('%m/%d %H:%M') }}
+        {% else %}
+        <span class="text-muted">Never</span>
+        {% endif %}
+    </td>
+</tr>

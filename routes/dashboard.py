@@ -1,0 +1,45 @@
+from flask import Blueprint, render_template
+from flask_login import login_required, current_user
+from models import db, ProxmoxHost, Guest, UpdatePackage, ScanResult
+
+bp = Blueprint("dashboard", __name__)
+
+
+@bp.route("/")
+@login_required
+def index():
+    if current_user.is_admin:
+        total_guests = Guest.query.filter_by(enabled=True).count()
+        guests_with_updates = (
+            Guest.query.filter_by(enabled=True)
+            .filter(Guest.status == "updates-available")
+            .all()
+        )
+    else:
+        accessible = current_user.accessible_guests()
+        total_guests = len(accessible)
+        guests_with_updates = [g for g in accessible if g.status == "updates-available"]
+
+    total_hosts = ProxmoxHost.query.count()
+    total_updates = UpdatePackage.query.filter_by(status="pending").count()
+    security_updates = UpdatePackage.query.filter_by(status="pending", severity="critical").count()
+
+    stats = {
+        "total_hosts": total_hosts,
+        "total_guests": total_guests,
+        "total_updates": total_updates,
+        "security_updates": security_updates,
+    }
+
+    recent_scans = (
+        ScanResult.query.order_by(ScanResult.scanned_at.desc())
+        .limit(20)
+        .all()
+    )
+
+    return render_template(
+        "dashboard.html",
+        stats=stats,
+        guests_with_updates=guests_with_updates,
+        recent_scans=recent_scans,
+    )

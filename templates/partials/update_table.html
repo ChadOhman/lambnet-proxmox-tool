@@ -1,0 +1,26 @@
+<div class="table-responsive">
+    <table class="table table-dark table-hover table-sm mb-0">
+        <thead>
+            <tr>
+                <th>Package</th>
+                <th>Current</th>
+                <th>Available</th>
+                <th>Severity</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pkg in packages %}
+            <tr>
+                <td>{{ pkg.package_name }}</td>
+                <td><code>{{ pkg.current_version }}</code></td>
+                <td><code>{{ pkg.available_version }}</code></td>
+                <td><span class="badge badge-{{ pkg.severity }}">{{ pkg.severity }}</span></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" class="text-center text-muted">No updates</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

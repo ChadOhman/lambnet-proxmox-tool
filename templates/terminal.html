@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Terminal - LambNet Update Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-terminal"></i> SSH Terminal</h2>
+</div>
+
+<div class="row g-4">
+    {% for guest in guests %}
+    <div class="col-md-4 col-lg-3">
+        <div class="card bg-dark">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h6 class="mb-0">{{ guest.name }}</h6>
+                    <span class="badge bg-{{ 'primary' if guest.guest_type == 'vm' else 'success' }}">{{ guest.guest_type|upper }}</span>
+                </div>
+                <p class="text-muted mb-2"><small>{{ guest.ip_address }}</small></p>
+                {% for tag in guest.tags %}
+                <span class="badge" style="background-color: {{ tag.color }}; font-size: 0.7rem;">{{ tag.name }}</span>
+                {% endfor %}
+                <div class="mt-3">
+                    <a href="/terminal/{{ guest.id }}" class="btn btn-sm btn-outline-success w-100">
+                        <i class="bi bi-terminal"></i> Connect
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-terminal" style="font-size: 3rem;"></i>
+                <h4 class="mt-3">No Accessible Guests</h4>
+                <p class="text-muted">
+                    {% if current_user.is_admin %}
+                    Add guests with IP addresses to use the SSH terminal.
+                    {% else %}
+                    Ask an administrator to assign you tags for guest access.
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

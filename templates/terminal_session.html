@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}{{ guest.name }} - Terminal{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/terminal">Terminal</a></li>
+        <li class="breadcrumb-item active">{{ guest.name }}</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">
+            <i class="bi bi-terminal"></i> {{ guest.name }}
+            <small class="text-muted">({{ guest.ip_address }})</small>
+        </h4>
+    </div>
+    <div>
+        <span id="connStatus" class="badge bg-warning">Connecting...</span>
+        <button id="btnDisconnect" class="btn btn-sm btn-outline-danger ms-2" onclick="disconnect()">
+            <i class="bi bi-x-lg"></i> Disconnect
+        </button>
+    </div>
+</div>
+
+<div id="terminal-container" style="background: #000; border-radius: 8px; padding: 4px; min-height: 500px;"></div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
+<script>
+(function() {
+    const term = new Terminal({
+        cursorBlink: true,
+        fontSize: 14,
+        fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", monospace',
+        theme: {
+            background: '#0d1117',
+            foreground: '#c9d1d9',
+            cursor: '#58a6ff',
+            selectionBackground: '#264f78',
+            black: '#0d1117',
+            red: '#ff7b72',
+            green: '#7ee787',
+            yellow: '#d29922',
+            blue: '#58a6ff',
+            magenta: '#bc8cff',
+            cyan: '#39c5cf',
+            white: '#c9d1d9',
+        }
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    const webLinksAddon = new WebLinksAddon.WebLinksAddon();
+
+    term.loadAddon(fitAddon);
+    term.loadAddon(webLinksAddon);
+    term.open(document.getElementById('terminal-container'));
+    fitAddon.fit();
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/terminal/{{ guest.id }}`;
+    let ws = null;
+
+    function connect() {
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = function() {
+            term.writeln('\x1b[33mConnecting to {{ guest.name }} ({{ guest.ip_address }})...\x1b[0m');
+            // Send initial terminal size
+            ws.send(JSON.stringify({type: 'resize', cols: term.cols, rows: term.rows}));
+        };
+
+        ws.onmessage = function(event) {
+            const msg = JSON.parse(event.data);
+            switch (msg.type) {
+                case 'connected':
+                    document.getElementById('connStatus').className = 'badge bg-success';
+                    document.getElementById('connStatus').textContent = 'Connected';
+                    break;
+                case 'output':
+                    term.write(msg.data);
+                    break;
+                case 'error':
+                    term.writeln('\x1b[31m' + msg.data + '\x1b[0m');
+                    document.getElementById('connStatus').className = 'badge bg-danger';
+                    document.getElementById('connStatus').textContent = 'Error';
+                    break;
+                case 'disconnected':
+                    term.writeln('\r\n\x1b[33m' + msg.data + '\x1b[0m');
+                    document.getElementById('connStatus').className = 'badge bg-secondary';
+                    document.getElementById('connStatus').textContent = 'Disconnected';
+                    break;
+            }
+        };
+
+        ws.onclose = function() {
+            document.getElementById('connStatus').className = 'badge bg-secondary';
+            document.getElementById('connStatus').textContent = 'Disconnected';
+            term.writeln('\r\n\x1b[33mConnection closed.\x1b[0m');
+        };
+
+        ws.onerror = function() {
+            document.getElementById('connStatus').className = 'badge bg-danger';
+            document.getElementById('connStatus').textContent = 'Error';
+        };
+    }
+
+    // Send keystrokes to server
+    term.onData(function(data) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({type: 'input', data: data}));
+        }
+    });
+
+    // Handle terminal resize
+    window.addEventListener('resize', function() {
+        fitAddon.fit();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({type: 'resize', cols: term.cols, rows: term.rows}));
+        }
+    });
+
+    window.disconnect = function() {
+        if (ws) {
+            ws.close();
+        }
+    };
+
+    connect();
+})();
+</script>
+{% endblock %}
