@@ -207,6 +207,48 @@ Background Services (APScheduler)
 └── Email notifier ─── Gmail SMTP alerts
 ```
 
+## Requirements
+
+### System Dependencies
+
+Installed automatically by `setup.sh`:
+
+- **Python 3.11+** with `pip` and `venv`
+- **git** (for cloning and self-update)
+- **curl** (for template downloads)
+- **Debian 12** or **Ubuntu 22.04+** (LXC container or VM)
+
+### Python Dependencies
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| Flask | 3.1.0 | Web framework |
+| Flask-SQLAlchemy | 3.1.1 | Database ORM integration |
+| Flask-Login | 0.6.3 | Session-based authentication |
+| flask-sock | 0.7.0 | WebSocket support for SSH terminal |
+| SQLAlchemy | 2.0.36 | Database ORM |
+| proxmoxer | 2.1.0 | Proxmox API client |
+| requests | 2.32.3 | HTTP client (used by proxmoxer) |
+| paramiko | 3.5.0 | SSH client for remote command execution |
+| cryptography | 44.0.0 | Fernet encryption for stored credentials |
+| APScheduler | 3.10.4 | Background job scheduling |
+| Werkzeug | 3.1.3 | WSGI utilities |
+| PyJWT[crypto] | 2.10.1 | JWT validation for Cloudflare Access |
+| gunicorn | 23.0.0 | Production WSGI server |
+| gevent | latest | Async worker for WebSocket support |
+| gevent-websocket | latest | WebSocket protocol for gunicorn |
+
+### Frontend (CDN, no install needed)
+
+- **Bootstrap 5.3.3** — UI framework (dark theme)
+- **Bootstrap Icons 1.11.3** — Icon set
+- **htmx 2.0.4** — Dynamic HTML updates
+- **xterm.js** — Terminal emulator for web SSH
+
+### Optional
+
+- **cloudflared** — Cloudflare Tunnel agent for Zero Trust access (install with `setup.sh --cloudflared`)
+
 ## Tech Stack
 
 - **Backend:** Python 3.11+, Flask, SQLAlchemy, APScheduler
@@ -214,11 +256,12 @@ Background Services (APScheduler)
 - **Database:** SQLite
 - **Connections:** proxmoxer (Proxmox API), paramiko (SSH)
 - **Security:** Fernet encryption, PyJWT (Cloudflare Access)
+- **Production server:** gunicorn with gevent-websocket worker
 
 ## File Layout
 
 ```
-/opt/lambnet/          # Application code
+/opt/lambnet/          # Application code + Python venv
 /var/lib/lambnet/      # SQLite database + backups
 /etc/lambnet/          # Encryption keys (secret.key, flask_secret)
 ```
