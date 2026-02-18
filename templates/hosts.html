@@ -49,7 +49,7 @@
                 <p class="mb-1"><strong>Hostname:</strong> {{ host.hostname }}:{{ host.port }}</p>
                 <p class="mb-1"><strong>Auth:</strong> {{ host.auth_type }}</p>
                 <p class="mb-1"><strong>SSL Verify:</strong> {{ 'Yes' if host.verify_ssl else 'No' }}</p>
-                <p class="mb-0"><strong>Guests:</strong> {{ host.guests|length }}</p>
+                <p class="mb-0"><strong>Guests:</strong> {{ host.guests|selectattr('enabled')|list|length }}</p>
             </div>
         </div>
     </div>

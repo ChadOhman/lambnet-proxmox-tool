@@ -89,6 +89,19 @@ def discover(host_id):
         # Fetch replication info (VMID -> target node)
         repl_map = client.get_replication_map()
 
+        # Clean up duplicates: remove guests on THIS host whose VMID
+        # is not actually present on this node (leftover from cluster-wide discovery)
+        node_vmids = {g.get("vmid") for g in node_guests}
+        stale = Guest.query.filter(
+            Guest.proxmox_host_id == host.id,
+            Guest.vmid.isnot(None),
+            ~Guest.vmid.in_(node_vmids),
+        ).all()
+        removed = 0
+        for s in stale:
+            db.session.delete(s)
+            removed += 1
+
         added = 0
         updated = 0
         skipped = 0
@@ -167,6 +180,8 @@ def discover(host_id):
             msg = f"Discovered {len(node_guests)} guests on '{host.name}' node '{node_name}' ({added} new, {updated} updated)"
             if skipped:
                 msg += f", {skipped} replicas skipped"
+            if removed:
+                msg += f", {removed} stale removed"
             flash(msg + ".", "success")
     except Exception as e:
         flash(f"Discovery failed for '{host.name}': {e}", "error")
