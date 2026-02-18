@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git -C \"c:/Users/ChadOhman/Documents/GitHub/lambnet-proxmox-tool/lambnet-proxmox-tool\" ls-files:*)"
     ],
     "additionalDirectories": [
       "\\tmp"

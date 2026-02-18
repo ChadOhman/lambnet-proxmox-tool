@@ -85,7 +85,7 @@ if [ -z "$TEMPLATE" ]; then
         echo "  Using existing template: $TEMPLATE"
     else
         echo "  Updating template list..."
-        pveam update > /dev/null 2>&1
+        pveam update
 
         # Find latest Debian 12 template
         TEMPLATE_NAME=$(pveam available --section system 2>/dev/null | grep "debian-12-standard" | tail -1 | awk '{print $2}')
@@ -95,7 +95,10 @@ if [ -z "$TEMPLATE" ]; then
         fi
 
         echo "  Downloading $TEMPLATE_NAME..."
-        pveam download "$TEMPLATE_STORAGE" "$TEMPLATE_NAME" > /dev/null 2>&1
+        if ! pveam download "$TEMPLATE_STORAGE" "$TEMPLATE_NAME"; then
+            echo "ERROR: Failed to download template. Check network connectivity and storage."
+            exit 1
+        fi
         TEMPLATE="${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE_NAME}"
         echo "  Template ready: $TEMPLATE"
     fi
