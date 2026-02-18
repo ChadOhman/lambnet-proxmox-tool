@@ -21,6 +21,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Log all output to file for web UI progress tracking
+LOG_FILE="$DATA_DIR/update.log"
+mkdir -p "$DATA_DIR"
+echo "" > "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 echo "============================================"
 echo " Mastodon Canada Administration Tool - Updating..."
 echo "============================================"

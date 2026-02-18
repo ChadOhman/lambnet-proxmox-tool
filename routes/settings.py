@@ -1,9 +1,10 @@
+import os
 import subprocess
-from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
 from models import db, Setting
 from credential_store import encrypt
-from config import BASE_DIR
+from config import BASE_DIR, DATA_DIR
 
 bp = Blueprint("settings", __name__)
 
@@ -256,20 +257,63 @@ def check_update():
 
 @bp.route("/apply-update", methods=["POST"])
 def apply_update():
-    import os
     update_script = os.path.join(BASE_DIR, "update.sh")
-    if os.path.exists(update_script):
-        try:
-            update_branch = Setting.get("app_update_branch", "")
-            cmd = ["bash", update_script]
-            if update_branch:
-                cmd += ["--branch", update_branch]
-            subprocess.Popen(cmd, cwd=BASE_DIR)
-            branch_msg = f" from branch '{update_branch}'" if update_branch else ""
-            flash(f"Update started{branch_msg}. The application will restart shortly.", "info")
-        except Exception as e:
-            flash(f"Update failed: {e}", "error")
-    else:
+    if not os.path.exists(update_script):
         flash("Update script not found.", "error")
+        return redirect(url_for("settings.index"))
 
-    return redirect(url_for("settings.index"))
+    try:
+        update_branch = Setting.get("app_update_branch", "")
+        cmd = ["bash", update_script]
+        if update_branch:
+            cmd += ["--branch", update_branch]
+
+        proc = subprocess.Popen(cmd, cwd=BASE_DIR)
+
+        # Write PID marker so we can track the process
+        pid_file = os.path.join(DATA_DIR, "update.pid")
+        with open(pid_file, "w") as f:
+            f.write(str(proc.pid))
+
+    except Exception as e:
+        flash(f"Update failed to start: {e}", "error")
+        return redirect(url_for("settings.index"))
+
+    return redirect(url_for("settings.update_progress"))
+
+
+@bp.route("/update-progress")
+def update_progress():
+    return render_template("update_progress.html")
+
+
+@bp.route("/update-status")
+def update_status():
+    log_file = os.path.join(DATA_DIR, "update.log")
+    pid_file = os.path.join(DATA_DIR, "update.pid")
+
+    # Read log contents
+    log_text = ""
+    if os.path.exists(log_file):
+        try:
+            with open(log_file, "r") as f:
+                log_text = f.read()
+        except Exception:
+            log_text = ""
+
+    # Check if process is still running
+    running = False
+    if os.path.exists(pid_file):
+        try:
+            with open(pid_file, "r") as f:
+                pid = int(f.read().strip())
+            os.kill(pid, 0)  # signal 0 = check if process exists
+            running = True
+        except (ProcessLookupError, ValueError, PermissionError):
+            running = False
+
+    return jsonify({
+        "log": log_text,
+        "running": running,
+        "line_count": log_text.count("\n"),
+    })
