@@ -260,6 +260,10 @@ def check_update():
                 data = json.loads(resp.read().decode())
                 sha = data.get("commit", {}).get("sha", "")[:8]
                 message = data.get("commit", {}).get("commit", {}).get("message", "").split("\n")[0]
+                current_commit = current_app.config.get("GIT_COMMIT", "")
+                if current_commit and sha == current_commit:
+                    flash(f"Already up to date on branch '{update_branch}' ({sha}).", "success")
+                    return redirect(url_for("settings.index"))
                 settings = _get_settings_dict()
                 return render_template(
                     "settings.html", settings=settings,
