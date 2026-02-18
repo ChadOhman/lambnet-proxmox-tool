@@ -1,6 +1,6 @@
-# LambNet Proxmox Update Manager
+# Mastodon Canada Administration Tool
 
-A datacenter-wide update management tool for Proxmox environments. Runs as an LXC container and provides a web interface for managing APT updates across all your Proxmox hosts, VMs, and CTs.
+A datacenter-wide administration tool for Proxmox environments. Runs as an LXC container and provides a web interface for managing APT updates, UniFi network devices, and Mastodon upgrades across all your Proxmox hosts, VMs, and CTs.
 
 ## Features
 
@@ -172,7 +172,7 @@ Enable **automatic upgrades** to have this run whenever a new release is detecte
 
 ### Roles
 
-LambNet uses a 4-tier role system:
+MCAT uses a 4-tier role system:
 
 | Role | Level | Capabilities |
 |------|-------|-------------|
@@ -200,7 +200,7 @@ Admins and super admins can manage users under **Users**:
 
 ## Cloudflare Zero Trust
 
-For secure external access without a VPN. LambNet validates Cloudflare Access JWTs — it doesn't matter where `cloudflared` runs.
+For secure external access without a VPN. MCAT validates Cloudflare Access JWTs — it doesn't matter where `cloudflared` runs.
 
 ### Using an Existing Tunnel
 
@@ -208,20 +208,20 @@ If you already have `cloudflared` running on another CT, VM, or your Proxmox hos
 
 1. Open the **Cloudflare Zero Trust dashboard** > Networks > Tunnels
 2. Select your existing tunnel and click **Configure**
-3. Add a **Public Hostname** entry pointing to `http://<LambNet-CT-IP>:5000`
+3. Add a **Public Hostname** entry pointing to `http://<MCAT-CT-IP>:5000`
 4. Go to **Access > Applications**, create an application for the hostname
 5. Copy the **Application Audience (AUD)** tag
-6. In LambNet, go to **Settings > Cloudflare Zero Trust**, enter your team domain and AUD tag, and enable
+6. In MCAT, go to **Settings > Cloudflare Zero Trust**, enter your team domain and AUD tag, and enable
 
 ### Creating a New Tunnel
 
 If you don't have a tunnel yet:
 
-1. Run `bash setup.sh --cloudflared` inside the LambNet CT to install cloudflared
+1. Run `bash setup.sh --cloudflared` inside the MCAT CT to install cloudflared
 2. `cloudflared tunnel login` and `cloudflared tunnel create lambnet`
 3. Configure the tunnel to route to `http://localhost:5000`
 4. Create an Access Application in the Zero Trust dashboard
-5. Enter the team domain and AUD tag in LambNet settings
+5. Enter the team domain and AUD tag in MCAT settings
 
 ### Options
 

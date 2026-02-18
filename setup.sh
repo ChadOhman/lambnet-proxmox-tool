@@ -2,10 +2,11 @@
 set -e
 
 # ============================================================
-# LambNet Proxmox Update Manager - CT Setup Script
+# Mastodon Canada Administration Tool - CT Setup Script
 # Run this inside a fresh Debian/Ubuntu LXC container
-# Usage: bash setup.sh [--cloudflared]
-#   --cloudflared  Also install cloudflared for CF Zero Trust tunnel
+# Usage: bash setup.sh [--version <TAG>] [--cloudflared]
+#   --version <TAG>  Checkout a specific version tag (default: main branch)
+#   --cloudflared    Also install cloudflared for CF Zero Trust tunnel
 # ============================================================
 
 APP_NAME="lambnet-update-manager"
@@ -15,18 +16,27 @@ SECRET_DIR="/etc/lambnet"
 SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
 REPO_URL="https://github.com/ChadOhman/lambnet-proxmox-tool.git"
 INSTALL_CLOUDFLARED=false
+TARGET_VERSION=""
 
 # Parse arguments
-for arg in "$@"; do
-    case $arg in
+while [[ $# -gt 0 ]]; do
+    case $1 in
         --cloudflared)
             INSTALL_CLOUDFLARED=true
+            shift
+            ;;
+        --version)
+            TARGET_VERSION="$2"
+            shift 2
+            ;;
+        *)
+            shift
             ;;
     esac
 done
 
 echo "============================================"
-echo " LambNet Proxmox Update Manager - Setup"
+echo " Mastodon Canada Administration Tool - Setup"
 echo "============================================"
 echo ""
 
@@ -67,6 +77,7 @@ echo "[2/$TOTAL_STEPS] Setting up application directory..."
 if [ -d "$APP_DIR" ] && [ -d "$APP_DIR/.git" ]; then
     echo "  Directory $APP_DIR already exists with git. Updating..."
     cd "$APP_DIR"
+    git fetch --quiet --tags
     git pull --quiet
 elif [ -d "$APP_DIR" ] && [ ! -d "$APP_DIR/.git" ]; then
     echo "  Directory $APP_DIR exists but has no git repo. Re-cloning..."
@@ -77,6 +88,14 @@ else
     git clone --quiet "$REPO_URL" "$APP_DIR"
 fi
 cd "$APP_DIR"
+
+# Checkout specific version if requested, otherwise stay on main
+if [ -n "$TARGET_VERSION" ]; then
+    echo "  Checking out version $TARGET_VERSION..."
+    git checkout --quiet "$TARGET_VERSION"
+else
+    git checkout --quiet main
+fi
 echo "  Done."
 
 echo ""
@@ -133,7 +152,7 @@ echo ""
 echo "[7/$TOTAL_STEPS] Creating systemd service..."
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=LambNet Proxmox Update Manager
+Description=Mastodon Canada Administration Tool
 After=network.target
 
 [Service]

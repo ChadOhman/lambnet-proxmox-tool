@@ -5,7 +5,7 @@ When enabled, validates the Cf-Access-Jwt-Assertion header on every request.
 Users are auto-provisioned from the CF Access JWT identity (email claim).
 
 Setup:
-1. Create a Cloudflare Access application for your LambNet domain
+1. Create a Cloudflare Access application for your app domain
 2. Configure the audience tag (Application Audience / AUD) in Settings
 3. Set your CF team domain (e.g. "myteam.cloudflareaccess.com")
 4. Enable CF Access auth in Settings
@@ -54,7 +54,7 @@ def _fetch_jwks(team_domain):
 
     certs_url = f"https://{team_domain}/cdn-cgi/access/certs"
     try:
-        req = Request(certs_url, headers={"User-Agent": "LambNet-Update-Manager"})
+        req = Request(certs_url, headers={"User-Agent": "MCAT"})
         with urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
             public_keys = data.get("public_certs", [])

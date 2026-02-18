@@ -100,7 +100,7 @@ def _check_mastodon_release(app):
 
 
 def _check_app_update(app):
-    """Check for new LambNet releases and optionally auto-update."""
+    """Check for new app releases and optionally auto-update."""
     with app.app_context():
         from models import Setting
         import urllib.request
@@ -119,7 +119,7 @@ def _check_app_update(app):
 
         try:
             url = f"https://api.github.com/repos/{repo}/releases/latest"
-            req = urllib.request.Request(url, headers={"User-Agent": "LambNet-Update-Manager"})
+            req = urllib.request.Request(url, headers={"User-Agent": "MCAT"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
                 latest = data.get("tag_name", "").lstrip("v")
@@ -127,7 +127,7 @@ def _check_app_update(app):
                 if not latest or latest == current_version:
                     return
 
-                logger.info(f"New LambNet version available: v{current_version} -> v{latest}")
+                logger.info(f"New app version available: v{current_version} -> v{latest}")
 
                 # Send email notification if configured
                 from notifier import send_app_update_notification
@@ -193,7 +193,7 @@ def init_scheduler(app):
         trigger=IntervalTrigger(hours=6),
         args=[app],
         id="app_update_check",
-        name="Check for LambNet updates",
+        name="Check for app updates",
         replace_existing=True,
     )
 

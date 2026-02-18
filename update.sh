@@ -2,7 +2,7 @@
 set -e
 
 # ============================================================
-# LambNet Proxmox Update Manager - Self-Update Script
+# Mastodon Canada Administration Tool - Self-Update Script
 # Pulls latest from GitHub, updates deps, restarts service
 # Usage: bash update.sh
 # ============================================================
@@ -13,7 +13,7 @@ DATA_DIR="/var/lib/lambnet"
 BACKUP_DIR="/var/lib/lambnet/backups"
 
 echo "============================================"
-echo " LambNet Update Manager - Updating..."
+echo " Mastodon Canada Administration Tool - Updating..."
 echo "============================================"
 echo ""
 

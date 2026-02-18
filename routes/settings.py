@@ -216,7 +216,7 @@ def check_update():
 
     try:
         url = f"https://api.github.com/repos/{repo}/releases/latest"
-        req = urllib.request.Request(url, headers={"User-Agent": "LambNet-Update-Manager"})
+        req = urllib.request.Request(url, headers={"User-Agent": "MCAT"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
             latest = data.get("tag_name", "").lstrip("v")

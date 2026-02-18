@@ -28,7 +28,7 @@ def check_mastodon_release():
     Returns (update_available, latest_version, release_url).
     """
     try:
-        req = Request(RELEASES_URL, headers={"User-Agent": "LambNet-Update-Manager"})
+        req = Request(RELEASES_URL, headers={"User-Agent": "MCAT"})
         with urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
 

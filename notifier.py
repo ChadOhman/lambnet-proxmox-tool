@@ -41,7 +41,7 @@ def _send_email(subject, html_body):
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = f"LambNet Update Manager <{config['address']}>"
+    msg["From"] = f"Mastodon Canada Administration Tool <{config['address']}>"
     msg["To"] = ", ".join(config["recipients"])
 
     msg.attach(MIMEText(html_body, "html"))
@@ -63,13 +63,13 @@ def send_test_email():
     html = """
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background: #1a1a2e; color: #e0e0e0; padding: 20px; border-radius: 8px;">
-            <h2 style="color: #4fc3f7; margin-top: 0;">LambNet Update Manager</h2>
-            <p>This is a test email from your LambNet Proxmox Update Manager.</p>
+            <h2 style="color: #4fc3f7; margin-top: 0;">Mastodon Canada Administration Tool</h2>
+            <p>This is a test email from your Mastodon Canada Administration Tool.</p>
             <p style="color: #81c784;">Email notifications are working correctly!</p>
         </div>
     </div>
     """
-    return _send_email("LambNet Update Manager - Test Notification", html)
+    return _send_email("Mastodon Canada Administration Tool - Test Notification", html)
 
 
 def send_update_notification(scan_results):
@@ -117,7 +117,7 @@ def send_update_notification(scan_results):
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
         <div style="background: #1a1a2e; color: #e0e0e0; padding: 20px; border-radius: 8px;">
-            <h2 style="color: #4fc3f7; margin-top: 0;">LambNet Update Manager - Updates Available</h2>
+            <h2 style="color: #4fc3f7; margin-top: 0;">Mastodon Canada Administration Tool - Updates Available</h2>
 
             {severity_banner}
 
@@ -138,15 +138,15 @@ def send_update_notification(scan_results):
             </table>
 
             <p style="margin-top: 16px; color: #888; font-size: 12px;">
-                Log in to your LambNet Update Manager to review and apply updates.
+                Log in to your Mastodon Canada Administration Tool to review and apply updates.
             </p>
         </div>
     </div>
     """
 
-    subject = f"[LambNet] {total_updates} update(s) available"
+    subject = f"[MCAT] {total_updates} update(s) available"
     if total_security > 0:
-        subject = f"[LambNet] CRITICAL: {total_security} security update(s) available"
+        subject = f"[MCAT] CRITICAL: {total_security} security update(s) available"
 
     ok, msg = _send_email(subject, html)
     if ok:
@@ -175,17 +175,17 @@ def send_mastodon_update_notification(current_version, new_version, release_url)
                 </table>
             </div>
 
-            <p>A new Mastodon release is available. {"Auto-upgrade is enabled and will run shortly." if _mastodon_auto_enabled() else "Log in to LambNet Update Manager to upgrade."}</p>
+            <p>A new Mastodon release is available. {"Auto-upgrade is enabled and will run shortly." if _mastodon_auto_enabled() else "Log in to Mastodon Canada Administration Tool to upgrade."}</p>
 
             {f'<p><a href="{release_url}" style="color: #4fc3f7;">View release notes on GitHub</a></p>' if release_url else ''}
 
             <p style="margin-top: 16px; color: #888; font-size: 12px;">
-                Sent by LambNet Proxmox Update Manager
+                Sent by Mastodon Canada Administration Tool
             </p>
         </div>
     </div>
     """
-    subject = f"[LambNet] Mastodon update available: v{new_version}"
+    subject = f"[MCAT] Mastodon update available: v{new_version}"
     ok, msg = _send_email(subject, html)
     if ok:
         logger.info(f"Mastodon update notification sent for v{new_version}")
@@ -199,12 +199,12 @@ def _mastodon_auto_enabled():
 
 
 def send_app_update_notification(current_version, new_version):
-    """Send email notification about a new LambNet release."""
+    """Send email notification about a new app release."""
     auto_update = Setting.get("app_auto_update", "false") == "true"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background: #1a1a2e; color: #e0e0e0; padding: 20px; border-radius: 8px;">
-            <h2 style="color: #4fc3f7; margin-top: 0;">LambNet Update Available</h2>
+            <h2 style="color: #4fc3f7; margin-top: 0;">MCAT Update Available</h2>
 
             <div style="background: #16213e; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
                 <table style="width: 100%; border-collapse: collapse;">
@@ -219,15 +219,15 @@ def send_app_update_notification(current_version, new_version):
                 </table>
             </div>
 
-            <p>{"Auto-update is enabled. The application will update and restart shortly." if auto_update else "Log in to LambNet Update Manager and go to Settings to apply the update."}</p>
+            <p>{"Auto-update is enabled. The application will update and restart shortly." if auto_update else "Log in to Mastodon Canada Administration Tool and go to Settings to apply the update."}</p>
 
             <p style="margin-top: 16px; color: #888; font-size: 12px;">
-                Sent by LambNet Proxmox Update Manager
+                Sent by Mastodon Canada Administration Tool
             </p>
         </div>
     </div>
     """
-    subject = f"[LambNet] Application update available: v{new_version}"
+    subject = f"[MCAT] Application update available: v{new_version}"
     ok, msg = _send_email(subject, html)
     if ok:
         logger.info(f"App update notification sent for v{new_version}")

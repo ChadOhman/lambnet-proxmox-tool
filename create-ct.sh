@@ -2,7 +2,7 @@
 set -e
 
 # ============================================================
-# LambNet Proxmox Update Manager - CT Creation Script
+# Mastodon Canada Administration Tool - CT Creation Script
 # Run this on a Proxmox host to create and provision a CT
 #
 # Usage: bash create-ct.sh [OPTIONS]
@@ -17,6 +17,7 @@ set -e
 #   --ip <IP/CIDR>       Static IP (default: dhcp)
 #   --gateway <GW>       Gateway (required if static IP)
 #   --password <PASS>    CT root password (default: random)
+#   --version <TAG>      Install a specific version tag (default: main)
 #   --cloudflared        Also install cloudflared
 # ============================================================
 
@@ -32,6 +33,7 @@ BRIDGE="vmbr0"
 IP="dhcp"
 GATEWAY=""
 CT_ROOT_PASS=""
+TARGET_VERSION=""
 INSTALL_CLOUDFLARED=""
 REPO_URL="https://github.com/ChadOhman/lambnet-proxmox-tool.git"
 
@@ -49,13 +51,14 @@ while [[ $# -gt 0 ]]; do
         --ip) IP="$2"; shift 2 ;;
         --gateway) GATEWAY="$2"; shift 2 ;;
         --password) CT_ROOT_PASS="$2"; shift 2 ;;
+        --version) TARGET_VERSION="$2"; shift 2 ;;
         --cloudflared) INSTALL_CLOUDFLARED="--cloudflared"; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
 
 echo "============================================"
-echo " LambNet Update Manager - CT Provisioning"
+echo " Mastodon Canada Administration Tool - CT Provisioning"
 echo "============================================"
 echo ""
 
@@ -193,14 +196,18 @@ done
 echo "  CT is running."
 
 echo ""
-echo "[4/5] Installing LambNet Update Manager..."
+echo "[4/5] Installing Mastodon Canada Administration Tool..."
 
 # Install git and clone repo
 pct exec "$CTID" -- bash -c "apt-get update -qq && apt-get install -y -qq git curl > /dev/null 2>&1"
 pct exec "$CTID" -- bash -c "git clone --quiet '$REPO_URL' /tmp/lambnet-install"
 
 # Run setup.sh from the cloned repo
-pct exec "$CTID" -- bash -c "cd /tmp/lambnet-install && bash setup.sh $INSTALL_CLOUDFLARED"
+SETUP_ARGS="$INSTALL_CLOUDFLARED"
+if [ -n "$TARGET_VERSION" ]; then
+    SETUP_ARGS="$SETUP_ARGS --version $TARGET_VERSION"
+fi
+pct exec "$CTID" -- bash -c "cd /tmp/lambnet-install && bash setup.sh $SETUP_ARGS"
 
 # Cleanup install temp
 pct exec "$CTID" -- bash -c "rm -rf /tmp/lambnet-install"
@@ -221,7 +228,7 @@ CT_IP=$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}')
 WEB_URL="http://${CT_IP}:5000"
 
 # Write details to CT notes in Proxmox
-NOTES="LambNet Proxmox Update Manager
+NOTES="Mastodon Canada Administration Tool
 ==================================
 CT ID: $CTID
 Hostname: $HOSTNAME

@@ -42,7 +42,7 @@ jobs:
       - name: Generate release notes
         id: notes
         run: |
-          echo "## LambNet Proxmox Update Manager v${{ steps.version.outputs.version }}" > release_notes.md
+          echo "## Mastodon Canada Administration Tool v${{ steps.version.outputs.version }}" > release_notes.md
           echo "" >> release_notes.md
           echo "### Quick Install" >> release_notes.md
           echo "" >> release_notes.md

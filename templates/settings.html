@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Settings - LambNet Update Manager{% endblock %}
+{% block title %}Settings - Mastodon Canada Administration Tool{% endblock %}
 
 {% block content %}
 <h2 class="mb-4"><i class="bi bi-gear"></i> Settings</h2>
@@ -228,7 +228,7 @@
                     <div class="form-check mb-3">
                         <input type="checkbox" class="form-check-input" name="app_auto_update" id="appAutoUpdate" {{ 'checked' if settings.app_auto_update == 'true' }}>
                         <label class="form-check-label" for="appAutoUpdate"><strong>Enable automatic updates</strong></label>
-                        <div class="form-text">When enabled, LambNet will check for new releases every 6 hours and automatically update and restart.</div>
+                        <div class="form-text">When enabled, the app will check for new releases every 6 hours and automatically update and restart.</div>
                     </div>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary btn-sm">Save</button>
