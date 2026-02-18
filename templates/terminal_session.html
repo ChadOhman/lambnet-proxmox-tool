@@ -13,7 +13,7 @@
     <div>
         <h4 class="mb-0">
             <i class="bi bi-terminal"></i> {{ guest.name }}
-            <small class="text-muted">({{ resolved_ip or 'resolving...' }})</small>
+            <small class="text-muted">({{ resolved_ip or 'no IP' }})</small>
         </h4>
     </div>
     <div>
@@ -32,21 +32,23 @@
     </div>
     <div class="card-body">
         <p class="text-muted">No stored credentials found for this guest. Enter SSH credentials to connect.</p>
-        <div class="row g-3">
-            <div class="col-md-4">
-                <label for="sshUsername" class="form-label">Username</label>
-                <input type="text" class="form-control" id="sshUsername" placeholder="root" value="root">
+        <form method="post" action="/terminal/{{ guest.id }}/connect-adhoc">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label for="sshUsername" class="form-label">Username</label>
+                    <input type="text" class="form-control" name="username" id="sshUsername" placeholder="root" value="root">
+                </div>
+                <div class="col-md-4">
+                    <label for="sshPassword" class="form-label">Password</label>
+                    <input type="password" class="form-control" name="password" id="sshPassword" placeholder="Password">
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="bi bi-plug"></i> Connect
+                    </button>
+                </div>
             </div>
-            <div class="col-md-4">
-                <label for="sshPassword" class="form-label">Password</label>
-                <input type="password" class="form-control" id="sshPassword" placeholder="Password">
-            </div>
-            <div class="col-md-4 d-flex align-items-end">
-                <button type="button" class="btn btn-success w-100" onclick="connectWithCredentials()">
-                    <i class="bi bi-plug"></i> Connect
-                </button>
-            </div>
-        </div>
+        </form>
     </div>
 </div>
 {% endif %}
@@ -102,26 +104,13 @@
     const needsCredentials = {{ 'true' if needs_credentials else 'false' }};
     const hasResolvedIp = {{ 'true' if resolved_ip else 'false' }};
 
-    function doConnect(config) {
-        if (ws) {
-            ws.close();
-        }
-
-        document.getElementById('connStatus').className = 'badge bg-warning';
-        document.getElementById('connStatus').textContent = 'Connecting...';
-        term.clear();
-        term.writeln('\x1b[33mConnecting to {{ guest.name }}...\x1b[0m');
-
+    function connect() {
         ws = new WebSocket(wsUrl);
 
         ws.onopen = function() {
-            // Send initial config (credentials + terminal size)
-            const initMsg = Object.assign({}, config || {}, {
-                type: 'init',
-                cols: term.cols,
-                rows: term.rows
-            });
-            ws.send(JSON.stringify(initMsg));
+            term.writeln('\x1b[33mConnecting to {{ guest.name }} ({{ resolved_ip or "..." }})...\x1b[0m');
+            // Send initial terminal size
+            ws.send(JSON.stringify({type: 'resize', cols: term.cols, rows: term.rows}));
         };
 
         ws.onmessage = function(event) {
@@ -130,22 +119,9 @@
                 case 'connected':
                     document.getElementById('connStatus').className = 'badge bg-success';
                     document.getElementById('connStatus').textContent = 'Connected';
-                    // Hide credential form if shown
-                    const credForm = document.getElementById('credentialForm');
-                    if (credForm) credForm.style.display = 'none';
-                    const noIpWarn = document.getElementById('noIpWarning');
-                    if (noIpWarn) noIpWarn.style.display = 'none';
                     break;
                 case 'output':
                     term.write(msg.data);
-                    break;
-                case 'need_credentials':
-                    term.writeln('\x1b[31m' + msg.data + '\x1b[0m');
-                    document.getElementById('connStatus').className = 'badge bg-warning';
-                    document.getElementById('connStatus').textContent = 'Credentials Required';
-                    // Show credential form if hidden
-                    const form = document.getElementById('credentialForm');
-                    if (form) form.style.display = '';
                     break;
                 case 'error':
                     term.writeln('\x1b[31m' + msg.data + '\x1b[0m');
@@ -193,20 +169,10 @@
         }
     };
 
-    window.connectWithCredentials = function() {
-        const username = document.getElementById('sshUsername').value.trim();
-        const password = document.getElementById('sshPassword').value;
-        if (!username) {
-            alert('Username is required.');
-            return;
-        }
-        doConnect({ username: username, password: password });
-    };
-
     // Auto-connect if we have IP and credentials
     if (hasResolvedIp && !needsCredentials) {
-        doConnect({});
-    } else if (hasResolvedIp && needsCredentials) {
+        connect();
+    } else if (needsCredentials) {
         term.writeln('\x1b[33mEnter credentials above to connect.\x1b[0m');
         document.getElementById('connStatus').className = 'badge bg-warning';
         document.getElementById('connStatus').textContent = 'Credentials Required';

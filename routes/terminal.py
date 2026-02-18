@@ -3,7 +3,7 @@ import threading
 import logging
 import paramiko
 import io
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from flask_sock import Sock
 from models import db, Guest, Credential
@@ -22,7 +22,6 @@ def init_websocket(app):
 
 def _resolve_guest_ip(guest):
     """Try to resolve a real IP address for a guest. Returns IP string or None."""
-    # If we already have a valid stored IP, use it
     ip = guest.ip_address
     if ip and ip != "dhcp" and not ip.startswith("dhcp"):
         return ip
@@ -36,7 +35,6 @@ def _resolve_guest_ip(guest):
             if node:
                 resolved_ip = client.get_guest_ip(node, guest.vmid, guest.guest_type)
                 if resolved_ip and resolved_ip != "dhcp":
-                    # Update the stored IP for future use
                     guest.ip_address = resolved_ip
                     db.session.commit()
                     return resolved_ip
@@ -113,6 +111,22 @@ def connect(guest_id):
     return render_template("terminal_session.html", guest=guest, resolved_ip=ip, needs_credentials=needs_credentials)
 
 
+@bp.route("/<int:guest_id>/connect-adhoc", methods=["POST"])
+@login_required
+def connect_adhoc(guest_id):
+    """Store ad-hoc SSH credentials in the session and redirect to the terminal."""
+    guest = Guest.query.get_or_404(guest_id)
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+
+    if not username:
+        flash("Username is required.", "error")
+        return redirect(url_for("terminal.connect", guest_id=guest_id))
+
+    session[f"terminal_cred_{guest_id}"] = {"username": username, "password": password}
+    return redirect(url_for("terminal.connect", guest_id=guest_id))
+
+
 @sock.route("/ws/terminal/<int:guest_id>")
 def terminal_ws(ws, guest_id):
     """WebSocket handler for SSH terminal sessions."""
@@ -140,29 +154,16 @@ def terminal_ws(ws, guest_id):
             _ws_send(ws, "error", "Access denied")
             return
 
-        # Wait for initial config message with optional ad-hoc credentials
-        config = {}
-        try:
-            init_msg = ws.receive(timeout=10)
-            if init_msg:
-                config = json.loads(init_msg)
-        except Exception as e:
-            logger.debug(f"Terminal init message receive failed: {e}")
-
         # Resolve IP
-        ssh_host = config.get("host") or None
+        ssh_host = _resolve_guest_ip(guest)
         if not ssh_host:
-            ssh_host = _resolve_guest_ip(guest)
-
-        if not ssh_host:
-            _ws_send(ws, "error", "Could not resolve IP address for this guest. Try running discovery again or configure a static IP.")
+            _ws_send(ws, "error", "Could not resolve IP address for this guest. Try running discovery again.")
             return
 
-        logger.info(f"Terminal connecting to {guest.name} at {ssh_host}")
-
-        # Resolve credentials
-        adhoc_username = config.get("username")
-        adhoc_password = config.get("password")
+        # Resolve credentials — check session for ad-hoc creds first
+        adhoc = session.pop(f"terminal_cred_{guest_id}", None)
+        adhoc_username = adhoc.get("username") if adhoc else None
+        adhoc_password = adhoc.get("password") if adhoc else None
 
         credential = None
         if not adhoc_username:
@@ -171,7 +172,7 @@ def terminal_ws(ws, guest_id):
                 credential = Credential.query.filter_by(is_default=True).first()
 
         if not credential and not adhoc_username:
-            _ws_send(ws, "need_credentials", "No credentials available. Please provide username and password.")
+            _ws_send(ws, "error", "No credentials available for this guest.")
             return
 
         # Build SSH connection
@@ -206,12 +207,11 @@ def terminal_ws(ws, guest_id):
                         pkey = paramiko.ECDSAKey.from_private_key(key_file)
                 connect_kwargs["pkey"] = pkey
 
-        logger.info(f"Terminal SSH connecting as {connect_kwargs.get('username')} to {ssh_host}")
+        logger.info(f"Terminal SSH connecting to {guest.name} ({ssh_host}) as {connect_kwargs.get('username')}")
         ssh_client.connect(**connect_kwargs)
         channel = ssh_client.invoke_shell(term="xterm-256color", width=120, height=40)
 
         _ws_send(ws, "connected", f"Connected to {guest.name} ({ssh_host})")
-        logger.info(f"Terminal SSH connected to {guest.name} ({ssh_host})")
 
         # Read thread: SSH -> WebSocket
         def read_from_ssh():
@@ -261,7 +261,7 @@ def terminal_ws(ws, guest_id):
         logger.warning(f"Terminal SSH error for guest {guest_id}: {e}")
         _ws_send(ws, "error", f"SSH error: {e}")
     except Exception as e:
-        logger.error(f"Terminal connection error for guest {guest_id}: {e}", exc_info=True)
+        logger.error(f"Terminal error for guest {guest_id}: {e}", exc_info=True)
         _ws_send(ws, "error", f"Connection failed: {e}")
     finally:
         if channel:
