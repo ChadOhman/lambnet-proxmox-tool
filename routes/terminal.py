@@ -237,10 +237,11 @@ def terminal_ws(ws, guest_id):
         read_thread.start()
 
         # Main loop: WebSocket -> SSH
-        while True:
+        while not channel.closed:
             try:
-                message = ws.receive(timeout=1)
+                message = ws.receive()
                 if message is None:
+                    # Connection closed by client
                     break
                 msg = json.loads(message)
                 if msg.get("type") == "input":
