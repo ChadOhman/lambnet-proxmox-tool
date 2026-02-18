@@ -268,6 +268,62 @@ class ProxmoxClient:
         except Exception as e:
             return None, str(e)
 
+    def get_guest_status(self, node, vmid, guest_type):
+        """Get current power status of a guest. Returns status string or 'unknown'."""
+        try:
+            if guest_type == "vm":
+                result = self.api.nodes(node).qemu(vmid).status.current.get()
+            else:
+                result = self.api.nodes(node).lxc(vmid).status.current.get()
+            return result.get("status", "unknown")
+        except Exception as e:
+            logger.debug(f"Could not get status for {guest_type}/{vmid}: {e}")
+            return "unknown"
+
+    def start_guest(self, node, vmid, guest_type):
+        """Start a VM or CT. Returns (success, message)."""
+        try:
+            if guest_type == "vm":
+                self.api.nodes(node).qemu(vmid).status.start.post()
+            else:
+                self.api.nodes(node).lxc(vmid).status.start.post()
+            return True, f"Start command sent for {guest_type}/{vmid}"
+        except Exception as e:
+            return False, str(e)
+
+    def shutdown_guest(self, node, vmid, guest_type):
+        """Gracefully shutdown a VM or CT. Returns (success, message)."""
+        try:
+            if guest_type == "vm":
+                self.api.nodes(node).qemu(vmid).status.shutdown.post()
+            else:
+                self.api.nodes(node).lxc(vmid).status.shutdown.post()
+            return True, f"Shutdown command sent for {guest_type}/{vmid}"
+        except Exception as e:
+            return False, str(e)
+
+    def stop_guest(self, node, vmid, guest_type):
+        """Force stop a VM or CT. Returns (success, message)."""
+        try:
+            if guest_type == "vm":
+                self.api.nodes(node).qemu(vmid).status.stop.post()
+            else:
+                self.api.nodes(node).lxc(vmid).status.stop.post()
+            return True, f"Stop command sent for {guest_type}/{vmid}"
+        except Exception as e:
+            return False, str(e)
+
+    def reboot_guest(self, node, vmid, guest_type):
+        """Reboot a VM or CT. Returns (success, message)."""
+        try:
+            if guest_type == "vm":
+                self.api.nodes(node).qemu(vmid).status.reboot.post()
+            else:
+                self.api.nodes(node).lxc(vmid).status.reboot.post()
+            return True, f"Reboot command sent for {guest_type}/{vmid}"
+        except Exception as e:
+            return False, str(e)
+
     def create_snapshot(self, node, vmid, guest_type, snapname, description=""):
         """Create a snapshot of a VM or CT. Returns (success, message)."""
         try:

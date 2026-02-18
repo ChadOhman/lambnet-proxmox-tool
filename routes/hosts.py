@@ -136,6 +136,9 @@ def discover(host_id):
             repl_target = repl_map.get(vmid)
             mac = client.get_guest_mac(g["node"], vmid, g["type"])
 
+            # Normalize power state from Proxmox status
+            power_state = status if status in ("running", "stopped", "paused") else "unknown"
+
             if not existing:
                 guest = Guest(
                     proxmox_host_id=host.id,
@@ -146,6 +149,7 @@ def discover(host_id):
                     connection_method="auto",
                     replication_target=repl_target,
                     mac_address=mac,
+                    power_state=power_state,
                 )
                 db.session.add(guest)
                 added += 1
@@ -157,11 +161,12 @@ def discover(host_id):
                         db.session.add(tag)
                     guest.tags.append(tag)
             else:
-                # Update IP, name, replication, MAC, and tags for existing guests
+                # Update IP, name, replication, MAC, power state, and tags
                 if ip:
                     existing.ip_address = ip
                 existing.name = g.get("name", existing.name)
                 existing.replication_target = repl_target
+                existing.power_state = power_state
                 if mac:
                     existing.mac_address = mac
                 existing.tags.clear()

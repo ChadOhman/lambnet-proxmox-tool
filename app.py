@@ -144,6 +144,10 @@ def _migrate_schema():
             logger.info("Adding mac_address column to guests table...")
             db.session.execute(text("ALTER TABLE guests ADD COLUMN mac_address VARCHAR(17)"))
             db.session.commit()
+        if "power_state" not in guest_columns:
+            logger.info("Adding power_state column to guests table...")
+            db.session.execute(text("ALTER TABLE guests ADD COLUMN power_state VARCHAR(16) DEFAULT 'unknown'"))
+            db.session.commit()
 
 
 def _migrate_roles():

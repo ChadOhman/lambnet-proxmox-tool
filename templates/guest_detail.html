@@ -12,14 +12,14 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h2>
-            {% if guest.status == 'up-to-date' %}
-            <span class="text-success"><i class="bi bi-check-circle-fill"></i></span>
-            {% elif guest.status == 'updates-available' %}
-            <span class="text-warning"><i class="bi bi-exclamation-circle-fill"></i></span>
-            {% elif guest.status == 'error' %}
-            <span class="text-danger"><i class="bi bi-x-circle-fill"></i></span>
+            {% if guest.power_state == 'running' %}
+            <span class="text-success"><i class="bi bi-circle-fill"></i></span>
+            {% elif guest.power_state == 'stopped' %}
+            <span class="text-danger"><i class="bi bi-circle-fill"></i></span>
+            {% elif guest.power_state == 'paused' %}
+            <span class="text-warning"><i class="bi bi-pause-circle-fill"></i></span>
             {% else %}
-            <span class="text-muted"><i class="bi bi-question-circle-fill"></i></span>
+            <span class="text-muted"><i class="bi bi-circle"></i></span>
             {% endif %}
             {{ guest.name }}
             <span class="badge bg-{{ 'primary' if guest.guest_type == 'vm' else 'success' }}">{{ guest.guest_type|upper }}</span>
@@ -142,6 +142,43 @@
         </div>
     </div>
 </div>
+
+{% if current_user.is_admin and guest.proxmox_host and guest.vmid %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-power"></i> Power Management</h5></div>
+    <div class="card-body">
+        <div class="d-flex align-items-center gap-3">
+            <span class="me-2">
+                {% if guest.power_state == 'running' %}
+                <span class="badge bg-success">Running</span>
+                {% elif guest.power_state == 'stopped' %}
+                <span class="badge bg-danger">Stopped</span>
+                {% elif guest.power_state == 'paused' %}
+                <span class="badge bg-warning">Paused</span>
+                {% else %}
+                <span class="badge bg-secondary">Unknown</span>
+                {% endif %}
+            </span>
+            {% if guest.power_state != 'running' %}
+            <form method="post" action="/guests/{{ guest.id }}/power/start" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-play-fill"></i> Start</button>
+            </form>
+            {% endif %}
+            {% if guest.power_state == 'running' %}
+            <form method="post" action="/guests/{{ guest.id }}/power/shutdown" class="d-inline" onsubmit="return confirm('Gracefully shutdown {{ guest.name }}?')">
+                <button type="submit" class="btn btn-sm btn-warning"><i class="bi bi-stop-fill"></i> Shutdown</button>
+            </form>
+            <form method="post" action="/guests/{{ guest.id }}/power/reboot" class="d-inline" onsubmit="return confirm('Reboot {{ guest.name }}?')">
+                <button type="submit" class="btn btn-sm btn-outline-warning"><i class="bi bi-arrow-clockwise"></i> Reboot</button>
+            </form>
+            <form method="post" action="/guests/{{ guest.id }}/power/stop" class="d-inline" onsubmit="return confirm('Force stop {{ guest.name }}? This may cause data loss.')">
+                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i> Force Stop</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {% if current_user.is_admin and guest.proxmox_host and guest.vmid and cluster_nodes|length > 1 %}
 <div class="card bg-dark mb-4">

@@ -62,14 +62,14 @@
                     {% for guest in guests %}
                     <tr>
                         <td>
-                            {% if guest.status == 'up-to-date' %}
-                            <span class="text-success" title="Up to date"><i class="bi bi-check-circle-fill"></i></span>
-                            {% elif guest.status == 'updates-available' %}
-                            <span class="text-warning" title="Updates available"><i class="bi bi-exclamation-circle-fill"></i></span>
-                            {% elif guest.status == 'error' %}
-                            <span class="text-danger" title="Error"><i class="bi bi-x-circle-fill"></i></span>
+                            {% if guest.power_state == 'running' %}
+                            <span class="text-success" title="Running"><i class="bi bi-circle-fill"></i></span>
+                            {% elif guest.power_state == 'stopped' %}
+                            <span class="text-danger" title="Stopped"><i class="bi bi-circle-fill"></i></span>
+                            {% elif guest.power_state == 'paused' %}
+                            <span class="text-warning" title="Paused"><i class="bi bi-pause-circle-fill"></i></span>
                             {% else %}
-                            <span class="text-muted" title="Unknown"><i class="bi bi-question-circle-fill"></i></span>
+                            <span class="text-muted" title="Unknown"><i class="bi bi-circle"></i></span>
                             {% endif %}
                         </td>
                         <td>

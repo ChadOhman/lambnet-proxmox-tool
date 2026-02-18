@@ -161,6 +161,7 @@ def _run_discovery(app):
 
                     repl_target = repl_map.get(vmid)
                     mac = client.get_guest_mac(g["node"], vmid, g["type"])
+                    power_state = status if status in ("running", "stopped", "paused") else "unknown"
 
                     if not existing:
                         guest = Guest(
@@ -172,6 +173,7 @@ def _run_discovery(app):
                             connection_method="auto",
                             replication_target=repl_target,
                             mac_address=mac,
+                            power_state=power_state,
                         )
                         db.session.add(guest)
                         added += 1
@@ -187,6 +189,7 @@ def _run_discovery(app):
                             existing.ip_address = ip
                         existing.name = g.get("name", existing.name)
                         existing.replication_target = repl_target
+                        existing.power_state = power_state
                         if mac:
                             existing.mac_address = mac
                         existing.tags.clear()

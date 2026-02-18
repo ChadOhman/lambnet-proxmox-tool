@@ -321,6 +321,53 @@ def unifi_unblock(guest_id):
     return redirect(url_for("guests.detail", guest_id=guest.id))
 
 
+@bp.route("/<int:guest_id>/power/<action>", methods=["POST"])
+@login_required
+def power_action(guest_id, action):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    if action not in ("start", "shutdown", "stop", "reboot"):
+        flash("Invalid power action.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.proxmox_host or not guest.vmid:
+        flash("Guest must be linked to a Proxmox host with a VMID.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = guest.proxmox_host.name
+
+    # Find the actual node the guest is on
+    found_node = client.find_guest_node(guest.vmid)
+    if found_node:
+        node = found_node
+
+    if action == "start":
+        ok, msg = client.start_guest(node, guest.vmid, guest.guest_type)
+    elif action == "shutdown":
+        ok, msg = client.shutdown_guest(node, guest.vmid, guest.guest_type)
+    elif action == "stop":
+        ok, msg = client.stop_guest(node, guest.vmid, guest.guest_type)
+    else:
+        ok, msg = client.reboot_guest(node, guest.vmid, guest.guest_type)
+
+    if ok:
+        # Update power state optimistically
+        if action == "start":
+            guest.power_state = "running"
+        elif action in ("shutdown", "stop"):
+            guest.power_state = "stopped"
+        db.session.commit()
+        flash(f"{action.capitalize()} command sent to {guest.name}.", "success")
+    else:
+        flash(f"Power {action} failed: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
 @bp.route("/<int:guest_id>/delete", methods=["POST"])
 @login_required
 def delete(guest_id):
