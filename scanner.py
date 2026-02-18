@@ -6,6 +6,12 @@ from proxmox_api import ProxmoxClient
 
 logger = logging.getLogger(__name__)
 
+def _has_valid_ip(guest):
+    """Check if a guest has a usable IP address (not dhcp/auto placeholders)."""
+    ip = guest.ip_address
+    return bool(ip) and ip.lower() not in ("dhcp", "dhcp6", "auto")
+
+
 APT_CHECK_CMD = "apt-get update -qq 2>/dev/null && apt-get -s upgrade 2>/dev/null"
 APT_LIST_CMD = "apt list --upgradable 2>/dev/null"
 APT_SECURITY_CMD = "apt-get -s upgrade 2>/dev/null | grep -i security"
@@ -45,14 +51,14 @@ def determine_severity(package_name, security_output):
 def _execute_on_guest(guest):
     """Execute APT commands on a guest and return (upgradable_output, security_output, error)."""
     # Try SSH first if configured
-    if guest.connection_method in ("ssh", "auto") and guest.ip_address:
+    if guest.connection_method in ("ssh", "auto") and _has_valid_ip(guest):
         credential = guest.credential
         if not credential:
             # Try default credential
             from models import Credential
             credential = Credential.query.filter_by(is_default=True).first()
 
-        if credential and guest.ip_address:
+        if credential and _has_valid_ip(guest):
             try:
                 with SSHClient.from_credential(guest.ip_address, credential) as ssh:
                     # Update package lists
@@ -101,13 +107,13 @@ def _execute_on_guest(guest):
 
 def _execute_command(guest, command, timeout=60):
     """Execute a single command on a guest via SSH or agent. Returns (stdout, error)."""
-    if guest.connection_method in ("ssh", "auto") and guest.ip_address:
+    if guest.connection_method in ("ssh", "auto") and _has_valid_ip(guest):
         credential = guest.credential
         if not credential:
             from models import Credential
             credential = Credential.query.filter_by(is_default=True).first()
 
-        if credential and guest.ip_address:
+        if credential and _has_valid_ip(guest):
             try:
                 with SSHClient.from_credential(guest.ip_address, credential) as ssh:
                     stdout, stderr, code = ssh.execute(command, timeout=timeout)
@@ -346,7 +352,7 @@ def apply_updates(guest, dist_upgrade=False):
 
     logger.info(f"Applying updates to {guest.name} (dist_upgrade={dist_upgrade})...")
 
-    if guest.connection_method in ("ssh", "auto") and guest.ip_address:
+    if guest.connection_method in ("ssh", "auto") and _has_valid_ip(guest):
         credential = guest.credential
         if not credential:
             from models import Credential

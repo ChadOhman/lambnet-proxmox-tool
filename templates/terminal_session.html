@@ -13,7 +13,7 @@
     <div>
         <h4 class="mb-0">
             <i class="bi bi-terminal"></i> {{ guest.name }}
-            <small class="text-muted">({{ guest.ip_address }})</small>
+            <small class="text-muted">({{ resolved_ip or 'resolving...' }})</small>
         </h4>
     </div>
     <div>
@@ -23,6 +23,40 @@
         </button>
     </div>
 </div>
+
+{% if needs_credentials %}
+<!-- Credential prompt shown when no stored credentials -->
+<div id="credentialForm" class="card bg-dark mb-3">
+    <div class="card-header border-secondary">
+        <i class="bi bi-key"></i> SSH Credentials Required
+    </div>
+    <div class="card-body">
+        <p class="text-muted">No stored credentials found for this guest. Enter SSH credentials to connect.</p>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label for="sshUsername" class="form-label">Username</label>
+                <input type="text" class="form-control" id="sshUsername" placeholder="root" value="root">
+            </div>
+            <div class="col-md-4">
+                <label for="sshPassword" class="form-label">Password</label>
+                <input type="password" class="form-control" id="sshPassword" placeholder="Password">
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+                <button type="button" class="btn btn-success w-100" onclick="connectWithCredentials()">
+                    <i class="bi bi-plug"></i> Connect
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if not resolved_ip %}
+<div id="noIpWarning" class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i> Could not resolve an IP address for this guest.
+    Try running <a href="/hosts" class="alert-link">discovery</a> again, or the guest may not be running.
+</div>
+{% endif %}
 
 <div id="terminal-container" style="background: #000; border-radius: 8px; padding: 4px; min-height: 500px;"></div>
 {% endblock %}
@@ -65,14 +99,29 @@
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProtocol}//${window.location.host}/ws/terminal/{{ guest.id }}`;
     let ws = null;
+    const needsCredentials = {{ 'true' if needs_credentials else 'false' }};
+    const hasResolvedIp = {{ 'true' if resolved_ip else 'false' }};
 
-    function connect() {
+    function doConnect(config) {
+        if (ws) {
+            ws.close();
+        }
+
+        document.getElementById('connStatus').className = 'badge bg-warning';
+        document.getElementById('connStatus').textContent = 'Connecting...';
+        term.clear();
+        term.writeln('\x1b[33mConnecting to {{ guest.name }}...\x1b[0m');
+
         ws = new WebSocket(wsUrl);
 
         ws.onopen = function() {
-            term.writeln('\x1b[33mConnecting to {{ guest.name }} ({{ guest.ip_address }})...\x1b[0m');
-            // Send initial terminal size
-            ws.send(JSON.stringify({type: 'resize', cols: term.cols, rows: term.rows}));
+            // Send initial config (credentials + terminal size)
+            const initMsg = Object.assign({}, config || {}, {
+                type: 'init',
+                cols: term.cols,
+                rows: term.rows
+            });
+            ws.send(JSON.stringify(initMsg));
         };
 
         ws.onmessage = function(event) {
@@ -81,9 +130,22 @@
                 case 'connected':
                     document.getElementById('connStatus').className = 'badge bg-success';
                     document.getElementById('connStatus').textContent = 'Connected';
+                    // Hide credential form if shown
+                    const credForm = document.getElementById('credentialForm');
+                    if (credForm) credForm.style.display = 'none';
+                    const noIpWarn = document.getElementById('noIpWarning');
+                    if (noIpWarn) noIpWarn.style.display = 'none';
                     break;
                 case 'output':
                     term.write(msg.data);
+                    break;
+                case 'need_credentials':
+                    term.writeln('\x1b[31m' + msg.data + '\x1b[0m');
+                    document.getElementById('connStatus').className = 'badge bg-warning';
+                    document.getElementById('connStatus').textContent = 'Credentials Required';
+                    // Show credential form if hidden
+                    const form = document.getElementById('credentialForm');
+                    if (form) form.style.display = '';
                     break;
                 case 'error':
                     term.writeln('\x1b[31m' + msg.data + '\x1b[0m');
@@ -131,7 +193,29 @@
         }
     };
 
-    connect();
+    window.connectWithCredentials = function() {
+        const username = document.getElementById('sshUsername').value.trim();
+        const password = document.getElementById('sshPassword').value;
+        if (!username) {
+            alert('Username is required.');
+            return;
+        }
+        doConnect({ username: username, password: password });
+    };
+
+    // Auto-connect if we have IP and credentials
+    if (hasResolvedIp && !needsCredentials) {
+        doConnect({});
+    } else if (hasResolvedIp && needsCredentials) {
+        term.writeln('\x1b[33mEnter credentials above to connect.\x1b[0m');
+        document.getElementById('connStatus').className = 'badge bg-warning';
+        document.getElementById('connStatus').textContent = 'Credentials Required';
+    } else {
+        term.writeln('\x1b[31mCould not resolve IP address for this guest.\x1b[0m');
+        term.writeln('\x1b[33mTry running discovery again or ensure the guest is running.\x1b[0m');
+        document.getElementById('connStatus').className = 'badge bg-danger';
+        document.getElementById('connStatus').textContent = 'No IP';
+    }
 })();
 </script>
 {% endblock %}

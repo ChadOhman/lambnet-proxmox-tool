@@ -191,11 +191,24 @@ class ProxmoxClient:
                             return addr["ip-address"]
             else:
                 config = self.api.nodes(node).lxc(vmid).config.get()
-                # Parse net0 for IP
+                # Parse net0 for static IP
                 net0 = config.get("net0", "")
                 if "ip=" in net0:
                     ip_part = net0.split("ip=")[1].split(",")[0].split("/")[0]
-                    return ip_part
+                    if ip_part and ip_part != "dhcp":
+                        return ip_part
+                # For DHCP containers, query the actual network interfaces
+                try:
+                    ifaces = self.api.nodes(node).lxc(vmid).interfaces.get()
+                    for iface in ifaces:
+                        if iface.get("name") == "lo":
+                            continue
+                        inet = iface.get("inet")
+                        if inet:
+                            # Format: "x.x.x.x/prefix"
+                            return inet.split("/")[0]
+                except Exception as e:
+                    logger.debug(f"Could not get LXC interfaces for {vmid}: {e}")
         except Exception as e:
             logger.debug(f"Could not get IP for {guest_type}/{vmid}: {e}")
         return None

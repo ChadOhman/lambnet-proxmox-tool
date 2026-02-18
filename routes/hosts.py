@@ -132,6 +132,9 @@ def discover(host_id):
             ip = None
             if status == "running":
                 ip = client.get_guest_ip(g["node"], vmid, g["type"])
+                # Safety: don't store invalid IP values
+                if ip and ip.lower() in ("dhcp", "dhcp6", "auto"):
+                    ip = None
 
             repl_target = repl_map.get(vmid)
             mac = client.get_guest_mac(g["node"], vmid, g["type"])
