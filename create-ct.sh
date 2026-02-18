@@ -76,7 +76,22 @@ echo "CT ID: $CTID"
 if [ -z "$TEMPLATE" ]; then
     echo ""
     echo "[1/5] Downloading Debian template..."
-    TEMPLATE_STORAGE="local"
+
+    # Auto-detect a storage that supports vztmpl content
+    TEMPLATE_STORAGE=""
+    for STOR_NAME in $(pvesm status 2>/dev/null | tail -n +2 | awk '{print $1}'); do
+        if pvesm show "$STOR_NAME" 2>/dev/null | grep -q "vztmpl"; then
+            TEMPLATE_STORAGE="$STOR_NAME"
+            break
+        fi
+    done
+
+    if [ -z "$TEMPLATE_STORAGE" ]; then
+        echo "ERROR: No storage with 'vztmpl' content type found."
+        echo "  Enable vztmpl on a storage in Datacenter > Storage, or use --template."
+        exit 1
+    fi
+    echo "  Template storage: $TEMPLATE_STORAGE"
 
     # Check if template already exists
     EXISTING=$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null | grep "debian-12-standard" | head -1 | awk '{print $1}')
