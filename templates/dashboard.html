@@ -11,6 +11,17 @@
     </form>
 </div>
 
+{% if app_update_available %}
+<div class="alert alert-info alert-dismissible fade show d-flex align-items-center" role="alert">
+    <i class="bi bi-info-circle-fill me-2"></i>
+    <div>
+        A new version of MCAT is available: <strong>v{{ app_update_available }}</strong>.
+        <a href="/settings" class="alert-link">Go to Settings</a> to update.
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
 <div class="row g-4 mb-4">
     <div class="col-md-3">
         <div class="card stat-card bg-dark">

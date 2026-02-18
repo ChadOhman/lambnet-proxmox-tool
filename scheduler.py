@@ -100,7 +100,7 @@ def _check_mastodon_release(app):
 
 
 def _check_app_update(app):
-    """Check for new app releases and optionally auto-update."""
+    """Check for new app releases, store result, and optionally auto-update."""
     with app.app_context():
         from models import Setting
         import urllib.request
@@ -109,15 +109,30 @@ def _check_app_update(app):
         import os
         from config import BASE_DIR
 
-        if Setting.get("app_auto_update", "false") != "true":
-            return
-
         repo = app.config.get("GITHUB_REPO", "")
         current_version = app.config.get("APP_VERSION", "0.0.0")
         update_branch = Setting.get("app_update_branch", "")
+        auto_update = Setting.get("app_auto_update", "false") == "true"
         update_script = os.path.join(BASE_DIR, "update.sh")
 
         if not repo:
+            return
+
+        # Always fetch the latest release and store it
+        try:
+            url = f"https://api.github.com/repos/{repo}/releases/latest"
+            req = urllib.request.Request(url, headers={"User-Agent": "MCAT"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                latest = data.get("tag_name", "").lstrip("v")
+                if latest:
+                    Setting.set("latest_app_version", latest)
+                    Setting.set("latest_app_check", datetime.now().isoformat())
+        except Exception as e:
+            logger.error(f"Failed to check for app updates: {e}")
+            return
+
+        if not auto_update:
             return
 
         # Branch-based auto-update: always pull latest from configured branch
@@ -132,30 +147,21 @@ def _check_app_update(app):
         if current_version == "unknown":
             return
 
-        try:
-            url = f"https://api.github.com/repos/{repo}/releases/latest"
-            req = urllib.request.Request(url, headers={"User-Agent": "MCAT"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
-                latest = data.get("tag_name", "").lstrip("v")
+        if not latest or latest == current_version:
+            return
 
-                if not latest or latest == current_version:
-                    return
+        logger.info(f"New app version available: v{current_version} -> v{latest}")
 
-                logger.info(f"New app version available: v{current_version} -> v{latest}")
+        # Send email notification if configured
+        from notifier import send_app_update_notification
+        send_app_update_notification(current_version, latest)
 
-                # Send email notification if configured
-                from notifier import send_app_update_notification
-                send_app_update_notification(current_version, latest)
-
-                # Run update.sh
-                if os.path.exists(update_script):
-                    logger.info("Auto-update enabled, running update.sh...")
-                    subprocess.Popen(["bash", update_script], cwd=BASE_DIR)
-                else:
-                    logger.warning("update.sh not found, cannot auto-update")
-        except Exception as e:
-            logger.error(f"Failed to check for app updates: {e}")
+        # Run update.sh
+        if os.path.exists(update_script):
+            logger.info("Auto-update enabled, running update.sh...")
+            subprocess.Popen(["bash", update_script], cwd=BASE_DIR)
+        else:
+            logger.warning("update.sh not found, cannot auto-update")
 
 
 def init_scheduler(app):

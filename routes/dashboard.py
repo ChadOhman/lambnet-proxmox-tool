@@ -1,6 +1,6 @@
-from flask import Blueprint, render_template
+from flask import Blueprint, render_template, current_app
 from flask_login import login_required, current_user
-from models import db, ProxmoxHost, Guest, UpdatePackage, ScanResult
+from models import db, ProxmoxHost, Guest, UpdatePackage, ScanResult, Setting
 
 bp = Blueprint("dashboard", __name__)
 
@@ -37,9 +37,21 @@ def index():
         .all()
     )
 
+    # Check for app update availability (for admins)
+    app_update_available = None
+    if current_user.is_admin:
+        latest_version = Setting.get("latest_app_version")
+        current_version = current_app.config.get("APP_VERSION", "unknown")
+        is_stale = current_app.config.get("APP_VERSION_STALE", False)
+        if latest_version and latest_version != current_version:
+            app_update_available = latest_version
+        elif is_stale and latest_version:
+            app_update_available = latest_version
+
     return render_template(
         "dashboard.html",
         stats=stats,
         guests_with_updates=guests_with_updates,
         recent_scans=recent_scans,
+        app_update_available=app_update_available,
     )
