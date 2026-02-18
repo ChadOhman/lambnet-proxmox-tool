@@ -32,15 +32,17 @@ def create_app():
         _migrate_roles()
         _ensure_default_admin()
 
-    # Read version
-    version = "unknown"
+    # Read version from file
+    file_version = "unknown"
     if os.path.exists(Config.VERSION_FILE):
         with open(Config.VERSION_FILE) as f:
-            version = f.read().strip()
-    app.config["APP_VERSION"] = version
+            file_version = f.read().strip()
 
     # Read git info for branch-based deployments
     import subprocess
+    git_commit = ""
+    git_branch = ""
+    version_matches_tag = False
     try:
         git_commit = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -50,9 +52,25 @@ def create_app():
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=BASE_DIR, stderr=subprocess.DEVNULL
         ).decode().strip()
+        # Check if current commit is tagged with the VERSION file's version
+        if file_version != "unknown":
+            try:
+                tag_commit = subprocess.check_output(
+                    ["git", "rev-parse", "--short", f"v{file_version}"],
+                    cwd=BASE_DIR, stderr=subprocess.DEVNULL
+                ).decode().strip()
+                version_matches_tag = (tag_commit == git_commit)
+            except Exception:
+                version_matches_tag = False
     except Exception:
-        git_commit = ""
-        git_branch = ""
+        pass
+
+    # If current commit doesn't match the VERSION tag, we're ahead of the release
+    if version_matches_tag:
+        app.config["APP_VERSION"] = file_version
+    else:
+        app.config["APP_VERSION"] = file_version  # keep for reference
+        app.config["APP_VERSION_STALE"] = True
     app.config["GIT_COMMIT"] = git_commit
     app.config["GIT_BRANCH"] = git_branch
 

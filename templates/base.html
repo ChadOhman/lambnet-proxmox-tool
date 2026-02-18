@@ -115,8 +115,8 @@
 
     <footer class="text-center text-muted py-3 border-top border-secondary">
         <small>Mastodon Canada Administration Tool
-            {%- if config.get('GIT_BRANCH') and config.get('GIT_BRANCH') != 'main' and config.get('GIT_BRANCH') != 'HEAD' %}
-                {{ config.get('GIT_BRANCH') }}@{{ config.get('GIT_COMMIT', '') }}
+            {%- if config.get('APP_VERSION_STALE') and config.get('GIT_COMMIT') %}
+                {{ config.get('GIT_BRANCH', 'main') }}@{{ config.get('GIT_COMMIT') }}
             {%- elif config.get('GIT_COMMIT') and config.get('APP_VERSION') == 'unknown' %}
                 {{ config.get('GIT_COMMIT') }}
             {%- else %}

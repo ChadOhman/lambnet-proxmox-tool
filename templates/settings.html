@@ -224,13 +224,15 @@
                     <tr>
                         <td class="text-muted">Running</td>
                         <td>
-                            {%- if config.get('GIT_BRANCH') and config.get('GIT_BRANCH') != 'main' and config.get('GIT_BRANCH') != 'HEAD' -%}
-                                <span class="badge bg-warning text-dark">{{ config.get('GIT_BRANCH') }}</span>
-                                <code class="ms-1">{{ config.get('GIT_COMMIT', '') }}</code>
+                            {%- if config.get('APP_VERSION_STALE') and config.get('GIT_COMMIT') -%}
+                                <span class="badge bg-warning text-dark">{{ config.get('GIT_BRANCH', 'main') }}</span>
+                                <code class="ms-1">{{ config.get('GIT_COMMIT') }}</code>
+                                <span class="text-muted ms-1">(ahead of v{{ config.get('APP_VERSION') }})</span>
+                            {%- elif not config.get('GIT_COMMIT') or config.get('APP_VERSION') == 'unknown' -%}
+                                v{{ config.get('APP_VERSION', 'unknown') }}
                             {%- else -%}
                                 v{{ config.get('APP_VERSION', 'unknown') }}
-                                {%- if config.get('GIT_COMMIT') %} <code class="ms-1">{{ config.get('GIT_COMMIT') }}</code>{% endif %}
-                                {%- if config.get('GIT_BRANCH') and config.get('GIT_BRANCH') != 'HEAD' %} <span class="text-muted">({{ config.get('GIT_BRANCH') }})</span>{% endif %}
+                                <code class="ms-1">{{ config.get('GIT_COMMIT') }}</code>
                             {%- endif -%}
                         </td>
                     </tr>
@@ -239,9 +241,11 @@
                         <td class="text-muted">Latest Release</td>
                         <td>
                             <a href="https://github.com/{{ config.get('GITHUB_REPO', '') }}/releases/tag/v{{ latest_release }}" target="_blank">v{{ latest_release }}</a>
-                            {% if config.get('APP_VERSION') == latest_release %}
+                            {% if not config.get('APP_VERSION_STALE') and config.get('APP_VERSION') == latest_release %}
                                 <span class="badge bg-success ms-1">Up to date</span>
-                            {% elif config.get('APP_VERSION') != 'unknown' and config.get('APP_VERSION') != latest_release %}
+                            {% elif config.get('APP_VERSION_STALE') %}
+                                <span class="badge bg-secondary ms-1">Running from branch</span>
+                            {% elif config.get('APP_VERSION') != 'unknown' %}
                                 <span class="badge bg-info ms-1">Update available</span>
                             {% endif %}
                         </td>
