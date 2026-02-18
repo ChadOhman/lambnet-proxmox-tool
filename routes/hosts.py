@@ -86,21 +86,41 @@ def discover(host_id):
             node_guests = client.get_all_guests()
             node_name = "cluster"
 
+        # Fetch replication info (VMID -> target node)
+        repl_map = client.get_replication_map()
+
         added = 0
         updated = 0
+        skipped = 0
         for g in node_guests:
             vmid = g.get("vmid")
+            status = g.get("status", "")
+
+            # Check if this guest already exists on THIS host
             existing = Guest.query.filter_by(proxmox_host_id=host.id, vmid=vmid).first()
+
+            # Check if this VMID already exists on ANOTHER host (replication)
+            if not existing:
+                other = Guest.query.filter(Guest.vmid == vmid, Guest.proxmox_host_id != host.id).first()
+                if other:
+                    # Replicated guest — only claim it if it's running here
+                    if status != "running":
+                        skipped += 1
+                        continue
+                    # It's running on this node — move ownership from the other host
+                    existing = other
+                    existing.proxmox_host_id = host.id
 
             # Parse tags - Proxmox uses semicolons (PVE 8+) or commas (older)
             proxmox_tags = g.get("tags", "")
             tag_names = [t.strip() for t in re.split(r"[;,]", proxmox_tags) if t.strip()] if proxmox_tags else []
 
             # Only fetch IP for running guests (skip stopped ones for speed)
-            status = g.get("status", "")
             ip = None
             if status == "running":
                 ip = client.get_guest_ip(g["node"], vmid, g["type"])
+
+            repl_target = repl_map.get(vmid)
 
             if not existing:
                 guest = Guest(
@@ -110,6 +130,7 @@ def discover(host_id):
                     guest_type=g["type"],
                     ip_address=ip,
                     connection_method="auto",
+                    replication_target=repl_target,
                 )
                 db.session.add(guest)
                 added += 1
@@ -121,10 +142,11 @@ def discover(host_id):
                         db.session.add(tag)
                     guest.tags.append(tag)
             else:
-                # Update IP, name, and tags for existing guests
+                # Update IP, name, replication, and tags for existing guests
                 if ip:
                     existing.ip_address = ip
                 existing.name = g.get("name", existing.name)
+                existing.replication_target = repl_target
                 existing.tags.clear()
                 for tag_name in tag_names:
                     tag = Tag.query.filter_by(name=tag_name).first()
@@ -142,7 +164,10 @@ def discover(host_id):
                 "warning",
             )
         else:
-            flash(f"Discovered {len(node_guests)} guests on '{host.name}' node '{node_name}' ({added} new, {updated} updated).", "success")
+            msg = f"Discovered {len(node_guests)} guests on '{host.name}' node '{node_name}' ({added} new, {updated} updated)"
+            if skipped:
+                msg += f", {skipped} replicas skipped"
+            flash(msg + ".", "success")
     except Exception as e:
         flash(f"Discovery failed for '{host.name}': {e}", "error")
 

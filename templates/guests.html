@@ -72,7 +72,12 @@
                             <span class="text-muted" title="Unknown"><i class="bi bi-question-circle-fill"></i></span>
                             {% endif %}
                         </td>
-                        <td><a href="/guests/{{ guest.id }}" class="text-light text-decoration-none">{{ guest.name }}</a></td>
+                        <td>
+                            <a href="/guests/{{ guest.id }}" class="text-light text-decoration-none">{{ guest.name }}</a>
+                            {% if guest.replication_target %}
+                            <span class="text-info ms-1" title="Replicated to {{ guest.replication_target }}"><i class="bi bi-arrow-repeat"></i></span>
+                            {% endif %}
+                        </td>
                         <td>
                             <span class="badge bg-{{ 'primary' if guest.guest_type == 'vm' else 'success' }}">
                                 {{ guest.guest_type|upper }}

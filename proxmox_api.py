@@ -94,6 +94,19 @@ class ProxmoxClient:
 
         return guests
 
+    def get_replication_map(self):
+        """Return a dict mapping VMID -> replication target node name."""
+        repl = {}
+        try:
+            for job in self.api.cluster.replication.get():
+                vmid = job.get("guest")
+                target = job.get("target")
+                if vmid and target:
+                    repl[int(vmid)] = target
+        except Exception as e:
+            logger.debug(f"Could not fetch replication info: {e}")
+        return repl
+
     def get_all_guests(self):
         """Get all VMs and CTs across all nodes. Raises on connection failure."""
         nodes = self.get_nodes()
