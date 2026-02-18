@@ -68,8 +68,10 @@ def index():
         flash("UniFi controller is not configured. Ask a super admin to set it up in Settings.", "warning")
         return render_template("unifi.html", enabled=False, devices=[], clients=[], subnet_filter="")
 
+    from datetime import datetime, timezone
     devices = client.get_devices() or []
     clients = client.get_clients() or []
+    Setting.set("unifi_last_polled", datetime.now(timezone.utc).isoformat())
 
     subnet_filter = Setting.get("unifi_filter_subnet", "")
     if subnet_filter:

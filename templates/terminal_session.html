@@ -23,6 +23,9 @@
             <i class="bi bi-shield-lock"></i> Sudo
         </button>
         {% endif %}
+        <button class="btn btn-sm btn-outline-light ms-2" onclick="popOut()" title="Open in a new window">
+            <i class="bi bi-box-arrow-up-right"></i> Pop Out
+        </button>
         <button id="btnDisconnect" class="btn btn-sm btn-outline-danger ms-2" onclick="disconnect()">
             <i class="bi bi-x-lg"></i> Disconnect
         </button>
@@ -178,6 +181,15 @@
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({type: 'sudo'}));
         }
+    };
+
+    window.popOut = function() {
+        // Close the current session before opening popout (to avoid duplicate connections)
+        if (ws) {
+            ws.close();
+        }
+        const popoutUrl = '/terminal/{{ guest.id }}/popout';
+        window.open(popoutUrl, 'terminal_{{ guest.id }}', 'width=900,height=600,menubar=no,toolbar=no,location=no,status=no');
     };
 
     // Auto-connect if we have IP and credentials

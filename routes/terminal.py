@@ -149,6 +149,41 @@ def connect(guest_id):
                            needs_credentials=needs_credentials, has_sudo_password=has_sudo_password)
 
 
+@bp.route("/<int:guest_id>/popout")
+@login_required
+def popout(guest_id):
+    """Render the terminal in a minimal standalone window (no navbar)."""
+    if not current_user.can_ssh and not current_user.is_admin:
+        flash("You don't have SSH terminal permission.", "error")
+        return redirect(url_for("dashboard.index"))
+
+    guest = Guest.query.get_or_404(guest_id)
+
+    if not current_user.is_admin and not current_user.can_access_guest(guest):
+        flash("You don't have permission to access this guest.", "error")
+        return redirect(url_for("terminal.index"))
+
+    # Snapshot gating for non-admin users
+    if not current_user.is_admin:
+        from routes.guests import guest_requires_snapshot, auto_snapshot_if_needed
+        if guest_requires_snapshot(guest):
+            ok, msg = auto_snapshot_if_needed(guest)
+            if not ok:
+                flash(f"Cannot connect: snapshot required but failed — {msg}", "error")
+                return redirect(url_for("terminal.index"))
+
+    ip = _resolve_guest_ip(guest)
+
+    credential = guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+
+    has_sudo_password = credential is not None and credential.encrypted_sudo_password is not None
+
+    return render_template("terminal_popout.html", guest=guest, resolved_ip=ip,
+                           has_sudo_password=has_sudo_password)
+
+
 @bp.route("/<int:guest_id>/connect-adhoc", methods=["POST"])
 @login_required
 def connect_adhoc(guest_id):

@@ -14,11 +14,14 @@ def _get_unifi_mac_map():
     if Setting.get("unifi_enabled", "false") != "true":
         return {}
     try:
+        from datetime import datetime, timezone
         from routes.unifi import _get_unifi_client
         client = _get_unifi_client()
         if not client:
             return {}
         clients = client.get_clients() or []
+        Setting.set("unifi_last_polled", datetime.now(timezone.utc).isoformat())
+        db.session.commit()
         return {c["mac"].lower(): c for c in clients if c.get("mac")}
     except Exception as e:
         logger.debug(f"Could not fetch UniFi clients: {e}")
@@ -163,15 +166,18 @@ def detail(guest_id):
 
     # Fetch UniFi client info by MAC address
     unifi_client = None
+    unifi_last_polled = None
     if guest.mac_address:
         unifi_map = _get_unifi_mac_map()
         unifi_client = unifi_map.get(guest.mac_address)
+        unifi_last_polled = Setting.get("unifi_last_polled", "")
 
     return render_template("guest_detail.html", guest=guest, credentials=credentials, tags=tags,
                            repl_jobs=repl_jobs, cluster_nodes=cluster_nodes,
                            snapshots=snapshots, backups=backups,
                            backup_storages=backup_storages,
                            unifi_client=unifi_client,
+                           unifi_last_polled=unifi_last_polled,
                            known_services=GuestService.KNOWN_SERVICES)
 
 
