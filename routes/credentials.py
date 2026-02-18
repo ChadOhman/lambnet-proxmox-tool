@@ -61,6 +61,50 @@ def add():
     return redirect(url_for("credentials.index"))
 
 
+@bp.route("/<int:cred_id>/edit", methods=["POST"])
+def edit(cred_id):
+    cred = Credential.query.get_or_404(cred_id)
+
+    name = request.form.get("name", "").strip()
+    username = request.form.get("username", "").strip()
+    auth_type = request.form.get("auth_type", "")
+    is_default = "is_default" in request.form
+
+    if not name:
+        flash("Name is required.", "error")
+        return redirect(url_for("credentials.index"))
+
+    cred.name = name
+    cred.username = username or cred.username
+
+    # Only update auth type and value if a new value is provided
+    if auth_type:
+        if auth_type == "password":
+            new_value = request.form.get("password", "")
+        else:
+            new_value = request.form.get("private_key", "")
+        if new_value:
+            cred.auth_type = auth_type
+            cred.encrypted_value = encrypt(new_value)
+
+    # Update sudo password (blank = clear it)
+    sudo_password = request.form.get("sudo_password", "").strip()
+    if sudo_password:
+        cred.encrypted_sudo_password = encrypt(sudo_password)
+    elif "clear_sudo_password" in request.form:
+        cred.encrypted_sudo_password = None
+
+    if is_default and not cred.is_default:
+        Credential.query.filter_by(is_default=True).update({"is_default": False})
+        cred.is_default = True
+    elif not is_default and cred.is_default:
+        cred.is_default = False
+
+    db.session.commit()
+    flash(f"Credential '{name}' updated.", "success")
+    return redirect(url_for("credentials.index"))
+
+
 @bp.route("/<int:cred_id>/set-default", methods=["POST"])
 def set_default(cred_id):
     Credential.query.filter_by(is_default=True).update({"is_default": False})

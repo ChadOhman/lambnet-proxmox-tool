@@ -134,8 +134,10 @@ def connect(guest_id):
         credential = Credential.query.filter_by(is_default=True).first()
 
     needs_credentials = credential is None
+    has_sudo_password = credential is not None and credential.encrypted_sudo_password is not None
 
-    return render_template("terminal_session.html", guest=guest, resolved_ip=ip, needs_credentials=needs_credentials)
+    return render_template("terminal_session.html", guest=guest, resolved_ip=ip,
+                           needs_credentials=needs_credentials, has_sudo_password=has_sudo_password)
 
 
 @bp.route("/<int:guest_id>/connect-adhoc", methods=["POST"])
@@ -234,6 +236,11 @@ def terminal_ws(ws, guest_id):
                         pkey = paramiko.ECDSAKey.from_private_key(key_file)
                 connect_kwargs["pkey"] = pkey
 
+        # Decrypt sudo password if available
+        sudo_password = None
+        if credential and credential.encrypted_sudo_password:
+            sudo_password = decrypt(credential.encrypted_sudo_password)
+
         logger.info(f"Terminal SSH connecting to {guest.name} ({ssh_host}) as {connect_kwargs.get('username')}")
         ssh_client.connect(**connect_kwargs)
         channel = ssh_client.invoke_shell(term="xterm-256color", width=120, height=40)
@@ -273,6 +280,9 @@ def terminal_ws(ws, guest_id):
                 msg = json.loads(message)
                 if msg.get("type") == "input":
                     channel.send(msg["data"])
+                elif msg.get("type") == "sudo":
+                    if sudo_password:
+                        channel.send(sudo_password + "\n")
                 elif msg.get("type") == "resize":
                     cols = msg.get("cols", 120)
                     rows = msg.get("rows", 40)

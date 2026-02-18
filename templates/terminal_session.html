@@ -18,6 +18,11 @@
     </div>
     <div>
         <span id="connStatus" class="badge bg-warning">Connecting...</span>
+        {% if has_sudo_password %}
+        <button id="btnSudo" class="btn btn-sm btn-outline-warning ms-2" onclick="sendSudo()" title="Send stored sudo password to the terminal">
+            <i class="bi bi-shield-lock"></i> Sudo
+        </button>
+        {% endif %}
         <button id="btnDisconnect" class="btn btn-sm btn-outline-danger ms-2" onclick="disconnect()">
             <i class="bi bi-x-lg"></i> Disconnect
         </button>
@@ -166,6 +171,12 @@
     window.disconnect = function() {
         if (ws) {
             ws.close();
+        }
+    };
+
+    window.sendSudo = function() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({type: 'sudo'}));
         }
     };
 
