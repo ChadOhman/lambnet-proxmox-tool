@@ -114,32 +114,41 @@ class SSHClient:
         Returns (exit_code).  The callback receives raw string chunks
         from both stdout and stderr as they become available.
         """
+        import time
+
         if self._client is None:
             self.connect()
 
         try:
             stdin, stdout, stderr = self._client.exec_command(command, timeout=timeout)
             channel = stdout.channel
+            channel.settimeout(0.5)
 
-            while not channel.exit_status_ready():
+            # Stream output while the command is running
+            while not channel.closed:
+                got_data = False
                 if channel.recv_ready():
                     data = channel.recv(4096).decode("utf-8", errors="replace")
                     if data:
                         callback(data)
+                        got_data = True
                 if channel.recv_stderr_ready():
                     data = channel.recv_stderr(4096).decode("utf-8", errors="replace")
                     if data:
                         callback(data)
+                        got_data = True
+                if channel.exit_status_ready() and not channel.recv_ready() and not channel.recv_stderr_ready():
+                    break
+                if not got_data:
+                    time.sleep(0.1)
 
-            # Drain remaining output
-            while channel.recv_ready():
-                data = channel.recv(4096).decode("utf-8", errors="replace")
-                if data:
-                    callback(data)
-            while channel.recv_stderr_ready():
-                data = channel.recv_stderr(4096).decode("utf-8", errors="replace")
-                if data:
-                    callback(data)
+            # Drain any remaining output using blocking reads until EOF
+            remaining = stdout.read().decode("utf-8", errors="replace")
+            if remaining:
+                callback(remaining)
+            remaining_err = stderr.read().decode("utf-8", errors="replace")
+            if remaining_err:
+                callback(remaining_err)
 
             return channel.recv_exit_status()
         except Exception as e:

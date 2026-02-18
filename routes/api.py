@@ -83,10 +83,14 @@ def _run_update_background(app, guest_id, dist_upgrade=False):
                     job.append(f"Connecting to {guest.name} ({guest.ip_address}) via SSH...\n")
                     try:
                         with SSHClient.from_credential(guest.ip_address, credential) as ssh:
-                            job.append("Running apt-get update...\n")
-                            ssh.execute_sudo("apt-get update -qq", timeout=120)
-                            job.append("Applying updates...\n\n")
+                            job.append("$ apt-get update\n")
+                            update_code = ssh.execute_sudo_streaming(
+                                "apt-get update", job.append, timeout=120
+                            )
+                            if update_code != 0:
+                                job.append(f"\napt-get update exited with code {update_code}.\n")
 
+                            job.append(f"\n$ {cmd}\n")
                             exit_code = ssh.execute_sudo_streaming(cmd, job.append, timeout=600)
 
                             if exit_code == 0:
@@ -123,9 +127,13 @@ def _run_update_background(app, guest_id, dist_upgrade=False):
                             break
 
                     if node:
-                        job.append("Running apt-get update...\n")
-                        client.exec_guest_agent(node, guest.vmid, "apt-get update -qq")
-                        job.append("Applying updates (output will appear when complete)...\n")
+                        job.append("$ apt-get update\n")
+                        update_out, update_err = client.exec_guest_agent(node, guest.vmid, "apt-get update")
+                        if update_out:
+                            job.append(update_out)
+                        if update_err:
+                            job.append(f"\n{update_err}\n")
+                        job.append(f"\n$ {cmd}\n")
                         stdout, err = client.exec_guest_agent(node, guest.vmid, cmd)
                         if err is None:
                             if stdout:
