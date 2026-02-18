@@ -162,7 +162,7 @@ WorkingDirectory=$APP_DIR
 Environment=LAMBNET_DATA_DIR=$DATA_DIR
 Environment=LAMBNET_SECRET_KEY=$SECRET_DIR/secret.key
 Environment=FLASK_SECRET_KEY_FILE=$SECRET_DIR/flask_secret
-ExecStart=$APP_DIR/venv/bin/gunicorn --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker --bind 0.0.0.0:5000 --workers 1 --timeout 120 "app:create_app()"
+ExecStart=$APP_DIR/venv/bin/gunicorn --worker-class gevent --bind 0.0.0.0:5000 --workers 1 --timeout 120 "app:create_app()"
 Restart=always
 RestartSec=5
 
@@ -172,7 +172,7 @@ EOF
 
 # Install gevent for websocket support in production
 source venv/bin/activate
-pip install --quiet gevent gevent-websocket
+pip install --quiet gevent
 
 systemctl daemon-reload
 systemctl enable "$APP_NAME"

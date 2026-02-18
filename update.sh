@@ -109,7 +109,7 @@ echo "[3/4] Updating Python dependencies..."
 source venv/bin/activate
 pip install --quiet --upgrade pip
 pip install --quiet -r requirements.txt
-pip install --quiet gevent gevent-websocket
+pip install --quiet gevent
 echo "  Done."
 
 echo ""
