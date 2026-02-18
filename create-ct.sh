@@ -79,12 +79,25 @@ if [ -z "$TEMPLATE" ]; then
 
     # Auto-detect a storage that supports vztmpl content
     TEMPLATE_STORAGE=""
-    for STOR_NAME in $(pvesm status 2>/dev/null | tail -n +2 | awk '{print $1}'); do
-        if pvesm show "$STOR_NAME" 2>/dev/null | grep -q "vztmpl"; then
-            TEMPLATE_STORAGE="$STOR_NAME"
-            break
-        fi
-    done
+
+    # Method 1: Use pvesm status filtered by content type (Proxmox 7+)
+    TEMPLATE_STORAGE=$(pvesm status --content vztmpl 2>/dev/null | tail -n +2 | awk 'NR==1{print $1}')
+
+    # Method 2: Check each storage config for vztmpl in content field
+    if [ -z "$TEMPLATE_STORAGE" ]; then
+        for STOR_NAME in $(pvesm status 2>/dev/null | tail -n +2 | awk '{print $1}'); do
+            CONTENT=$(pvesm show "$STOR_NAME" 2>/dev/null | grep "^\s*content" | awk '{print $2}')
+            if echo "$CONTENT" | grep -q "vztmpl"; then
+                TEMPLATE_STORAGE="$STOR_NAME"
+                break
+            fi
+        done
+    fi
+
+    # Method 3: Check /etc/pve/storage.cfg directly
+    if [ -z "$TEMPLATE_STORAGE" ] && [ -f /etc/pve/storage.cfg ]; then
+        TEMPLATE_STORAGE=$(awk '/^[a-z]/{name=$2} /content.*vztmpl/{print name; exit}' /etc/pve/storage.cfg)
+    fi
 
     if [ -z "$TEMPLATE_STORAGE" ]; then
         echo "ERROR: No storage with 'vztmpl' content type found."
