@@ -436,6 +436,135 @@
 </div>
 {% endif %}
 
+{% if guest.proxmox_host and guest.vmid %}
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-hdd"></i> Backups</h5>
+        {% if current_user.is_admin %}
+        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#createBackupForm">
+            <i class="bi bi-plus-lg"></i> Create Backup
+        </button>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if current_user.is_admin %}
+        <div class="collapse mb-3" id="createBackupForm">
+            <form method="post" action="/guests/{{ guest.id }}/backup/create">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm">Storage</label>
+                        <select class="form-select form-select-sm" name="storage">
+                            <option value="">Default</option>
+                            {% for st in backup_storages %}
+                            <option value="{{ st.storage }}">{{ st.storage }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label form-label-sm">Mode</label>
+                        <select class="form-select form-select-sm" name="mode">
+                            <option value="">Default</option>
+                            <option value="snapshot">Snapshot</option>
+                            <option value="suspend">Suspend</option>
+                            <option value="stop">Stop</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label form-label-sm">Compression</label>
+                        <select class="form-select form-select-sm" name="compress">
+                            <option value="">Default</option>
+                            <option value="zstd">ZSTD</option>
+                            <option value="lzo">LZO</option>
+                            <option value="gzip">GZIP</option>
+                            <option value="0">None</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm">Notes</label>
+                        <input type="text" class="form-control form-control-sm" name="notes" placeholder="Optional notes">
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-check mb-1">
+                            <input type="checkbox" class="form-check-input" name="protected" id="backupProtected">
+                            <label class="form-check-label small" for="backupProtected">Protected</label>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-hdd"></i> Backup</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+        {% if backups %}
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>Volume</th>
+                        <th>Size</th>
+                        <th>Date</th>
+                        <th>Notes</th>
+                        <th>Protected</th>
+                        {% if current_user.is_admin %}
+                        <th>Actions</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for backup in backups %}
+                    <tr>
+                        <td><code class="small">{{ backup.volid.split(':')[1] if ':' in backup.volid else backup.volid }}</code></td>
+                        <td>
+                            {% set sz = backup.size | default(0) | int %}
+                            {% if sz >= 1073741824 %}{{ "%.1f"|format(sz / 1073741824) }} GB
+                            {% elif sz >= 1048576 %}{{ "%.1f"|format(sz / 1048576) }} MB
+                            {% elif sz > 0 %}{{ "%.1f"|format(sz / 1024) }} KB
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>
+                            {% if backup.ctime %}
+                            {{ backup.ctime | int | timestamp_to_datetime }}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="small">{{ backup.notes | default('', true) | truncate(50) }}</td>
+                        <td>
+                            {% if backup.protected | default(false) %}
+                            <span class="badge bg-success"><i class="bi bi-lock-fill"></i> Yes</span>
+                            {% else %}
+                            <span class="text-muted">No</span>
+                            {% endif %}
+                        </td>
+                        {% if current_user.is_admin %}
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                {% if backup.protected | default(false) %}
+                                <form method="post" action="/guests/{{ guest.id }}/backup/{{ backup.volid }}/protect" class="d-inline">
+                                    <input type="hidden" name="protected" value="0">
+                                    <button type="submit" class="btn btn-outline-warning" title="Unprotect"><i class="bi bi-unlock"></i></button>
+                                </form>
+                                {% else %}
+                                <form method="post" action="/guests/{{ guest.id }}/backup/{{ backup.volid }}/protect" class="d-inline">
+                                    <input type="hidden" name="protected" value="1">
+                                    <button type="submit" class="btn btn-outline-success" title="Protect"><i class="bi bi-lock"></i></button>
+                                </form>
+                                {% endif %}
+                                <form method="post" action="/guests/{{ guest.id }}/backup/{{ backup.volid }}/delete" class="d-inline" onsubmit="return confirm('Delete this backup? This cannot be undone.')">
+                                    <button type="submit" class="btn btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                </form>
+                            </div>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No backups found for this guest.</p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 {% if unifi_client and current_user.is_admin %}
 <div class="card bg-dark mb-4">
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-router"></i> UniFi Network</h5></div>

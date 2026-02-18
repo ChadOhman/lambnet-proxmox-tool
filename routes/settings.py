@@ -46,7 +46,9 @@ def _get_settings_dict():
         "app_auto_update": Setting.get("app_auto_update", "false"),
         "app_update_branch": Setting.get("app_update_branch", ""),
         "require_snapshot_before_action": Setting.get("require_snapshot_before_action", "false"),
-        "snapshot_storage": Setting.get("snapshot_storage", ""),
+        "backup_storage": Setting.get("backup_storage", ""),
+        "backup_mode": Setting.get("backup_mode", "snapshot"),
+        "backup_compress": Setting.get("backup_compress", "zstd"),
     }
 
 
@@ -156,11 +158,23 @@ def save_local_bypass():
 @bp.route("/snapshots", methods=["POST"])
 def save_snapshots():
     require_snapshot = "require_snapshot_before_action" in request.form
-    snapshot_storage = request.form.get("snapshot_storage", "").strip()
     Setting.set("require_snapshot_before_action", "true" if require_snapshot else "false")
-    Setting.set("snapshot_storage", snapshot_storage)
 
     flash("Snapshot settings saved.", "success")
+    return redirect(url_for("settings.index"))
+
+
+@bp.route("/backups", methods=["POST"])
+def save_backups():
+    backup_storage = request.form.get("backup_storage", "").strip()
+    backup_mode = request.form.get("backup_mode", "snapshot").strip()
+    backup_compress = request.form.get("backup_compress", "zstd").strip()
+
+    Setting.set("backup_storage", backup_storage)
+    Setting.set("backup_mode", backup_mode)
+    Setting.set("backup_compress", backup_compress)
+
+    flash("Backup settings saved.", "success")
     return redirect(url_for("settings.index"))
 
 

@@ -244,13 +244,6 @@
             </div>
             <div class="card-body">
                 <form method="post" action="/settings/snapshots">
-                    <div class="mb-3">
-                        <label class="form-label">Snapshot Storage</label>
-                        <input type="text" class="form-control" name="snapshot_storage" value="{{ settings.snapshot_storage or '' }}" placeholder="e.g. local-zfs, ceph-pool">
-                        <div class="form-text">
-                            Proxmox storage ID to use for snapshot VM state. Leave blank to use the default storage.
-                        </div>
-                    </div>
                     <div class="form-check mb-3">
                         <input type="checkbox" class="form-check-input" name="require_snapshot_before_action" id="requireSnapshot" {{ 'checked' if settings.require_snapshot_before_action == 'true' }}>
                         <label class="form-check-label" for="requireSnapshot"><strong>Require snapshot before updates & SSH</strong></label>
@@ -260,6 +253,41 @@
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary">Save Snapshot Settings</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card bg-dark mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-hdd"></i> Backup Defaults</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/settings/backups">
+                    <div class="mb-3">
+                        <label class="form-label">Default Backup Storage</label>
+                        <input type="text" class="form-control" name="backup_storage" value="{{ settings.backup_storage or '' }}" placeholder="e.g. local, nfs-backup, pbs">
+                        <div class="form-text">
+                            Proxmox storage ID for vzdump backups. Must support backup content type.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Backup Mode</label>
+                        <select class="form-select" name="backup_mode">
+                            <option value="snapshot" {{ 'selected' if settings.backup_mode == 'snapshot' }}>Snapshot (no downtime)</option>
+                            <option value="suspend" {{ 'selected' if settings.backup_mode == 'suspend' }}>Suspend (brief pause)</option>
+                            <option value="stop" {{ 'selected' if settings.backup_mode == 'stop' }}>Stop (guest stopped during backup)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Compression</label>
+                        <select class="form-select" name="backup_compress">
+                            <option value="zstd" {{ 'selected' if settings.backup_compress == 'zstd' }}>ZSTD (recommended)</option>
+                            <option value="lzo" {{ 'selected' if settings.backup_compress == 'lzo' }}>LZO (fast)</option>
+                            <option value="gzip" {{ 'selected' if settings.backup_compress == 'gzip' }}>GZIP (compatible)</option>
+                            <option value="0" {{ 'selected' if settings.backup_compress == '0' }}>None</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save Backup Settings</button>
                 </form>
             </div>
         </div>

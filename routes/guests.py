@@ -134,10 +134,12 @@ def detail(guest_id):
     credentials = Credential.query.all()
     tags = Tag.query.order_by(Tag.name).all()
 
-    # Fetch replication info, snapshots, and available nodes if guest has a Proxmox host
+    # Fetch replication info, snapshots, backups, and available nodes if guest has a Proxmox host
     repl_jobs = []
     cluster_nodes = []
     snapshots = []
+    backups = []
+    backup_storages = []
     if guest.proxmox_host and guest.vmid:
         try:
             client = ProxmoxClient(guest.proxmox_host)
@@ -146,6 +148,16 @@ def detail(guest_id):
                 repl_jobs = client.get_replication_jobs(guest.vmid)
                 cluster_nodes = [n["node"] for n in client.get_nodes()]
                 snapshots = client.list_snapshots(node, guest.vmid, guest.guest_type)
+                backup_storages = client.list_node_storages(node, content_type="backup")
+                # List backups from the default storage (or all backup-capable storages)
+                default_storage = Setting.get("backup_storage", "")
+                if default_storage:
+                    backups = client.list_backups(node, guest.vmid, default_storage)
+                else:
+                    # Try each backup-capable storage
+                    for st in backup_storages:
+                        backups.extend(client.list_backups(node, guest.vmid, st.get("storage", "")))
+                    backups.sort(key=lambda x: x.get("ctime", 0), reverse=True)
         except Exception:
             pass
 
@@ -157,7 +169,9 @@ def detail(guest_id):
 
     return render_template("guest_detail.html", guest=guest, credentials=credentials, tags=tags,
                            repl_jobs=repl_jobs, cluster_nodes=cluster_nodes,
-                           snapshots=snapshots, unifi_client=unifi_client,
+                           snapshots=snapshots, backups=backups,
+                           backup_storages=backup_storages,
+                           unifi_client=unifi_client,
                            known_services=GuestService.KNOWN_SERVICES)
 
 
@@ -399,8 +413,7 @@ def create_snapshot(guest_id):
         flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    storage = Setting.get("snapshot_storage", "") or None
-    ok, msg = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description, vmstate_storage=storage)
+    ok, msg = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
     if ok:
         flash(f"Snapshot '{snapname}' created.", "success")
     else:
@@ -463,6 +476,140 @@ def rollback_snapshot(guest_id, snapname):
     return redirect(url_for("guests.detail", guest_id=guest.id))
 
 
+@bp.route("/<int:guest_id>/backup/create", methods=["POST"])
+@login_required
+def create_backup(guest_id):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.proxmox_host or not guest.vmid:
+        flash("Guest must be linked to a Proxmox host with a VMID.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    storage = request.form.get("storage", "").strip()
+    mode = request.form.get("mode", "").strip()
+    compress = request.form.get("compress", "").strip()
+    protected = "protected" in request.form
+    notes = request.form.get("notes", "").strip()
+
+    # Fall back to global defaults
+    if not storage:
+        storage = Setting.get("backup_storage", "")
+    if not mode:
+        mode = Setting.get("backup_mode", "snapshot")
+    if not compress:
+        compress = Setting.get("backup_compress", "zstd")
+
+    if not storage:
+        flash("No backup storage configured. Set a default in Settings or specify one.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = client.find_guest_node(guest.vmid)
+    if not node:
+        flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    ok, msg = client.create_backup(node, guest.vmid, storage, mode=mode, compress=compress, protected=protected, notes=notes)
+    if ok:
+        flash(f"Backup started for {guest.name}.", "success")
+    else:
+        flash(f"Failed to create backup: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
+@bp.route("/<int:guest_id>/backup/<path:volid>/delete", methods=["POST"])
+@login_required
+def delete_backup(guest_id, volid):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.proxmox_host or not guest.vmid:
+        flash("Guest must be linked to a Proxmox host with a VMID.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    storage = volid.split(":")[0] if ":" in volid else Setting.get("backup_storage", "")
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = client.find_guest_node(guest.vmid)
+    if not node:
+        flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    ok, msg = client.delete_backup(node, storage, volid)
+    if ok:
+        flash("Backup deleted.", "warning")
+    else:
+        flash(f"Failed to delete backup: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
+@bp.route("/<int:guest_id>/backup/<path:volid>/protect", methods=["POST"])
+@login_required
+def toggle_backup_protection(guest_id, volid):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.proxmox_host or not guest.vmid:
+        flash("Guest must be linked to a Proxmox host with a VMID.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    storage = volid.split(":")[0] if ":" in volid else Setting.get("backup_storage", "")
+    protect = request.form.get("protected", "1") == "1"
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = client.find_guest_node(guest.vmid)
+    if not node:
+        flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    ok, msg = client.update_backup_protection(node, storage, volid, protect)
+    if ok:
+        flash(msg, "success")
+    else:
+        flash(f"Failed to update protection: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
+@bp.route("/<int:guest_id>/backup/<path:volid>/notes", methods=["POST"])
+@login_required
+def update_backup_notes(guest_id, volid):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.proxmox_host or not guest.vmid:
+        flash("Guest must be linked to a Proxmox host with a VMID.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    storage = volid.split(":")[0] if ":" in volid else Setting.get("backup_storage", "")
+    notes = request.form.get("notes", "").strip()
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = client.find_guest_node(guest.vmid)
+    if not node:
+        flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    ok, msg = client.update_backup_notes(node, storage, volid, notes)
+    if ok:
+        flash("Backup notes updated.", "success")
+    else:
+        flash(f"Failed to update notes: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
 @bp.route("/<int:guest_id>/delete", methods=["POST"])
 @login_required
 def delete(guest_id):
@@ -519,6 +666,5 @@ def auto_snapshot_if_needed(guest):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     snapname = f"auto-{timestamp}"
     description = f"Auto-snapshot before user action at {timestamp}"
-    storage = Setting.get("snapshot_storage", "") or None
-    ok, msg = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description, vmstate_storage=storage)
+    ok, msg = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
     return ok, msg

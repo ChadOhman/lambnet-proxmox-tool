@@ -337,17 +337,10 @@ class ProxmoxClient:
         except Exception as e:
             return False, str(e)
 
-    def create_snapshot(self, node, vmid, guest_type, snapname, description="", vmstate_storage=None):
-        """Create a snapshot of a VM or CT. Returns (success, message).
-
-        If vmstate_storage is provided (a Proxmox storage ID), VM snapshots will
-        save RAM state to that storage.
-        """
+    def create_snapshot(self, node, vmid, guest_type, snapname, description=""):
+        """Create a snapshot of a VM or CT. Returns (success, message)."""
         try:
             kwargs = {"snapname": snapname, "description": description}
-            if vmstate_storage and guest_type == "vm":
-                kwargs["vmstate"] = 1
-                kwargs["storage"] = vmstate_storage
             if guest_type == "vm":
                 self.api.nodes(node).qemu(vmid).snapshot.post(**kwargs)
             else:
@@ -392,6 +385,77 @@ class ProxmoxClient:
             return True, f"Rolled back to snapshot '{snapname}'"
         except Exception as e:
             logger.error(f"Failed to rollback to snapshot '{snapname}' for {guest_type}/{vmid}: {e}")
+            return False, str(e)
+
+    # ------------------------------------------------------------------
+    # Backups (vzdump)
+    # ------------------------------------------------------------------
+
+    def create_backup(self, node, vmid, storage, mode="snapshot", compress="zstd", protected=False, notes=""):
+        """Create a vzdump backup. Returns (success, message)."""
+        try:
+            kwargs = {
+                "vmid": vmid,
+                "storage": storage,
+                "mode": mode,
+                "compress": compress,
+            }
+            if protected:
+                kwargs["protected"] = 1
+            if notes:
+                kwargs["notes-template"] = notes
+            self.api.nodes(node).vzdump.post(**kwargs)
+            return True, f"Backup started for VMID {vmid} on storage '{storage}'"
+        except Exception as e:
+            logger.error(f"Failed to create backup for VMID {vmid}: {e}")
+            return False, str(e)
+
+    def list_backups(self, node, vmid, storage):
+        """List backup volumes for a VMID from a storage. Returns list of dicts."""
+        try:
+            data = self.api.nodes(node).storage(storage).content.get(content="backup", vmid=vmid)
+            return sorted(data, key=lambda x: x.get("ctime", 0), reverse=True)
+        except Exception as e:
+            logger.error(f"Failed to list backups for VMID {vmid} on {storage}: {e}")
+            return []
+
+    def list_node_storages(self, node, content_type="backup"):
+        """List storages available on a node, optionally filtered by content type."""
+        try:
+            storages = self.api.nodes(node).storage.get()
+            if content_type:
+                storages = [s for s in storages if content_type in s.get("content", "").split(",")]
+            return storages
+        except Exception as e:
+            logger.error(f"Failed to list storages on {node}: {e}")
+            return []
+
+    def delete_backup(self, node, storage, volid):
+        """Delete a backup volume. Returns (success, message)."""
+        try:
+            self.api.nodes(node).storage(storage).content(volid).delete()
+            return True, f"Backup '{volid}' deleted"
+        except Exception as e:
+            logger.error(f"Failed to delete backup '{volid}': {e}")
+            return False, str(e)
+
+    def update_backup_protection(self, node, storage, volid, protected):
+        """Set or remove protection on a backup. Returns (success, message)."""
+        try:
+            self.api.nodes(node).storage(storage).content(volid).put(protected=1 if protected else 0)
+            state = "protected" if protected else "unprotected"
+            return True, f"Backup '{volid}' is now {state}"
+        except Exception as e:
+            logger.error(f"Failed to update protection on '{volid}': {e}")
+            return False, str(e)
+
+    def update_backup_notes(self, node, storage, volid, notes):
+        """Update the notes on a backup volume. Returns (success, message)."""
+        try:
+            self.api.nodes(node).storage(storage).content(volid).put(notes=notes)
+            return True, f"Notes updated for '{volid}'"
+        except Exception as e:
+            logger.error(f"Failed to update notes on '{volid}': {e}")
             return False, str(e)
 
     def find_guest_node(self, vmid):

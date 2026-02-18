@@ -68,8 +68,7 @@ def snapshot_guest(guest):
     snapname = f"pre-mastodon-{timestamp}"
     description = f"Auto-snapshot before Mastodon upgrade at {timestamp}"
 
-    storage = Setting.get("snapshot_storage", "") or None
-    return client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description, vmstate_storage=storage)
+    return client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
 
 
 def _get_mastodon_config():
