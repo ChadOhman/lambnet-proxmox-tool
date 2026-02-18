@@ -2,7 +2,18 @@
   "permissions": {
     "allow": [
       "Bash(git commit:*)",
-      "Bash(git -C \"c:/Users/ChadOhman/Documents/GitHub/lambnet-proxmox-tool/lambnet-proxmox-tool\" ls-files:*)"
+      "Bash(git -C \"c:/Users/ChadOhman/Documents/GitHub/lambnet-proxmox-tool/lambnet-proxmox-tool\" ls-files:*)",
+      "Bash(for f in templates/change_password.html templates/credentials.html templates/dashboard.html templates/guests.html templates/guest_detail.html templates/hosts.html templates/mastodon.html templates/schedules.html templates/settings.html templates/terminal.html templates/users.html templates/unifi.html)",
+      "Bash(do sed -i 's/LambNet Update Manager/Proxmox Administration Tool/g' \"$f\")",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(gh repo rename:*)",
+      "Bash(git remote set-url:*)",
+      "Read(//c/Users/ChadOhman/Documents/GitHub/lambnet-proxmox-tool/**)",
+      "Read(//c/Users/ChadOhman/.claude/plans/**)",
+      "Bash(python:*)",
+      "Bash(git status:*)",
+      "Bash(git rm:*)"
     ],
     "additionalDirectories": [
       "\\tmp"
