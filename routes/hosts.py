@@ -201,6 +201,109 @@ def discover(host_id):
     return redirect(url_for("hosts.index"))
 
 
+@bp.route("/discover-all", methods=["POST"])
+def discover_all():
+    hosts = ProxmoxHost.query.all()
+    if not hosts:
+        flash("No hosts configured.", "warning")
+        return redirect(url_for("hosts.index"))
+
+    for host in hosts:
+        try:
+            client = ProxmoxClient(host)
+            node_name = client.get_local_node_name()
+            if node_name:
+                node_guests = client.get_node_guests(node_name)
+            else:
+                node_guests = client.get_all_guests()
+                node_name = "cluster"
+
+            repl_map = client.get_replication_map()
+
+            node_vmids = {g.get("vmid") for g in node_guests}
+            stale = Guest.query.filter(
+                Guest.proxmox_host_id == host.id,
+                Guest.vmid.isnot(None),
+                ~Guest.vmid.in_(node_vmids),
+            ).all()
+            for s in stale:
+                db.session.delete(s)
+
+            added = 0
+            updated = 0
+            for g in node_guests:
+                vmid = g.get("vmid")
+                status = g.get("status", "")
+
+                existing = Guest.query.filter_by(proxmox_host_id=host.id, vmid=vmid).first()
+
+                if not existing:
+                    other = Guest.query.filter(Guest.vmid == vmid, Guest.proxmox_host_id != host.id).first()
+                    if other:
+                        if status != "running":
+                            continue
+                        existing = other
+                        existing.proxmox_host_id = host.id
+
+                proxmox_tags = g.get("tags", "")
+                tag_names = [t.strip() for t in re.split(r"[;,]", proxmox_tags) if t.strip()] if proxmox_tags else []
+
+                ip = None
+                if status == "running":
+                    ip = client.get_guest_ip(g["node"], vmid, g["type"])
+                    if ip and ip.lower() in ("dhcp", "dhcp6", "auto"):
+                        ip = None
+
+                repl_target = repl_map.get(vmid)
+                mac = client.get_guest_mac(g["node"], vmid, g["type"])
+                power_state = status if status in ("running", "stopped", "paused") else "unknown"
+
+                if not existing:
+                    guest = Guest(
+                        proxmox_host_id=host.id,
+                        vmid=vmid,
+                        name=g.get("name", f"guest-{vmid}"),
+                        guest_type=g["type"],
+                        ip_address=ip,
+                        connection_method="auto",
+                        replication_target=repl_target,
+                        mac_address=mac,
+                        power_state=power_state,
+                    )
+                    db.session.add(guest)
+                    added += 1
+
+                    for tag_name in tag_names:
+                        tag = Tag.query.filter_by(name=tag_name).first()
+                        if not tag:
+                            tag = Tag(name=tag_name)
+                            db.session.add(tag)
+                        guest.tags.append(tag)
+                else:
+                    if ip:
+                        existing.ip_address = ip
+                    existing.name = g.get("name", existing.name)
+                    existing.replication_target = repl_target
+                    existing.power_state = power_state
+                    if mac:
+                        existing.mac_address = mac
+                    existing.tags.clear()
+                    for tag_name in tag_names:
+                        tag = Tag.query.filter_by(name=tag_name).first()
+                        if not tag:
+                            tag = Tag(name=tag_name)
+                            db.session.add(tag)
+                        existing.tags.append(tag)
+                    updated += 1
+
+            db.session.commit()
+            flash(f"'{host.name}': {len(node_guests)} guests ({added} new, {updated} updated).", "success")
+        except Exception as e:
+            flash(f"Discovery failed for '{host.name}': {e}", "error")
+
+    return redirect(url_for("hosts.index"))
+
+
 @bp.route("/<int:host_id>/delete", methods=["POST"])
 def delete(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
