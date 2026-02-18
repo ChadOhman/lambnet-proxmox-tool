@@ -29,6 +29,7 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _migrate_schema()
         _migrate_roles()
         _ensure_default_admin()
 
@@ -125,6 +126,20 @@ def create_app():
         return response
 
     return app
+
+
+def _migrate_schema():
+    """Add any missing columns to existing tables (SQLAlchemy create_all doesn't alter tables)."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+    table_names = inspector.get_table_names()
+
+    if "guests" in table_names:
+        guest_columns = [c["name"] for c in inspector.get_columns("guests")]
+        if "replication_target" not in guest_columns:
+            logger.info("Adding replication_target column to guests table...")
+            db.session.execute(text("ALTER TABLE guests ADD COLUMN replication_target VARCHAR(128)"))
+            db.session.commit()
 
 
 def _migrate_roles():
