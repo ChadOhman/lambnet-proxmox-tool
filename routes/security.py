@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
-from models import db, User, Role, Tag
+from models import db, User, Role, Tag, Setting
+from credential_store import encrypt
 
 bp = Blueprint("security", __name__)
 
@@ -8,8 +9,8 @@ bp = Blueprint("security", __name__)
 @bp.before_request
 @login_required
 def _require_access():
-    # Roles and tags management: super_admin only
-    if request.path.startswith("/security/roles") or request.path.startswith("/security/tags"):
+    # Roles, tags, and access management: super_admin only
+    if request.path.startswith("/security/roles") or request.path.startswith("/security/tags") or request.path.startswith("/security/access"):
         if not current_user.is_super_admin:
             flash("Super admin access required.", "error")
             return redirect(url_for("dashboard.index"))
@@ -19,12 +20,27 @@ def _require_access():
         return redirect(url_for("dashboard.index"))
 
 
+def _get_access_settings():
+    """Settings needed for the Access tab."""
+    return {
+        "cf_access_enabled": Setting.get("cf_access_enabled", "false"),
+        "cf_access_team_domain": Setting.get("cf_access_team_domain", ""),
+        "cf_access_audience": Setting.get("cf_access_audience", ""),
+        "cf_access_auto_provision": Setting.get("cf_access_auto_provision", "true"),
+        "cf_access_bypass_local_auth": Setting.get("cf_access_bypass_local_auth", "false"),
+        "local_bypass_enabled": Setting.get("local_bypass_enabled", "true"),
+        "trusted_subnets": Setting.get("trusted_subnets", "10.0.0.0/8"),
+        "require_snapshot_before_action": Setting.get("require_snapshot_before_action", "false"),
+    }
+
+
 @bp.route("/")
 def index():
     users = User.query.options(db.joinedload(User.role_obj)).order_by(User.username).all()
     roles = Role.query.order_by(Role.level.desc(), Role.name).all()
     tags = Tag.query.order_by(Tag.name).all()
-    return render_template("security.html", users=users, roles=roles, tags=tags)
+    settings = _get_access_settings() if current_user.is_super_admin else {}
+    return render_template("security.html", users=users, roles=roles, tags=tags, settings=settings)
 
 
 # --- User management ---
@@ -247,4 +263,63 @@ def delete_tag(tag_id):
     db.session.delete(tag)
     db.session.commit()
     flash(f"Tag '{name}' deleted.", "warning")
+    return redirect(url_for("security.index"))
+
+
+# --- Access settings (super_admin only, enforced by before_request) ---
+
+@bp.route("/access/cloudflare", methods=["POST"])
+def save_cloudflare():
+    cf_enabled = "cf_access_enabled" in request.form
+    team_domain = request.form.get("cf_access_team_domain", "").strip()
+    audience = request.form.get("cf_access_audience", "").strip()
+    auto_provision = "cf_access_auto_provision" in request.form
+    bypass_local = "cf_access_bypass_local_auth" in request.form
+
+    if bypass_local and cf_enabled:
+        if not team_domain or not audience:
+            flash("Team domain and audience tag are required to enable CF Access-only mode.", "error")
+            return redirect(url_for("security.index"))
+
+    Setting.set("cf_access_enabled", "true" if cf_enabled else "false")
+    Setting.set("cf_access_team_domain", team_domain)
+    Setting.set("cf_access_audience", audience)
+    Setting.set("cf_access_auto_provision", "true" if auto_provision else "false")
+    Setting.set("cf_access_bypass_local_auth", "true" if bypass_local else "false")
+
+    flash("Cloudflare Zero Trust settings saved.", "success")
+    return redirect(url_for("security.index"))
+
+
+@bp.route("/access/local-bypass", methods=["POST"])
+def save_local_bypass():
+    import ipaddress
+
+    enabled = "local_bypass_enabled" in request.form
+    subnets = request.form.get("trusted_subnets", "10.0.0.0/8").strip()
+
+    if subnets:
+        for entry in subnets.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            try:
+                ipaddress.ip_network(entry, strict=False)
+            except ValueError:
+                flash(f"Invalid subnet: {entry}", "error")
+                return redirect(url_for("security.index"))
+
+    Setting.set("local_bypass_enabled", "true" if enabled else "false")
+    Setting.set("trusted_subnets", subnets)
+
+    flash("Local network access settings saved.", "success")
+    return redirect(url_for("security.index"))
+
+
+@bp.route("/access/snapshots", methods=["POST"])
+def save_snapshots():
+    require_snapshot = "require_snapshot_before_action" in request.form
+    Setting.set("require_snapshot_before_action", "true" if require_snapshot else "false")
+
+    flash("Snapshot settings saved.", "success")
     return redirect(url_for("security.index"))

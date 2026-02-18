@@ -29,13 +29,6 @@ def _get_settings_dict():
         "discovery_enabled": Setting.get("discovery_enabled", "true"),
         "service_check_interval": Setting.get("service_check_interval", "5"),
         "service_check_enabled": Setting.get("service_check_enabled", "true"),
-        "cf_access_enabled": Setting.get("cf_access_enabled", "false"),
-        "cf_access_team_domain": Setting.get("cf_access_team_domain", ""),
-        "cf_access_audience": Setting.get("cf_access_audience", ""),
-        "cf_access_auto_provision": Setting.get("cf_access_auto_provision", "true"),
-        "cf_access_bypass_local_auth": Setting.get("cf_access_bypass_local_auth", "false"),
-        "local_bypass_enabled": Setting.get("local_bypass_enabled", "true"),
-        "trusted_subnets": Setting.get("trusted_subnets", "10.0.0.0/8"),
         "unifi_enabled": Setting.get("unifi_enabled", "false"),
         "unifi_base_url": Setting.get("unifi_base_url", ""),
         "unifi_username": Setting.get("unifi_username", ""),
@@ -45,7 +38,6 @@ def _get_settings_dict():
         "unifi_filter_subnet": Setting.get("unifi_filter_subnet", ""),
         "app_auto_update": Setting.get("app_auto_update", "false"),
         "app_update_branch": Setting.get("app_update_branch", ""),
-        "require_snapshot_before_action": Setting.get("require_snapshot_before_action", "false"),
         "backup_storage": Setting.get("backup_storage", ""),
         "backup_mode": Setting.get("backup_mode", "snapshot"),
         "backup_compress": Setting.get("backup_compress", "zstd"),
@@ -129,40 +121,6 @@ def save_scan():
     return redirect(url_for("settings.index"))
 
 
-@bp.route("/local-bypass", methods=["POST"])
-def save_local_bypass():
-    import ipaddress
-
-    enabled = "local_bypass_enabled" in request.form
-    subnets = request.form.get("trusted_subnets", "10.0.0.0/8").strip()
-
-    # Validate subnets
-    if subnets:
-        for entry in subnets.split(","):
-            entry = entry.strip()
-            if not entry:
-                continue
-            try:
-                ipaddress.ip_network(entry, strict=False)
-            except ValueError:
-                flash(f"Invalid subnet: {entry}", "error")
-                return redirect(url_for("settings.index"))
-
-    Setting.set("local_bypass_enabled", "true" if enabled else "false")
-    Setting.set("trusted_subnets", subnets)
-
-    flash("Local network access settings saved.", "success")
-    return redirect(url_for("settings.index"))
-
-
-@bp.route("/snapshots", methods=["POST"])
-def save_snapshots():
-    require_snapshot = "require_snapshot_before_action" in request.form
-    Setting.set("require_snapshot_before_action", "true" if require_snapshot else "false")
-
-    flash("Snapshot settings saved.", "success")
-    return redirect(url_for("settings.index"))
-
 
 @bp.route("/backups", methods=["POST"])
 def save_backups():
@@ -177,29 +135,6 @@ def save_backups():
     flash("Backup settings saved.", "success")
     return redirect(url_for("settings.index"))
 
-
-@bp.route("/cloudflare", methods=["POST"])
-def save_cloudflare():
-    cf_enabled = "cf_access_enabled" in request.form
-    team_domain = request.form.get("cf_access_team_domain", "").strip()
-    audience = request.form.get("cf_access_audience", "").strip()
-    auto_provision = "cf_access_auto_provision" in request.form
-    bypass_local = "cf_access_bypass_local_auth" in request.form
-
-    # Validate before enabling bypass mode
-    if bypass_local and cf_enabled:
-        if not team_domain or not audience:
-            flash("Team domain and audience tag are required to enable CF Access-only mode.", "error")
-            return redirect(url_for("settings.index"))
-
-    Setting.set("cf_access_enabled", "true" if cf_enabled else "false")
-    Setting.set("cf_access_team_domain", team_domain)
-    Setting.set("cf_access_audience", audience)
-    Setting.set("cf_access_auto_provision", "true" if auto_provision else "false")
-    Setting.set("cf_access_bypass_local_auth", "true" if bypass_local else "false")
-
-    flash("Cloudflare Zero Trust settings saved.", "success")
-    return redirect(url_for("settings.index"))
 
 
 @bp.route("/unifi", methods=["POST"])
