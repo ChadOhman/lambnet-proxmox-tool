@@ -34,6 +34,8 @@
 
     let wasRunning = true;
     let connectionLost = false;
+    let processDone = false;
+    let processDoneAt = 0;
     let updateComplete = false;
     let pollInterval = 2000;
 
@@ -43,7 +45,14 @@
         badge.textContent = badgeText;
     }
 
-    function enableBack() {
+    function markComplete(data) {
+        updateComplete = true;
+        if (data && data.log) {
+            logEl.textContent = data.log;
+        }
+        logEl.textContent += '\n--- Update complete ---\n';
+        logEl.scrollTop = logEl.scrollHeight;
+        setStatus('Update complete!', 'bg-success', 'Complete');
         backBtn.classList.remove('disabled');
         backBtn.removeAttribute('aria-disabled');
         spinIcon.classList.remove('spin-animation');
@@ -57,14 +66,9 @@
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const data = await resp.json();
 
-            // Connection restored after being lost = update complete
+            // Connection restored after being lost = service restarted
             if (connectionLost) {
-                updateComplete = true;
-                logEl.textContent = data.log || logEl.textContent;
-                logEl.textContent += '\n--- Service restarted successfully ---\n';
-                logEl.scrollTop = logEl.scrollHeight;
-                setStatus('Update complete!', 'bg-success', 'Complete');
-                enableBack();
+                markComplete(data);
                 return;
             }
 
@@ -77,10 +81,23 @@
             if (data.running) {
                 setStatus('Update in progress...', 'bg-info', 'Updating...');
                 wasRunning = true;
-            } else if (wasRunning) {
-                // Process finished — service restart is imminent
-                setStatus('Service restarting, please wait...', 'bg-warning text-dark', 'Restarting...');
-                wasRunning = false;
+                processDone = false;
+            } else {
+                if (wasRunning) {
+                    // Process just finished — wait for service restart
+                    setStatus('Service restarting, please wait...', 'bg-warning text-dark', 'Restarting...');
+                    wasRunning = false;
+                    processDone = true;
+                    processDoneAt = Date.now();
+                }
+
+                // If process has been done for >10s and we're still connected,
+                // the service either restarted fast or won't restart (e.g. dev mode).
+                // Either way, the update is done.
+                if (processDone && (Date.now() - processDoneAt) > 10000) {
+                    markComplete(data);
+                    return;
+                }
             }
 
         } catch (e) {
