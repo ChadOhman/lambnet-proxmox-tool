@@ -337,17 +337,21 @@ class ProxmoxClient:
         except Exception as e:
             return False, str(e)
 
-    def create_snapshot(self, node, vmid, guest_type, snapname, description=""):
-        """Create a snapshot of a VM or CT. Returns (success, message)."""
+    def create_snapshot(self, node, vmid, guest_type, snapname, description="", vmstate_storage=None):
+        """Create a snapshot of a VM or CT. Returns (success, message).
+
+        If vmstate_storage is provided (a Proxmox storage ID), VM snapshots will
+        save RAM state to that storage.
+        """
         try:
+            kwargs = {"snapname": snapname, "description": description}
+            if vmstate_storage and guest_type == "vm":
+                kwargs["vmstate"] = 1
+                kwargs["storage"] = vmstate_storage
             if guest_type == "vm":
-                self.api.nodes(node).qemu(vmid).snapshot.post(
-                    snapname=snapname, description=description
-                )
+                self.api.nodes(node).qemu(vmid).snapshot.post(**kwargs)
             else:
-                self.api.nodes(node).lxc(vmid).snapshot.post(
-                    snapname=snapname, description=description
-                )
+                self.api.nodes(node).lxc(vmid).snapshot.post(**kwargs)
             return True, f"Snapshot '{snapname}' created for {guest_type}/{vmid}"
         except Exception as e:
             logger.error(f"Failed to create snapshot for {guest_type}/{vmid}: {e}")

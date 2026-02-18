@@ -46,6 +46,7 @@ def _get_settings_dict():
         "app_auto_update": Setting.get("app_auto_update", "false"),
         "app_update_branch": Setting.get("app_update_branch", ""),
         "require_snapshot_before_action": Setting.get("require_snapshot_before_action", "false"),
+        "snapshot_storage": Setting.get("snapshot_storage", ""),
     }
 
 
@@ -155,7 +156,9 @@ def save_local_bypass():
 @bp.route("/snapshots", methods=["POST"])
 def save_snapshots():
     require_snapshot = "require_snapshot_before_action" in request.form
+    snapshot_storage = request.form.get("snapshot_storage", "").strip()
     Setting.set("require_snapshot_before_action", "true" if require_snapshot else "false")
+    Setting.set("snapshot_storage", snapshot_storage)
 
     flash("Snapshot settings saved.", "success")
     return redirect(url_for("settings.index"))

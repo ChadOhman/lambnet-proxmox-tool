@@ -399,7 +399,8 @@ def create_snapshot(guest_id):
         flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    ok, msg = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+    storage = Setting.get("snapshot_storage", "") or None
+    ok, msg = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description, vmstate_storage=storage)
     if ok:
         flash(f"Snapshot '{snapname}' created.", "success")
     else:
@@ -518,5 +519,6 @@ def auto_snapshot_if_needed(guest):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     snapname = f"auto-{timestamp}"
     description = f"Auto-snapshot before user action at {timestamp}"
-    ok, msg = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+    storage = Setting.get("snapshot_storage", "") or None
+    ok, msg = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description, vmstate_storage=storage)
     return ok, msg
