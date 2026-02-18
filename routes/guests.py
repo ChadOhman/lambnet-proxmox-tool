@@ -1,9 +1,28 @@
+import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
-from models import db, Guest, ProxmoxHost, Credential, Tag
+from models import db, Guest, ProxmoxHost, Credential, Tag, Setting
 from proxmox_api import ProxmoxClient
 
+logger = logging.getLogger(__name__)
+
 bp = Blueprint("guests", __name__)
+
+
+def _get_unifi_mac_map():
+    """Fetch UniFi clients and return a MAC -> client dict. Returns empty dict if UniFi is disabled."""
+    if Setting.get("unifi_enabled", "false") != "true":
+        return {}
+    try:
+        from routes.unifi import _get_unifi_client
+        client = _get_unifi_client()
+        if not client:
+            return {}
+        clients = client.get_clients() or []
+        return {c["mac"].lower(): c for c in clients if c.get("mac")}
+    except Exception as e:
+        logger.debug(f"Could not fetch UniFi clients: {e}")
+        return {}
 
 
 @bp.route("/")
@@ -46,7 +65,13 @@ def index():
     hosts = ProxmoxHost.query.all()
     credentials = Credential.query.all()
     tags = Tag.query.order_by(Tag.name).all()
-    return render_template("guests.html", guests=guests, hosts=hosts, credentials=credentials, tags=tags, current_tag=tag_filter, user_tag_names=user_tag_names)
+
+    # Fetch UniFi clients for MAC-based IP enrichment
+    unifi_map = _get_unifi_mac_map()
+
+    return render_template("guests.html", guests=guests, hosts=hosts, credentials=credentials,
+                           tags=tags, current_tag=tag_filter, user_tag_names=user_tag_names,
+                           unifi_map=unifi_map)
 
 
 @bp.route("/add", methods=["POST"])
@@ -120,8 +145,15 @@ def detail(guest_id):
         except Exception:
             pass
 
+    # Fetch UniFi client info by MAC address
+    unifi_client = None
+    if guest.mac_address:
+        unifi_map = _get_unifi_mac_map()
+        unifi_client = unifi_map.get(guest.mac_address)
+
     return render_template("guest_detail.html", guest=guest, credentials=credentials, tags=tags,
-                           repl_jobs=repl_jobs, cluster_nodes=cluster_nodes)
+                           repl_jobs=repl_jobs, cluster_nodes=cluster_nodes,
+                           unifi_client=unifi_client)
 
 
 @bp.route("/<int:guest_id>/edit", methods=["POST"])
@@ -204,6 +236,87 @@ def delete_replication(guest_id, job_id):
         flash(msg, "success")
     else:
         flash(f"Failed to delete replication: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
+@bp.route("/<int:guest_id>/unifi/reconnect", methods=["POST"])
+@login_required
+def unifi_reconnect(guest_id):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.mac_address:
+        flash("No MAC address available for this guest.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    from routes.unifi import _get_unifi_client
+    client = _get_unifi_client()
+    if not client:
+        flash("UniFi controller not configured.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    ok, msg = client.reconnect_client(guest.mac_address)
+    if ok:
+        flash(f"Reconnect command sent to {guest.name}.", "success")
+    else:
+        flash(f"Failed to reconnect: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
+@bp.route("/<int:guest_id>/unifi/block", methods=["POST"])
+@login_required
+def unifi_block(guest_id):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.mac_address:
+        flash("No MAC address available for this guest.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    from routes.unifi import _get_unifi_client
+    client = _get_unifi_client()
+    if not client:
+        flash("UniFi controller not configured.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    ok, msg = client.block_client(guest.mac_address)
+    if ok:
+        flash(f"Block command sent for {guest.name}.", "warning")
+    else:
+        flash(f"Failed to block: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
+@bp.route("/<int:guest_id>/unifi/unblock", methods=["POST"])
+@login_required
+def unifi_unblock(guest_id):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.mac_address:
+        flash("No MAC address available for this guest.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    from routes.unifi import _get_unifi_client
+    client = _get_unifi_client()
+    if not client:
+        flash("UniFi controller not configured.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    ok, msg = client.unblock_client(guest.mac_address)
+    if ok:
+        flash(f"Unblock command sent for {guest.name}.", "success")
+    else:
+        flash(f"Failed to unblock: {msg}", "error")
 
     return redirect(url_for("guests.detail", guest_id=guest.id))
 

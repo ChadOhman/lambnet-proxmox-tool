@@ -51,7 +51,19 @@
             <div class="card-header"><h5 class="mb-0">Guest Info</h5></div>
             <div class="card-body">
                 <table class="table table-dark table-sm mb-0">
-                    <tr><td class="text-muted" style="width:40%">IP Address</td><td>{{ guest.ip_address or 'Not set' }}</td></tr>
+                    <tr>
+                        <td class="text-muted" style="width:40%">IP Address</td>
+                        <td>
+                            {%- if guest.ip_address and guest.ip_address != 'dhcp' -%}
+                                {{ guest.ip_address }}
+                            {%- elif unifi_client -%}
+                                {{ unifi_client.ip }} <span class="text-info"><i class="bi bi-router"></i> UniFi</span>
+                            {%- else -%}
+                                <span class="text-muted">Not set</span>
+                            {%- endif -%}
+                        </td>
+                    </tr>
+                    <tr><td class="text-muted">MAC Address</td><td><code>{{ guest.mac_address or 'Unknown' }}</code></td></tr>
                     <tr><td class="text-muted">VMID</td><td>{{ guest.vmid or 'N/A' }}</td></tr>
                     <tr><td class="text-muted">Host</td><td>{{ guest.proxmox_host.name if guest.proxmox_host else 'Standalone' }}</td></tr>
                     <tr><td class="text-muted">Connection</td><td>{{ guest.connection_method }}</td></tr>
@@ -195,6 +207,57 @@
                 <button type="submit" class="btn btn-sm btn-info"><i class="bi bi-plus-lg"></i> Enable Replication</button>
             </div>
         </form>
+    </div>
+</div>
+{% endif %}
+
+{% if unifi_client and current_user.is_admin %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-router"></i> UniFi Network</h5></div>
+    <div class="card-body">
+        <table class="table table-dark table-sm mb-3">
+            <tr><td class="text-muted" style="width:40%">IP Address</td><td>{{ unifi_client.ip }}</td></tr>
+            <tr><td class="text-muted">MAC Address</td><td><code>{{ unifi_client.mac }}</code></td></tr>
+            <tr><td class="text-muted">Network</td><td>{{ unifi_client.network or 'Unknown' }}</td></tr>
+            <tr>
+                <td class="text-muted">Connection</td>
+                <td>
+                    {% if unifi_client.is_wired %}
+                    <i class="bi bi-ethernet"></i> Wired
+                    {% else %}
+                    <i class="bi bi-wifi"></i> Wireless
+                    {% if unifi_client.signal %}<span class="text-muted ms-1">({{ unifi_client.signal }} dBm)</span>{% endif %}
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td class="text-muted">Uptime</td>
+                <td>
+                    {% set ut = unifi_client.uptime | int %}
+                    {% if ut > 86400 %}{{ (ut // 86400) }}d {{ (ut % 86400 // 3600) }}h
+                    {% elif ut > 3600 %}{{ (ut // 3600) }}h {{ (ut % 3600 // 60) }}m
+                    {% elif ut > 0 %}{{ (ut // 60) }}m
+                    {% else %}-{% endif %}
+                </td>
+            </tr>
+        </table>
+        <div class="d-flex gap-2">
+            {% if not unifi_client.is_wired %}
+            <form method="post" action="/guests/{{ guest.id }}/unifi/reconnect" class="d-inline" onsubmit="return confirm('Force reconnect {{ guest.name }}?')">
+                <button type="submit" class="btn btn-sm btn-outline-warning"><i class="bi bi-arrow-clockwise"></i> Reconnect</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/guests/{{ guest.id }}/unifi/block" class="d-inline" onsubmit="return confirm('Block {{ guest.name }} from the network?')">
+                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-slash-circle"></i> Block</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% elif guest.mac_address and not unifi_client and current_user.is_admin %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-router"></i> UniFi Network</h5></div>
+    <div class="card-body">
+        <p class="text-muted mb-0">Guest MAC <code>{{ guest.mac_address }}</code> not found on UniFi network (offline or not connected).</p>
     </div>
 </div>
 {% endif %}

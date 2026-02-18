@@ -111,6 +111,27 @@ class UniFiClient:
             })
         return clients
 
+    def reconnect_client(self, mac):
+        """Force reconnect a wireless client."""
+        return self._api_post(
+            f"/api/s/{self.site}/cmd/stamgr",
+            {"cmd": "kick-sta", "mac": mac},
+        )
+
+    def block_client(self, mac):
+        """Block a client from the network."""
+        return self._api_post(
+            f"/api/s/{self.site}/cmd/stamgr",
+            {"cmd": "block-sta", "mac": mac},
+        )
+
+    def unblock_client(self, mac):
+        """Unblock a client on the network."""
+        return self._api_post(
+            f"/api/s/{self.site}/cmd/stamgr",
+            {"cmd": "unblock-sta", "mac": mac},
+        )
+
     def restart_device(self, mac):
         return self._api_post(
             f"/api/s/{self.site}/cmd/devmgr",

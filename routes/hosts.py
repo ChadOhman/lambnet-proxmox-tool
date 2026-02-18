@@ -134,6 +134,7 @@ def discover(host_id):
                 ip = client.get_guest_ip(g["node"], vmid, g["type"])
 
             repl_target = repl_map.get(vmid)
+            mac = client.get_guest_mac(g["node"], vmid, g["type"])
 
             if not existing:
                 guest = Guest(
@@ -144,6 +145,7 @@ def discover(host_id):
                     ip_address=ip,
                     connection_method="auto",
                     replication_target=repl_target,
+                    mac_address=mac,
                 )
                 db.session.add(guest)
                 added += 1
@@ -155,11 +157,13 @@ def discover(host_id):
                         db.session.add(tag)
                     guest.tags.append(tag)
             else:
-                # Update IP, name, replication, and tags for existing guests
+                # Update IP, name, replication, MAC, and tags for existing guests
                 if ip:
                     existing.ip_address = ip
                 existing.name = g.get("name", existing.name)
                 existing.replication_target = repl_target
+                if mac:
+                    existing.mac_address = mac
                 existing.tags.clear()
                 for tag_name in tag_names:
                     tag = Tag.query.filter_by(name=tag_name).first()

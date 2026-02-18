@@ -200,6 +200,32 @@ class ProxmoxClient:
             logger.debug(f"Could not get IP for {guest_type}/{vmid}: {e}")
         return None
 
+    def get_guest_mac(self, node, vmid, guest_type):
+        """Get the primary MAC address of a guest from its config."""
+        try:
+            if guest_type == "vm":
+                config = self.api.nodes(node).qemu(vmid).config.get()
+            else:
+                config = self.api.nodes(node).lxc(vmid).config.get()
+            # Parse net0 for MAC address (format: "virtio=AA:BB:CC:DD:EE:FF,..." or "name=...,hwaddr=AA:BB:...")
+            net0 = config.get("net0", "")
+            if not net0:
+                return None
+            # VM format: "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,..."
+            # CT format: "name=eth0,bridge=vmbr0,hwaddr=AA:BB:CC:DD:EE:FF,..."
+            import re
+            # Match hwaddr= (CT) or driver=MAC (VM)
+            hwaddr_match = re.search(r"hwaddr=([0-9A-Fa-f:]{17})", net0)
+            if hwaddr_match:
+                return hwaddr_match.group(1).lower()
+            # VM: first field is usually "virtio=MAC" or "e1000=MAC"
+            mac_match = re.search(r"=([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})", net0)
+            if mac_match:
+                return mac_match.group(1).lower()
+        except Exception as e:
+            logger.debug(f"Could not get MAC for {guest_type}/{vmid}: {e}")
+        return None
+
     def exec_guest_agent(self, node, vmid, command):
         """Execute a command via QEMU guest agent and return output."""
         try:

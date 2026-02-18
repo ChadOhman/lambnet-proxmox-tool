@@ -84,7 +84,16 @@
                             </span>
                         </td>
                         <td>{{ guest.vmid or '-' }}</td>
-                        <td>{{ guest.ip_address or '-' }}</td>
+                        <td>
+                            {%- if guest.ip_address and guest.ip_address != 'dhcp' -%}
+                                {{ guest.ip_address }}
+                            {%- elif guest.mac_address and unifi_map.get(guest.mac_address) -%}
+                                {{ unifi_map[guest.mac_address].ip }}
+                                <span class="text-info ms-1" title="From UniFi"><i class="bi bi-router"></i></span>
+                            {%- else -%}
+                                <span class="text-muted">-</span>
+                            {%- endif -%}
+                        </td>
                         <td>{{ guest.proxmox_host.name if guest.proxmox_host else '-' }}</td>
                         <td>
                             {% for tag in guest.tags %}

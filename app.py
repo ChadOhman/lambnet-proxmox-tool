@@ -140,6 +140,10 @@ def _migrate_schema():
             logger.info("Adding replication_target column to guests table...")
             db.session.execute(text("ALTER TABLE guests ADD COLUMN replication_target VARCHAR(128)"))
             db.session.commit()
+        if "mac_address" not in guest_columns:
+            logger.info("Adding mac_address column to guests table...")
+            db.session.execute(text("ALTER TABLE guests ADD COLUMN mac_address VARCHAR(17)"))
+            db.session.commit()
 
 
 def _migrate_roles():
