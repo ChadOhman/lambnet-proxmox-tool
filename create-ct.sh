@@ -16,6 +16,7 @@ set -e
 #   --bridge <BRIDGE>    Network bridge (default: vmbr0)
 #   --ip <IP/CIDR>       Static IP (default: dhcp)
 #   --gateway <GW>       Gateway (required if static IP)
+#   --password <PASS>    CT root password (default: random)
 #   --cloudflared        Also install cloudflared
 # ============================================================
 
@@ -30,6 +31,7 @@ CORES=2
 BRIDGE="vmbr0"
 IP="dhcp"
 GATEWAY=""
+CT_ROOT_PASS=""
 INSTALL_CLOUDFLARED=""
 REPO_URL="https://github.com/ChadOhman/lambnet-proxmox-tool.git"
 
@@ -46,6 +48,7 @@ while [[ $# -gt 0 ]]; do
         --bridge) BRIDGE="$2"; shift 2 ;;
         --ip) IP="$2"; shift 2 ;;
         --gateway) GATEWAY="$2"; shift 2 ;;
+        --password) CT_ROOT_PASS="$2"; shift 2 ;;
         --cloudflared) INSTALL_CLOUDFLARED="--cloudflared"; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -151,6 +154,11 @@ echo "[2/5] Creating CT $CTID ($HOSTNAME)..."
 echo "  Storage: $STORAGE, Memory: ${MEMORY}MB, Disk: ${DISK}GB, Cores: $CORES"
 echo "  Network: $NET_CONFIG"
 
+# Generate a random root password for the CT if not provided
+if [ -z "$CT_ROOT_PASS" ]; then
+    CT_ROOT_PASS=$(openssl rand -base64 12)
+fi
+
 pct create "$CTID" "$TEMPLATE" \
     --hostname "$HOSTNAME" \
     --storage "$STORAGE" \
@@ -160,6 +168,7 @@ pct create "$CTID" "$TEMPLATE" \
     --net0 "$NET_CONFIG" \
     --features nesting=1 \
     --unprivileged 1 \
+    --password "$CT_ROOT_PASS" \
     --start 0 \
     --onboot 1
 
@@ -209,21 +218,39 @@ fi
 
 # Get CT IP
 CT_IP=$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}')
+WEB_URL="http://${CT_IP}:5000"
+
+# Write details to CT notes in Proxmox
+NOTES="LambNet Proxmox Update Manager
+==================================
+CT ID: $CTID
+Hostname: $HOSTNAME
+CT Root Password: $CT_ROOT_PASS
+Web UI: ${WEB_URL}
+App Username: admin
+App Password: admin (change after first login)
+App Directory: /opt/lambnet
+Data Directory: /var/lib/lambnet
+Provisioned: $(date '+%Y-%m-%d %H:%M:%S')"
+
+pct set "$CTID" --description "$NOTES" 2>/dev/null || true
 
 echo ""
 echo "============================================"
 echo " CT Provisioning Complete!"
 echo "============================================"
 echo ""
-echo " CT ID:     $CTID"
-echo " Hostname:  $HOSTNAME"
+echo " CT ID:         $CTID"
+echo " Hostname:      $HOSTNAME"
+echo " Root Password: $CT_ROOT_PASS"
 if [ -n "$CT_IP" ]; then
-    echo " Web UI:    http://${CT_IP}:5000"
+    echo " Web UI:        ${WEB_URL}"
 fi
-echo " Username:  admin"
-echo " Password:  admin"
+echo " App Username:  admin"
+echo " App Password:  admin"
 echo ""
-echo " IMPORTANT: Change the default password after first login!"
+echo " IMPORTANT: Change the default app password after first login!"
+echo " NOTE: All details have been saved to the CT notes in Proxmox."
 echo ""
 echo " Proxmox commands:"
 echo "   pct enter $CTID              # Shell into CT"
