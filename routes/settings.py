@@ -258,10 +258,11 @@ def check_update():
             req = urllib.request.Request(url, headers={"User-Agent": "MCAT"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
-                sha = data.get("commit", {}).get("sha", "")[:8]
+                full_sha = data.get("commit", {}).get("sha", "")
+                sha = full_sha[:7]
                 message = data.get("commit", {}).get("commit", {}).get("message", "").split("\n")[0]
                 current_commit = current_app.config.get("GIT_COMMIT", "")
-                if current_commit and sha == current_commit:
+                if current_commit and full_sha.startswith(current_commit):
                     flash(f"Already up to date on branch '{update_branch}' ({sha}).", "success")
                     return redirect(url_for("settings.index"))
                 settings = _get_settings_dict()
