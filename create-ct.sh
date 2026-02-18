@@ -81,7 +81,7 @@ if [ -z "$TEMPLATE" ]; then
     TEMPLATE_STORAGE=""
 
     # Method 1: Use pvesm status filtered by content type (Proxmox 7+)
-    TEMPLATE_STORAGE=$(pvesm status --content vztmpl 2>/dev/null | tail -n +2 | awk 'NR==1{print $1}')
+    TEMPLATE_STORAGE=$(pvesm status --content vztmpl 2>/dev/null | awk 'NR>1 && /^[A-Za-z]/{print $1; exit}')
 
     # Method 2: Check each storage config for vztmpl in content field
     if [ -z "$TEMPLATE_STORAGE" ]; then
