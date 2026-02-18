@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from models import db, Guest, ProxmoxHost, Credential, Tag
 from proxmox_api import ProxmoxClient
@@ -12,10 +12,16 @@ def index():
     tag_filter = request.args.get("tag", None)
     user_tag_names = [t.name for t in current_user.allowed_tags]
 
-    # Default: if user has tags assigned and no explicit filter, use their tags
-    if tag_filter is None and user_tag_names:
+    if tag_filter is not None:
+        # User explicitly chose a filter — save it
+        session["guest_tag_filter"] = tag_filter
+    elif "guest_tag_filter" in session:
+        # Restore previous filter
+        tag_filter = session["guest_tag_filter"]
+    elif user_tag_names:
+        # First visit, default to user's tags
         tag_filter = "__my_tags__"
-    elif tag_filter is None:
+    else:
         tag_filter = ""
 
     if current_user.is_admin:
