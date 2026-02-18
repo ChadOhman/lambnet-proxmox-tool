@@ -272,6 +272,31 @@ def _check_app_update(app):
             logger.warning("update.sh not found, cannot auto-update")
 
 
+def _run_service_health_checks(app):
+    """Check status of all tracked services on all guests."""
+    with app.app_context():
+        from models import Setting, Guest
+        from scanner import check_service_statuses
+
+        if Setting.get("service_check_enabled", "true") == "false":
+            logger.info("Service health checks disabled, skipping.")
+            return
+
+        guests = Guest.query.filter(Guest.enabled == True, Guest.services.any()).all()
+        if not guests:
+            return
+
+        checked = 0
+        for guest in guests:
+            try:
+                check_service_statuses(guest)
+                checked += 1
+            except Exception as e:
+                logger.debug(f"Service check failed for {guest.name}: {e}")
+
+        logger.info(f"Service health checks complete: {checked}/{len(guests)} guests checked.")
+
+
 def init_scheduler(app):
     global _scheduler
 
@@ -284,6 +309,7 @@ def init_scheduler(app):
         from models import Setting
         interval_hours = int(Setting.get("scan_interval", "6") or 6)
         discovery_hours = int(Setting.get("discovery_interval", "4") or 4)
+        service_check_minutes = int(Setting.get("service_check_interval", "5") or 5)
 
     # Discovery job - refresh hosts periodically
     _scheduler.add_job(
@@ -326,6 +352,16 @@ def init_scheduler(app):
         replace_existing=True,
     )
 
+    # Service health checks - runs every N minutes
+    _scheduler.add_job(
+        _run_service_health_checks,
+        trigger=IntervalTrigger(minutes=service_check_minutes),
+        args=[app],
+        id="service_health",
+        name="Check service health on all guests",
+        replace_existing=True,
+    )
+
     # App self-update check - runs every 6 hours
     _scheduler.add_job(
         _check_app_update,
@@ -337,6 +373,6 @@ def init_scheduler(app):
     )
 
     _scheduler.start()
-    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, mastodon check every {interval_hours}h, app update check every 6h")
+    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, app update check every 6h")
 
     return _scheduler

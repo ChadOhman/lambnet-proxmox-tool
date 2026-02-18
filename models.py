@@ -219,6 +219,7 @@ class Guest(db.Model):
 
     updates = db.relationship("UpdatePackage", backref="guest", lazy=True, cascade="all, delete-orphan")
     scan_results = db.relationship("ScanResult", backref="guest", lazy=True, cascade="all, delete-orphan")
+    services = db.relationship("GuestService", backref="guest", lazy=True, cascade="all, delete-orphan")
     tags = db.relationship("Tag", secondary=guest_tags, backref="guests")
 
     def pending_updates(self):
@@ -261,6 +262,30 @@ class ScanResult(db.Model):
 
     def __repr__(self):
         return f"<ScanResult guest={self.guest_id} total={self.total_updates}>"
+
+
+class GuestService(db.Model):
+    __tablename__ = "guest_services"
+
+    # Known service definitions: (display_name, unit_name, default_port)
+    KNOWN_SERVICES = {
+        "elasticsearch": ("Elasticsearch", "elasticsearch.service", 9200),
+        "postgresql": ("PostgreSQL", "postgresql.service", 5432),
+        "redis": ("Redis", "redis-server.service", 6379),
+        "libretranslate": ("LibreTranslate", "libretranslate.service", 5000),
+    }
+
+    id = db.Column(db.Integer, primary_key=True)
+    guest_id = db.Column(db.Integer, db.ForeignKey("guests.id"), nullable=False)
+    service_name = db.Column(db.String(64), nullable=False)  # e.g. "elasticsearch"
+    unit_name = db.Column(db.String(128), nullable=False)  # e.g. "elasticsearch.service"
+    port = db.Column(db.Integer, nullable=True)
+    status = db.Column(db.String(32), default="unknown")  # running, stopped, failed, unknown
+    last_checked = db.Column(db.DateTime, nullable=True)
+    auto_detected = db.Column(db.Boolean, default=False)
+
+    def __repr__(self):
+        return f"<GuestService {self.service_name} on guest {self.guest_id}>"
 
 
 class Setting(db.Model):

@@ -1,7 +1,7 @@
 import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
-from models import db, Guest, ProxmoxHost, Credential, Tag, Setting
+from models import db, Guest, GuestService, ProxmoxHost, Credential, Tag, Setting
 from proxmox_api import ProxmoxClient
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,8 @@ def detail(guest_id):
 
     return render_template("guest_detail.html", guest=guest, credentials=credentials, tags=tags,
                            repl_jobs=repl_jobs, cluster_nodes=cluster_nodes,
-                           unifi_client=unifi_client)
+                           unifi_client=unifi_client,
+                           known_services=GuestService.KNOWN_SERVICES)
 
 
 @bp.route("/<int:guest_id>/edit", methods=["POST"])

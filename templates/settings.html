@@ -222,6 +222,17 @@
                         <input type="checkbox" class="form-check-input" name="scan_enabled" id="scanEnabled" {{ 'checked' if settings.scan_enabled != 'false' }}>
                         <label class="form-check-label" for="scanEnabled">Enable automatic scanning</label>
                     </div>
+                    <hr class="border-secondary">
+                    <h6 class="text-muted mb-2">Service Health Checks</h6>
+                    <div class="mb-3">
+                        <label class="form-label">Check Interval (minutes)</label>
+                        <input type="number" class="form-control" name="service_check_interval" value="{{ settings.service_check_interval or '5' }}" min="1" max="60">
+                        <div class="form-text">How often to check service status on guests (1-60 minutes).</div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" name="service_check_enabled" id="serviceCheckEnabled" {{ 'checked' if settings.service_check_enabled != 'false' }}>
+                        <label class="form-check-label" for="serviceCheckEnabled">Enable automatic service health checks</label>
+                    </div>
                     <button type="submit" class="btn btn-primary">Save Settings</button>
                 </form>
             </div>

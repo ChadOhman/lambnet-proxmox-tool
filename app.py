@@ -87,6 +87,7 @@ def create_app():
     from routes.terminal import bp as terminal_bp
     from routes.mastodon import bp as mastodon_bp
     from routes.api import bp as api_bp
+    from routes.services import bp as services_bp
     from routes.unifi import bp as unifi_bp
 
     app.register_blueprint(auth_bp)
@@ -99,6 +100,7 @@ def create_app():
     app.register_blueprint(users_bp, url_prefix="/users")
     app.register_blueprint(terminal_bp, url_prefix="/terminal")
     app.register_blueprint(mastodon_bp, url_prefix="/mastodon")
+    app.register_blueprint(services_bp, url_prefix="/services")
     app.register_blueprint(unifi_bp, url_prefix="/unifi")
     app.register_blueprint(api_bp, url_prefix="/api")
 

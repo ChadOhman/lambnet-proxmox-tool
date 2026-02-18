@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from models import db, Guest, UpdatePackage, ScanResult
+from models import db, Guest, UpdatePackage, ScanResult, GuestService
 from ssh_client import SSHClient
 from proxmox_api import ProxmoxClient
 
@@ -99,6 +99,162 @@ def _execute_on_guest(guest):
     return None, None, "No viable connection method available"
 
 
+def _execute_command(guest, command, timeout=60):
+    """Execute a single command on a guest via SSH or agent. Returns (stdout, error)."""
+    if guest.connection_method in ("ssh", "auto") and guest.ip_address:
+        credential = guest.credential
+        if not credential:
+            from models import Credential
+            credential = Credential.query.filter_by(is_default=True).first()
+
+        if credential and guest.ip_address:
+            try:
+                with SSHClient.from_credential(guest.ip_address, credential) as ssh:
+                    stdout, stderr, code = ssh.execute(command, timeout=timeout)
+                    if code == 0:
+                        return stdout, None
+                    if guest.connection_method == "ssh":
+                        return stdout, stderr or f"Exit code {code}"
+            except Exception as e:
+                if guest.connection_method == "ssh":
+                    return None, f"SSH failed: {e}"
+                logger.debug(f"SSH failed for {guest.name}, trying agent: {e}")
+
+    if guest.connection_method in ("agent", "auto") and guest.proxmox_host and guest.guest_type == "vm":
+        try:
+            client = ProxmoxClient(guest.proxmox_host)
+            node = client.find_guest_node(guest.vmid)
+            if node:
+                stdout, err = client.exec_guest_agent(node, guest.vmid, command)
+                return stdout, err
+            return None, f"Could not find VM {guest.vmid} on any node"
+        except Exception as e:
+            return None, f"Agent failed: {e}"
+
+    return None, "No viable connection method available"
+
+
+def detect_services(guest):
+    """Detect known services on a guest via systemctl. Called during scan."""
+    unit_names = [info[1] for info in GuestService.KNOWN_SERVICES.values()]
+    cmd = "systemctl is-active " + " ".join(unit_names) + " 2>/dev/null"
+
+    stdout, error = _execute_command(guest, cmd)
+    if error and not stdout:
+        logger.debug(f"Service detection failed for {guest.name}: {error}")
+        return
+
+    lines = (stdout or "").strip().split("\n")
+    now = datetime.now(timezone.utc)
+
+    for i, (key, (display_name, unit_name, default_port)) in enumerate(GuestService.KNOWN_SERVICES.items()):
+        status_str = lines[i].strip() if i < len(lines) else "unknown"
+        # Map systemctl output to our status
+        if status_str == "active":
+            status = "running"
+        elif status_str == "inactive":
+            status = "stopped"
+        elif status_str == "failed":
+            status = "failed"
+        else:
+            status = "unknown"
+
+        # Only create/update if the service is actually present (not unknown/inactive from never installed)
+        if status in ("running", "failed"):
+            existing = GuestService.query.filter_by(guest_id=guest.id, service_name=key).first()
+            if existing:
+                existing.status = status
+                existing.last_checked = now
+            else:
+                svc = GuestService(
+                    guest_id=guest.id,
+                    service_name=key,
+                    unit_name=unit_name,
+                    port=default_port,
+                    status=status,
+                    last_checked=now,
+                    auto_detected=True,
+                )
+                db.session.add(svc)
+        elif status == "stopped":
+            # Update existing services that were previously detected
+            existing = GuestService.query.filter_by(guest_id=guest.id, service_name=key).first()
+            if existing:
+                existing.status = status
+                existing.last_checked = now
+
+    db.session.commit()
+
+
+def check_service_statuses(guest):
+    """Lightweight status refresh for all services on a guest."""
+    if not guest.services:
+        return
+
+    unit_names = [svc.unit_name for svc in guest.services]
+    cmd = "systemctl is-active " + " ".join(unit_names) + " 2>/dev/null"
+    stdout, error = _execute_command(guest, cmd)
+
+    if error and not stdout:
+        logger.debug(f"Service status check failed for {guest.name}: {error}")
+        return
+
+    lines = (stdout or "").strip().split("\n")
+    now = datetime.now(timezone.utc)
+
+    for i, svc in enumerate(guest.services):
+        status_str = lines[i].strip() if i < len(lines) else "unknown"
+        if status_str == "active":
+            svc.status = "running"
+        elif status_str == "inactive":
+            svc.status = "stopped"
+        elif status_str == "failed":
+            svc.status = "failed"
+        else:
+            svc.status = "unknown"
+        svc.last_checked = now
+
+    db.session.commit()
+
+
+def service_action(guest, service, action):
+    """Execute start/stop/restart on a service. Returns (success, output)."""
+    if action not in ("start", "stop", "restart"):
+        return False, "Invalid action"
+
+    cmd = f"systemctl {action} {service.unit_name}"
+    stdout, error = _execute_command(guest, cmd, timeout=30)
+
+    if error:
+        return False, error
+
+    # Refresh status after action
+    status_out, _ = _execute_command(guest, f"systemctl is-active {service.unit_name} 2>/dev/null")
+    now = datetime.now(timezone.utc)
+    status_str = (status_out or "").strip()
+    if status_str == "active":
+        service.status = "running"
+    elif status_str == "inactive":
+        service.status = "stopped"
+    elif status_str == "failed":
+        service.status = "failed"
+    else:
+        service.status = "unknown"
+    service.last_checked = now
+    db.session.commit()
+
+    return True, stdout or f"{action.capitalize()} command sent"
+
+
+def get_service_logs(guest, service, lines=50):
+    """Fetch recent journal logs for a service. Returns log text."""
+    cmd = f"journalctl -u {service.unit_name} -n {lines} --no-pager 2>/dev/null"
+    stdout, error = _execute_command(guest, cmd, timeout=30)
+    if error:
+        return f"Error fetching logs: {error}"
+    return stdout or "No log output"
+
+
 def scan_guest(guest):
     """Scan a single guest for updates. Returns ScanResult."""
     logger.info(f"Scanning {guest.name} ({guest.guest_type})...")
@@ -161,6 +317,13 @@ def scan_guest(guest):
     db.session.commit()
 
     logger.info(f"Scan complete for {guest.name}: {len(packages)} updates ({security_count} security)")
+
+    # Auto-detect services during scan
+    try:
+        detect_services(guest)
+    except Exception as e:
+        logger.debug(f"Service detection failed for {guest.name}: {e}")
+
     return result
 
 

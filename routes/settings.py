@@ -27,6 +27,8 @@ def _get_settings_dict():
         "scan_enabled": Setting.get("scan_enabled", "true"),
         "discovery_interval": Setting.get("discovery_interval", "4"),
         "discovery_enabled": Setting.get("discovery_enabled", "true"),
+        "service_check_interval": Setting.get("service_check_interval", "5"),
+        "service_check_enabled": Setting.get("service_check_enabled", "true"),
         "cf_access_enabled": Setting.get("cf_access_enabled", "false"),
         "cf_access_team_domain": Setting.get("cf_access_team_domain", ""),
         "cf_access_audience": Setting.get("cf_access_audience", ""),
@@ -109,10 +111,15 @@ def save_scan():
     discovery_interval = request.form.get("discovery_interval", "4").strip()
     discovery_enabled = "discovery_enabled" in request.form
 
+    service_check_interval = request.form.get("service_check_interval", "5").strip()
+    service_check_enabled = "service_check_enabled" in request.form
+
     Setting.set("scan_interval", interval)
     Setting.set("scan_enabled", "true" if enabled else "false")
     Setting.set("discovery_interval", discovery_interval)
     Setting.set("discovery_enabled", "true" if discovery_enabled else "false")
+    Setting.set("service_check_interval", service_check_interval)
+    Setting.set("service_check_enabled", "true" if service_check_enabled else "false")
 
     flash("Scan & discovery settings saved.", "success")
     return redirect(url_for("settings.index"))

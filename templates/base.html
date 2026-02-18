@@ -62,10 +62,15 @@
                             <i class="bi bi-calendar-check"></i> Schedules
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.blueprint == 'mastodon' %}active{% endif %}" href="/mastodon">
-                            <i class="bi bi-rocket-takeoff"></i> Mastodon
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.blueprint in ('services', 'mastodon') %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                            <i class="bi bi-gear-wide-connected"></i> Services
                         </a>
+                        <ul class="dropdown-menu dropdown-menu-dark">
+                            <li><a class="dropdown-item {% if request.blueprint == 'services' %}active{% endif %}" href="/services"><i class="bi bi-list-check"></i> Overview</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item {% if request.blueprint == 'mastodon' %}active{% endif %}" href="/mastodon"><i class="bi bi-rocket-takeoff"></i> Mastodon</a></li>
+                        </ul>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'users' %}active{% endif %}" href="/users">
