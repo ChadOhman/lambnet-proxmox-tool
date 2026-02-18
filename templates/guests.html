@@ -4,7 +4,21 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-pc-display"></i> Managed Guests</h2>
-    <div>
+    <div class="d-flex align-items-center gap-2">
+        <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-tag"></i> {{ current_tag if current_tag else 'All Tags' }}
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
+                <li><a class="dropdown-item {% if not current_tag %}active{% endif %}" href="/guests">All Tags</a></li>
+                {% if tags %}
+                <li><hr class="dropdown-divider"></li>
+                {% for tag in tags %}
+                <li><a class="dropdown-item {% if current_tag == tag.name %}active{% endif %}" href="/guests?tag={{ tag.name|urlencode }}">{{ tag.name }}</a></li>
+                {% endfor %}
+                {% endif %}
+            </ul>
+        </div>
         <form method="post" action="/api/scan-all" class="d-inline">
             <button type="submit" class="btn btn-outline-primary">
                 <i class="bi bi-arrow-clockwise"></i> Scan All
@@ -28,6 +42,7 @@
                         <th>VMID</th>
                         <th>IP Address</th>
                         <th>Host</th>
+                        <th>Tags</th>
                         <th>Connection</th>
                         <th>Updates</th>
                         <th>Security</th>
@@ -59,6 +74,12 @@
                         <td>{{ guest.vmid or '-' }}</td>
                         <td>{{ guest.ip_address or '-' }}</td>
                         <td>{{ guest.proxmox_host.name if guest.proxmox_host else '-' }}</td>
+                        <td>
+                            {% for tag in guest.tags %}
+                            <a href="/guests?tag={{ tag.name|urlencode }}" class="badge bg-secondary text-decoration-none" style="{% if tag.color and tag.color != '#6c757d' %}background-color: {{ tag.color }} !important{% endif %}">{{ tag.name }}</a>
+                            {% endfor %}
+                            {% if not guest.tags %}<span class="text-muted">-</span>{% endif %}
+                        </td>
                         <td><span class="badge bg-secondary">{{ guest.connection_method }}</span></td>
                         <td>{{ guest.pending_updates()|length }}</td>
                         <td>
@@ -105,7 +126,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="12" class="text-center text-muted py-4">
+                        <td colspan="13" class="text-center text-muted py-4">
                             No guests configured. <a href="/hosts">Add a Proxmox host</a> and discover guests, or add one manually.
                         </td>
                     </tr>

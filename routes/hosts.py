@@ -77,10 +77,18 @@ def discover(host_id):
     client = ProxmoxClient(host)
 
     try:
-        all_guests = client.get_all_guests()
+        # Discover guests only on this host's node (not the entire cluster)
+        node_name = client.get_local_node_name()
+        if node_name:
+            node_guests = client.get_node_guests(node_name)
+        else:
+            # Fallback: if we can't determine the local node, get all guests
+            node_guests = client.get_all_guests()
+            node_name = "cluster"
+
         added = 0
         updated = 0
-        for g in all_guests:
+        for g in node_guests:
             vmid = g.get("vmid")
             existing = Guest.query.filter_by(proxmox_host_id=host.id, vmid=vmid).first()
 
@@ -88,8 +96,13 @@ def discover(host_id):
             proxmox_tags = g.get("tags", "")
             tag_names = [t.strip() for t in re.split(r"[;,]", proxmox_tags) if t.strip()] if proxmox_tags else []
 
-            if not existing:
+            # Only fetch IP for running guests (skip stopped ones for speed)
+            status = g.get("status", "")
+            ip = None
+            if status == "running":
                 ip = client.get_guest_ip(g["node"], vmid, g["type"])
+
+            if not existing:
                 guest = Guest(
                     proxmox_host_id=host.id,
                     vmid=vmid,
@@ -108,8 +121,7 @@ def discover(host_id):
                         db.session.add(tag)
                     guest.tags.append(tag)
             else:
-                # Update IP and tags for existing guests
-                ip = client.get_guest_ip(g["node"], vmid, g["type"])
+                # Update IP, name, and tags for existing guests
                 if ip:
                     existing.ip_address = ip
                 existing.name = g.get("name", existing.name)
@@ -123,7 +135,14 @@ def discover(host_id):
                 updated += 1
 
         db.session.commit()
-        flash(f"Discovered {len(all_guests)} guests on '{host.name}' ({added} new, {updated} updated). Tags synced.", "success")
+        if len(node_guests) == 0:
+            flash(
+                f"No guests found on node '{node_name}' for host '{host.name}'. "
+                "Check that VMs/CTs exist and that the API token has VM.Audit permission.",
+                "warning",
+            )
+        else:
+            flash(f"Discovered {len(node_guests)} guests on '{host.name}' node '{node_name}' ({added} new, {updated} updated).", "success")
     except Exception as e:
         flash(f"Discovery failed for '{host.name}': {e}", "error")
 

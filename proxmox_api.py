@@ -41,6 +41,59 @@ class ProxmoxClient:
         """Get all nodes from the Proxmox cluster. Raises on failure."""
         return self.api.nodes.get()
 
+    def get_local_node_name(self):
+        """Determine the node name of the host we're connected to."""
+        try:
+            # /cluster/status returns nodes with a 'local' flag
+            for entry in self.api.cluster.status.get():
+                if entry.get("type") == "node" and entry.get("local", 0):
+                    return entry["name"]
+        except Exception:
+            pass
+        # Fallback: if single-node or cluster/status unavailable, match by hostname
+        try:
+            nodes = self.get_nodes()
+            if len(nodes) == 1:
+                return nodes[0]["node"]
+            # Try matching node name to the configured hostname
+            target = self.host_model.hostname.lower()
+            for node in nodes:
+                if node["node"].lower() == target:
+                    return node["node"]
+        except Exception:
+            pass
+        return None
+
+    def get_node_guests(self, node_name):
+        """Get VMs and CTs on a specific node only."""
+        guests = []
+        errors = []
+        try:
+            vms = self.api.nodes(node_name).qemu.get()
+            logger.info(f"Node {node_name}: found {len(vms)} VMs")
+            for vm in vms:
+                vm["node"] = node_name
+                vm["type"] = "vm"
+                guests.append(vm)
+        except Exception as e:
+            errors.append(f"VMs on {node_name}: {e}")
+            logger.error(f"Failed to list VMs on node {node_name}: {e}")
+        try:
+            cts = self.api.nodes(node_name).lxc.get()
+            logger.info(f"Node {node_name}: found {len(cts)} CTs")
+            for ct in cts:
+                ct["node"] = node_name
+                ct["type"] = "ct"
+                guests.append(ct)
+        except Exception as e:
+            errors.append(f"CTs on {node_name}: {e}")
+            logger.error(f"Failed to list CTs on node {node_name}: {e}")
+
+        if not guests and errors:
+            raise RuntimeError(f"Could not list guests on {node_name}: {'; '.join(errors)}")
+
+        return guests
+
     def get_all_guests(self):
         """Get all VMs and CTs across all nodes. Raises on connection failure."""
         nodes = self.get_nodes()
@@ -52,8 +105,9 @@ class ProxmoxClient:
         for node in nodes:
             node_name = node["node"]
             try:
-                # Get VMs
-                for vm in self.api.nodes(node_name).qemu.get():
+                vms = self.api.nodes(node_name).qemu.get()
+                logger.info(f"Node {node_name}: found {len(vms)} VMs")
+                for vm in vms:
                     vm["node"] = node_name
                     vm["type"] = "vm"
                     guests.append(vm)
@@ -61,8 +115,9 @@ class ProxmoxClient:
                 errors.append(f"VMs on {node_name}: {e}")
                 logger.error(f"Failed to list VMs on node {node_name}: {e}")
             try:
-                # Get CTs
-                for ct in self.api.nodes(node_name).lxc.get():
+                cts = self.api.nodes(node_name).lxc.get()
+                logger.info(f"Node {node_name}: found {len(cts)} CTs")
+                for ct in cts:
                     ct["node"] = node_name
                     ct["type"] = "ct"
                     guests.append(ct)
@@ -73,6 +128,7 @@ class ProxmoxClient:
         if not guests and errors:
             raise RuntimeError(f"Could not list guests: {'; '.join(errors)}")
 
+        logger.info(f"Total guests discovered: {len(guests)} ({len(errors)} errors)")
         return guests
 
     def get_guest_ip(self, node, vmid, guest_type):

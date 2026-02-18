@@ -8,15 +8,28 @@ bp = Blueprint("guests", __name__)
 @bp.route("/")
 @login_required
 def index():
+    tag_filter = request.args.get("tag", "")
+
     if current_user.is_admin:
-        guests = Guest.query.order_by(Guest.name).all()
+        query = Guest.query
     else:
-        guests = current_user.accessible_guests()
+        user_tag_ids = [t.id for t in current_user.allowed_tags]
+        if not user_tag_ids:
+            query = Guest.query.filter(False)
+        else:
+            query = Guest.query.filter_by(enabled=True).filter(
+                Guest.tags.any(Tag.id.in_(user_tag_ids))
+            )
+
+    if tag_filter:
+        query = query.filter(Guest.tags.any(Tag.name == tag_filter))
+
+    guests = query.order_by(Guest.name).all()
 
     hosts = ProxmoxHost.query.all()
     credentials = Credential.query.all()
     tags = Tag.query.order_by(Tag.name).all()
-    return render_template("guests.html", guests=guests, hosts=hosts, credentials=credentials, tags=tags)
+    return render_template("guests.html", guests=guests, hosts=hosts, credentials=credentials, tags=tags, current_tag=tag_filter)
 
 
 @bp.route("/add", methods=["POST"])
