@@ -64,6 +64,14 @@ def _resolve_guest_ip(guest):
     return None
 
 
+def _ws_send(ws, msg_type, data):
+    """Safely send a JSON message over WebSocket."""
+    try:
+        ws.send(json.dumps({"type": msg_type, "data": data}))
+    except Exception:
+        pass
+
+
 @bp.route("/")
 @login_required
 def index():
@@ -108,67 +116,65 @@ def connect(guest_id):
 @sock.route("/ws/terminal/<int:guest_id>")
 def terminal_ws(ws, guest_id):
     """WebSocket handler for SSH terminal sessions."""
-    # Note: WebSocket auth is handled by checking session cookie
     from flask_login import current_user as ws_user
 
-    if not ws_user.is_authenticated:
-        ws.send(json.dumps({"type": "error", "data": "Not authenticated"}))
-        ws.close()
-        return
+    ssh_client = None
+    channel = None
 
-    if not ws_user.can_ssh and not ws_user.is_admin:
-        ws.send(json.dumps({"type": "error", "data": "No SSH permission"}))
-        ws.close()
-        return
-
-    guest = Guest.query.get(guest_id)
-    if not guest:
-        ws.send(json.dumps({"type": "error", "data": "Guest not found"}))
-        ws.close()
-        return
-
-    if not ws_user.is_admin and not ws_user.can_access_guest(guest):
-        ws.send(json.dumps({"type": "error", "data": "Access denied"}))
-        ws.close()
-        return
-
-    # Wait for initial config message with optional ad-hoc credentials
     try:
-        init_msg = ws.receive(timeout=10)
-        if init_msg:
-            config = json.loads(init_msg)
-        else:
-            config = {}
-    except Exception:
+        # Auth checks
+        if not ws_user.is_authenticated:
+            _ws_send(ws, "error", "Not authenticated")
+            return
+
+        if not ws_user.can_ssh and not ws_user.is_admin:
+            _ws_send(ws, "error", "No SSH permission")
+            return
+
+        guest = Guest.query.get(guest_id)
+        if not guest:
+            _ws_send(ws, "error", "Guest not found")
+            return
+
+        if not ws_user.is_admin and not ws_user.can_access_guest(guest):
+            _ws_send(ws, "error", "Access denied")
+            return
+
+        # Wait for initial config message with optional ad-hoc credentials
         config = {}
+        try:
+            init_msg = ws.receive(timeout=10)
+            if init_msg:
+                config = json.loads(init_msg)
+        except Exception as e:
+            logger.debug(f"Terminal init message receive failed: {e}")
 
-    # Resolve IP — try ad-hoc override first, then stored/resolved
-    ssh_host = config.get("host") or None
-    if not ssh_host:
-        ssh_host = _resolve_guest_ip(guest)
+        # Resolve IP
+        ssh_host = config.get("host") or None
+        if not ssh_host:
+            ssh_host = _resolve_guest_ip(guest)
 
-    if not ssh_host:
-        ws.send(json.dumps({"type": "error", "data": "Could not resolve IP address for this guest. Try running discovery again or configure a static IP."}))
-        ws.close()
-        return
+        if not ssh_host:
+            _ws_send(ws, "error", "Could not resolve IP address for this guest. Try running discovery again or configure a static IP.")
+            return
 
-    # Resolve credentials — try ad-hoc first, then stored
-    adhoc_username = config.get("username")
-    adhoc_password = config.get("password")
+        logger.info(f"Terminal connecting to {guest.name} at {ssh_host}")
 
-    credential = None
-    if not adhoc_username:
-        credential = guest.credential
-        if not credential:
-            credential = Credential.query.filter_by(is_default=True).first()
+        # Resolve credentials
+        adhoc_username = config.get("username")
+        adhoc_password = config.get("password")
 
-    if not credential and not adhoc_username:
-        ws.send(json.dumps({"type": "need_credentials", "data": "No credentials available. Please provide username and password."}))
-        ws.close()
-        return
+        credential = None
+        if not adhoc_username:
+            credential = guest.credential
+            if not credential:
+                credential = Credential.query.filter_by(is_default=True).first()
 
-    # Connect via SSH
-    try:
+        if not credential and not adhoc_username:
+            _ws_send(ws, "need_credentials", "No credentials available. Please provide username and password.")
+            return
+
+        # Build SSH connection
         ssh_client = paramiko.SSHClient()
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
@@ -200,10 +206,12 @@ def terminal_ws(ws, guest_id):
                         pkey = paramiko.ECDSAKey.from_private_key(key_file)
                 connect_kwargs["pkey"] = pkey
 
+        logger.info(f"Terminal SSH connecting as {connect_kwargs.get('username')} to {ssh_host}")
         ssh_client.connect(**connect_kwargs)
         channel = ssh_client.invoke_shell(term="xterm-256color", width=120, height=40)
 
-        ws.send(json.dumps({"type": "connected", "data": f"Connected to {guest.name} ({ssh_host})"}))
+        _ws_send(ws, "connected", f"Connected to {guest.name} ({ssh_host})")
+        logger.info(f"Terminal SSH connected to {guest.name} ({ssh_host})")
 
         # Read thread: SSH -> WebSocket
         def read_from_ssh():
@@ -223,10 +231,7 @@ def terminal_ws(ws, guest_id):
             except Exception as e:
                 logger.debug(f"SSH read thread ended: {e}")
             finally:
-                try:
-                    ws.send(json.dumps({"type": "disconnected", "data": "SSH session closed"}))
-                except Exception:
-                    pass
+                _ws_send(ws, "disconnected", "SSH session closed")
 
         read_thread = threading.Thread(target=read_from_ssh, daemon=True)
         read_thread.start()
@@ -250,20 +255,25 @@ def terminal_ws(ws, guest_id):
                 break
 
     except paramiko.AuthenticationException:
-        ws.send(json.dumps({"type": "error", "data": "SSH authentication failed. Check credentials."}))
+        logger.warning(f"Terminal SSH auth failed for guest {guest_id}")
+        _ws_send(ws, "error", "SSH authentication failed. Check credentials.")
     except paramiko.SSHException as e:
-        ws.send(json.dumps({"type": "error", "data": f"SSH error: {e}"}))
+        logger.warning(f"Terminal SSH error for guest {guest_id}: {e}")
+        _ws_send(ws, "error", f"SSH error: {e}")
     except Exception as e:
-        ws.send(json.dumps({"type": "error", "data": f"Connection failed: {e}"}))
+        logger.error(f"Terminal connection error for guest {guest_id}: {e}", exc_info=True)
+        _ws_send(ws, "error", f"Connection failed: {e}")
     finally:
-        try:
-            channel.close()
-        except Exception:
-            pass
-        try:
-            ssh_client.close()
-        except Exception:
-            pass
+        if channel:
+            try:
+                channel.close()
+            except Exception:
+                pass
+        if ssh_client:
+            try:
+                ssh_client.close()
+            except Exception:
+                pass
         try:
             ws.close()
         except Exception:
