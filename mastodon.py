@@ -96,7 +96,7 @@ def _swap_env_db(ssh, app_dir, new_host, new_port):
         f"sed -i 's/^DB_PORT=.*/DB_PORT={new_port}/' {env_file}",
     ]
     for cmd in cmds:
-        stdout, stderr, code = ssh.execute(cmd, timeout=10)
+        stdout, stderr, code = ssh.execute_sudo(cmd, timeout=10)
         if code != 0:
             return False, f"Failed to update .env.production: {stderr}"
     return True, "DB config swapped"
@@ -164,8 +164,8 @@ def run_mastodon_upgrade():
 
             # 2a. git stash
             log("--- git stash ---")
-            stdout, stderr, code = ssh.execute(
-                f"sudo -u {user} bash -c 'cd {app_dir} && git stash'", timeout=30
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && git stash'", timeout=30
             )
             log(stdout or stderr or "(no output)")
 
@@ -179,8 +179,8 @@ def run_mastodon_upgrade():
 
             # 2c. git pull
             log("--- git pull ---")
-            stdout, stderr, code = ssh.execute(
-                f"sudo -u {user} bash -c 'cd {app_dir} && git pull'", timeout=120
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && git pull'", timeout=120
             )
             log(stdout or stderr or "(no output)")
             if code != 0:
@@ -191,8 +191,8 @@ def run_mastodon_upgrade():
 
             # 2d. git stash pop
             log("--- git stash pop ---")
-            stdout, stderr, code = ssh.execute(
-                f"sudo -u {user} bash -c 'cd {app_dir} && git stash pop'", timeout=30
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && git stash pop'", timeout=30
             )
             log(stdout or stderr or "(no output)")
             # stash pop may fail if no stash exists or conflict - not fatal
@@ -201,8 +201,8 @@ def run_mastodon_upgrade():
 
             # 2e. bundle install
             log("--- bundle install ---")
-            stdout, stderr, code = ssh.execute(
-                f"sudo -u {user} bash -c 'cd {app_dir} && bundle install'", timeout=600
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && bundle install'", timeout=600
             )
             log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
             if code != 0:
@@ -213,8 +213,8 @@ def run_mastodon_upgrade():
 
             # 2f. yarn install
             log("--- yarn install ---")
-            stdout, stderr, code = ssh.execute(
-                f"sudo -u {user} bash -c 'cd {app_dir} && yarn install --frozen-lockfile'", timeout=600
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && yarn install --frozen-lockfile'", timeout=600
             )
             log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
             if code != 0:
@@ -225,8 +225,8 @@ def run_mastodon_upgrade():
 
             # 2g. Pre-deployment migrations
             log("--- Pre-deployment database migrations ---")
-            stdout, stderr, code = ssh.execute(
-                f"sudo -u {user} bash -c 'cd {app_dir} && RAILS_ENV=production SKIP_POST_DEPLOYMENT_MIGRATIONS=true bundle exec rails db:migrate'",
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && RAILS_ENV=production SKIP_POST_DEPLOYMENT_MIGRATIONS=true bundle exec rails db:migrate'",
                 timeout=600,
             )
             log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
@@ -238,8 +238,8 @@ def run_mastodon_upgrade():
 
             # 2h. Asset precompilation
             log("--- Asset precompilation ---")
-            stdout, stderr, code = ssh.execute(
-                f"sudo -u {user} bash -c 'cd {app_dir} && RAILS_ENV=production bundle exec rails assets:precompile'",
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && RAILS_ENV=production bundle exec rails assets:precompile'",
                 timeout=900,
             )
             log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
@@ -249,30 +249,25 @@ def run_mastodon_upgrade():
                 env_swapped = False
                 return False, "\n".join(log_lines)
 
-            # 2i. Reload mastodon-web
-            log("--- Reloading mastodon-web ---")
-            stdout, stderr, code = ssh.execute("systemctl reload mastodon-web", timeout=30)
-            log(stdout or stderr or "(no output)")
-
-            # 2j. Restart sidekiq and streaming
-            log("--- Restarting mastodon-sidekiq and mastodon-streaming ---")
-            stdout, stderr, code = ssh.execute(
-                "systemctl restart mastodon-sidekiq mastodon-streaming", timeout=60
+            # 2i. Restart all mastodon services
+            log("--- Restarting mastodon services ---")
+            stdout, stderr, code = ssh.execute_sudo(
+                "systemctl restart mastodon-*", timeout=60
             )
             log(stdout or stderr or "(no output)")
 
             # 2k. Clear cache
             log("--- Clearing cache ---")
-            stdout, stderr, code = ssh.execute(
-                f"sudo -u {user} bash -c 'cd {app_dir} && RAILS_ENV=production bin/tootctl cache clear'",
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && RAILS_ENV=production bin/tootctl cache clear'",
                 timeout=120,
             )
             log(stdout or stderr or "(no output)")
 
             # 2l. Post-deployment migrations
             log("--- Post-deployment database migrations ---")
-            stdout, stderr, code = ssh.execute(
-                f"sudo -u {user} bash -c 'cd {app_dir} && RAILS_ENV=production bundle exec rails db:migrate'",
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && RAILS_ENV=production bundle exec rails db:migrate'",
                 timeout=600,
             )
             log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
@@ -290,8 +285,8 @@ def run_mastodon_upgrade():
 
             # 2n. Final service restart
             log("--- Final service restart ---")
-            stdout, stderr, code = ssh.execute(
-                "systemctl restart mastodon-web mastodon-sidekiq mastodon-streaming", timeout=60
+            stdout, stderr, code = ssh.execute_sudo(
+                "systemctl restart mastodon-*", timeout=60
             )
             log(stdout or stderr or "(no output)")
 

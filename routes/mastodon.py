@@ -123,8 +123,9 @@ def detect_versions():
         if mastodon_guest:
             stdout, error = _execute_command(
                 mastodon_guest,
-                f"sudo -u {user} cat {app_dir}/VERSION 2>/dev/null || sudo -u {user} bash -c 'cd {app_dir} && git describe --tags 2>/dev/null'",
+                f"su - {user} -c 'cat {app_dir}/VERSION 2>/dev/null || cd {app_dir} && git describe --tags 2>/dev/null'",
                 timeout=15,
+                sudo=True,
             )
             if stdout and not error:
                 version = stdout.strip().lstrip("v")
