@@ -44,10 +44,28 @@ def _get_settings_dict():
     }
 
 
+def _get_latest_release():
+    """Fetch the latest release version from GitHub. Returns version string or None."""
+    import urllib.request
+    import json
+    repo = current_app.config.get("GITHUB_REPO", "")
+    if not repo:
+        return None
+    try:
+        url = f"https://api.github.com/repos/{repo}/releases/latest"
+        req = urllib.request.Request(url, headers={"User-Agent": "MCAT"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            return data.get("tag_name", "").lstrip("v") or None
+    except Exception:
+        return None
+
+
 @bp.route("/")
 def index():
     settings = _get_settings_dict()
-    return render_template("settings.html", settings=settings, update_available=False, update_version=None)
+    latest_release = _get_latest_release()
+    return render_template("settings.html", settings=settings, update_available=False, update_version=None, latest_release=latest_release)
 
 
 @bp.route("/email", methods=["POST"])
@@ -234,6 +252,7 @@ def check_update():
                     "settings.html", settings=settings,
                     update_available=True,
                     update_version=f"branch '{update_branch}' (latest: {sha} - {message})",
+                    latest_release=_get_latest_release(),
                 )
         except Exception as e:
             flash(f"Could not check branch '{update_branch}': {e}", "error")
@@ -247,7 +266,7 @@ def check_update():
             latest = data.get("tag_name", "").lstrip("v")
             if latest and latest != current_version:
                 settings = _get_settings_dict()
-                return render_template("settings.html", settings=settings, update_available=True, update_version=latest)
+                return render_template("settings.html", settings=settings, update_available=True, update_version=latest, latest_release=latest)
             flash(f"You are running the latest version (v{current_version}).", "success")
     except Exception as e:
         flash(f"Could not check for updates: {e}", "error")

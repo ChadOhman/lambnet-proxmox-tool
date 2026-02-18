@@ -114,7 +114,16 @@
     </main>
 
     <footer class="text-center text-muted py-3 border-top border-secondary">
-        <small>Mastodon Canada Administration Tool v{{ config.get('APP_VERSION', 'unknown') }}</small>
+        <small>Mastodon Canada Administration Tool
+            {%- if config.get('GIT_BRANCH') and config.get('GIT_BRANCH') != 'main' and config.get('GIT_BRANCH') != 'HEAD' %}
+                {{ config.get('GIT_BRANCH') }}@{{ config.get('GIT_COMMIT', '') }}
+            {%- elif config.get('GIT_COMMIT') and config.get('APP_VERSION') == 'unknown' %}
+                {{ config.get('GIT_COMMIT') }}
+            {%- else %}
+                v{{ config.get('APP_VERSION', 'unknown') }}
+                {%- if config.get('GIT_COMMIT') %} ({{ config.get('GIT_COMMIT') }}){% endif %}
+            {%- endif %}
+        </small>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

@@ -39,6 +39,23 @@ def create_app():
             version = f.read().strip()
     app.config["APP_VERSION"] = version
 
+    # Read git info for branch-based deployments
+    import subprocess
+    try:
+        git_commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=BASE_DIR, stderr=subprocess.DEVNULL
+        ).decode().strip()
+        git_branch = subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=BASE_DIR, stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception:
+        git_commit = ""
+        git_branch = ""
+    app.config["GIT_COMMIT"] = git_commit
+    app.config["GIT_BRANCH"] = git_branch
+
     # Register blueprints
     from routes.auth import bp as auth_bp
     from routes.dashboard import bp as dashboard_bp

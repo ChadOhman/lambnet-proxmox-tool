@@ -221,7 +221,32 @@
             </div>
             <div class="card-body">
                 <table class="table table-dark table-sm mb-3">
-                    <tr><td class="text-muted">Version</td><td>v{{ config.get('APP_VERSION', 'unknown') }}</td></tr>
+                    <tr>
+                        <td class="text-muted">Running</td>
+                        <td>
+                            {%- if config.get('GIT_BRANCH') and config.get('GIT_BRANCH') != 'main' and config.get('GIT_BRANCH') != 'HEAD' -%}
+                                <span class="badge bg-warning text-dark">{{ config.get('GIT_BRANCH') }}</span>
+                                <code class="ms-1">{{ config.get('GIT_COMMIT', '') }}</code>
+                            {%- else -%}
+                                v{{ config.get('APP_VERSION', 'unknown') }}
+                                {%- if config.get('GIT_COMMIT') %} <code class="ms-1">{{ config.get('GIT_COMMIT') }}</code>{% endif %}
+                                {%- if config.get('GIT_BRANCH') and config.get('GIT_BRANCH') != 'HEAD' %} <span class="text-muted">({{ config.get('GIT_BRANCH') }})</span>{% endif %}
+                            {%- endif -%}
+                        </td>
+                    </tr>
+                    {% if latest_release %}
+                    <tr>
+                        <td class="text-muted">Latest Release</td>
+                        <td>
+                            <a href="https://github.com/{{ config.get('GITHUB_REPO', '') }}/releases/tag/v{{ latest_release }}" target="_blank">v{{ latest_release }}</a>
+                            {% if config.get('APP_VERSION') == latest_release %}
+                                <span class="badge bg-success ms-1">Up to date</span>
+                            {% elif config.get('APP_VERSION') != 'unknown' and config.get('APP_VERSION') != latest_release %}
+                                <span class="badge bg-info ms-1">Update available</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
                     <tr><td class="text-muted">GitHub</td><td><a href="https://github.com/{{ config.get('GITHUB_REPO', '') }}" target="_blank">{{ config.get('GITHUB_REPO', '') }}</a></td></tr>
                 </table>
                 <form method="post" action="/settings/app-update-mode">
