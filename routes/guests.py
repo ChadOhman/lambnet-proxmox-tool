@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from models import db, Guest, ProxmoxHost, Credential, Tag
+from proxmox_api import ProxmoxClient
 
 bp = Blueprint("guests", __name__)
 
@@ -101,7 +102,20 @@ def detail(guest_id):
 
     credentials = Credential.query.all()
     tags = Tag.query.order_by(Tag.name).all()
-    return render_template("guest_detail.html", guest=guest, credentials=credentials, tags=tags)
+
+    # Fetch replication info and available nodes if guest has a Proxmox host
+    repl_jobs = []
+    cluster_nodes = []
+    if guest.proxmox_host and guest.vmid:
+        try:
+            client = ProxmoxClient(guest.proxmox_host)
+            repl_jobs = client.get_replication_jobs(guest.vmid)
+            cluster_nodes = [n["node"] for n in client.get_nodes()]
+        except Exception:
+            pass
+
+    return render_template("guest_detail.html", guest=guest, credentials=credentials, tags=tags,
+                           repl_jobs=repl_jobs, cluster_nodes=cluster_nodes)
 
 
 @bp.route("/<int:guest_id>/edit", methods=["POST"])
@@ -130,6 +144,61 @@ def edit(guest_id):
 
     db.session.commit()
     flash(f"Guest '{guest.name}' updated.", "success")
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
+@bp.route("/<int:guest_id>/replication", methods=["POST"])
+@login_required
+def create_replication(guest_id):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.proxmox_host or not guest.vmid:
+        flash("Guest must be linked to a Proxmox host with a VMID.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    target_node = request.form.get("target_node", "").strip()
+    schedule = request.form.get("schedule", "*/15").strip()
+
+    if not target_node:
+        flash("Target node is required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    client = ProxmoxClient(guest.proxmox_host)
+    ok, msg = client.create_replication(guest.vmid, target_node, schedule=schedule)
+    if ok:
+        guest.replication_target = target_node
+        db.session.commit()
+        flash(msg, "success")
+    else:
+        flash(f"Failed to create replication: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
+@bp.route("/<int:guest_id>/replication/<job_id>/delete", methods=["POST"])
+@login_required
+def delete_replication(guest_id, job_id):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.proxmox_host:
+        flash("Guest must be linked to a Proxmox host.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    client = ProxmoxClient(guest.proxmox_host)
+    ok, msg = client.delete_replication(job_id)
+    if ok:
+        guest.replication_target = None
+        db.session.commit()
+        flash(msg, "success")
+    else:
+        flash(f"Failed to delete replication: {msg}", "error")
+
     return redirect(url_for("guests.detail", guest_id=guest.id))
 
 

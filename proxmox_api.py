@@ -107,6 +107,42 @@ class ProxmoxClient:
             logger.debug(f"Could not fetch replication info: {e}")
         return repl
 
+    def get_replication_jobs(self, vmid):
+        """Get replication jobs for a specific VMID."""
+        jobs = []
+        try:
+            for job in self.api.cluster.replication.get():
+                if job.get("guest") == vmid:
+                    jobs.append(job)
+        except Exception as e:
+            logger.debug(f"Could not fetch replication jobs for {vmid}: {e}")
+        return jobs
+
+    def create_replication(self, vmid, target_node, schedule="*/15", rate=None):
+        """Create a replication job. Returns (success, message)."""
+        try:
+            job_id = f"{vmid}-0"
+            params = {
+                "id": job_id,
+                "target": target_node,
+                "schedule": schedule,
+                "type": "local",
+            }
+            if rate:
+                params["rate"] = rate
+            self.api.cluster.replication.post(**params)
+            return True, f"Replication to {target_node} created for VMID {vmid}"
+        except Exception as e:
+            return False, str(e)
+
+    def delete_replication(self, job_id):
+        """Delete a replication job. Returns (success, message)."""
+        try:
+            self.api.cluster.replication(job_id).delete()
+            return True, f"Replication job {job_id} deleted"
+        except Exception as e:
+            return False, str(e)
+
     def get_all_guests(self):
         """Get all VMs and CTs across all nodes. Raises on connection failure."""
         nodes = self.get_nodes()
