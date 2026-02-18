@@ -125,6 +125,15 @@ def connect(guest_id):
         flash("You don't have permission to access this guest.", "error")
         return redirect(url_for("terminal.index"))
 
+    # Snapshot gating for non-admin users
+    if not current_user.is_admin:
+        from routes.guests import guest_requires_snapshot, auto_snapshot_if_needed
+        if guest_requires_snapshot(guest):
+            ok, msg = auto_snapshot_if_needed(guest)
+            if not ok:
+                flash(f"Cannot connect: snapshot required but failed — {msg}", "error")
+                return redirect(url_for("terminal.index"))
+
     # Try to resolve IP if needed
     ip = _resolve_guest_ip(guest)
 

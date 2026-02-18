@@ -134,14 +134,18 @@ def detail(guest_id):
     credentials = Credential.query.all()
     tags = Tag.query.order_by(Tag.name).all()
 
-    # Fetch replication info and available nodes if guest has a Proxmox host
+    # Fetch replication info, snapshots, and available nodes if guest has a Proxmox host
     repl_jobs = []
     cluster_nodes = []
+    snapshots = []
     if guest.proxmox_host and guest.vmid:
         try:
             client = ProxmoxClient(guest.proxmox_host)
-            repl_jobs = client.get_replication_jobs(guest.vmid)
-            cluster_nodes = [n["node"] for n in client.get_nodes()]
+            node = client.find_guest_node(guest.vmid)
+            if node:
+                repl_jobs = client.get_replication_jobs(guest.vmid)
+                cluster_nodes = [n["node"] for n in client.get_nodes()]
+                snapshots = client.list_snapshots(node, guest.vmid, guest.guest_type)
         except Exception:
             pass
 
@@ -153,7 +157,7 @@ def detail(guest_id):
 
     return render_template("guest_detail.html", guest=guest, credentials=credentials, tags=tags,
                            repl_jobs=repl_jobs, cluster_nodes=cluster_nodes,
-                           unifi_client=unifi_client,
+                           snapshots=snapshots, unifi_client=unifi_client,
                            known_services=GuestService.KNOWN_SERVICES)
 
 
@@ -169,6 +173,7 @@ def edit(guest_id):
     guest.ip_address = request.form.get("ip_address", "").strip() or None
     guest.connection_method = request.form.get("connection_method", "ssh")
     guest.auto_update = "auto_update" in request.form
+    guest.require_snapshot = request.form.get("require_snapshot", "inherit")
 
     cred_id = request.form.get("credential_id")
     guest.credential_id = int(cred_id) if cred_id else None
@@ -369,6 +374,94 @@ def power_action(guest_id, action):
     return redirect(url_for("guests.detail", guest_id=guest.id))
 
 
+@bp.route("/<int:guest_id>/snapshot/create", methods=["POST"])
+@login_required
+def create_snapshot(guest_id):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.proxmox_host or not guest.vmid:
+        flash("Guest must be linked to a Proxmox host with a VMID.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    snapname = request.form.get("snapname", "").strip()
+    description = request.form.get("description", "").strip()
+
+    if not snapname:
+        from datetime import datetime
+        snapname = f"manual-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = client.find_guest_node(guest.vmid)
+    if not node:
+        flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    ok, msg = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+    if ok:
+        flash(f"Snapshot '{snapname}' created.", "success")
+    else:
+        flash(f"Failed to create snapshot: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
+@bp.route("/<int:guest_id>/snapshot/<snapname>/delete", methods=["POST"])
+@login_required
+def delete_snapshot(guest_id, snapname):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.proxmox_host or not guest.vmid:
+        flash("Guest must be linked to a Proxmox host with a VMID.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = client.find_guest_node(guest.vmid)
+    if not node:
+        flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    ok, msg = client.delete_snapshot(node, guest.vmid, guest.guest_type, snapname)
+    if ok:
+        flash(f"Snapshot '{snapname}' deleted.", "warning")
+    else:
+        flash(f"Failed to delete snapshot: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
+@bp.route("/<int:guest_id>/snapshot/<snapname>/rollback", methods=["POST"])
+@login_required
+def rollback_snapshot(guest_id, snapname):
+    if not current_user.is_admin:
+        flash("Admin access required.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    if not guest.proxmox_host or not guest.vmid:
+        flash("Guest must be linked to a Proxmox host with a VMID.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = client.find_guest_node(guest.vmid)
+    if not node:
+        flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    ok, msg = client.rollback_snapshot(node, guest.vmid, guest.guest_type, snapname)
+    if ok:
+        flash(f"Rolled back to snapshot '{snapname}'.", "success")
+    else:
+        flash(f"Failed to rollback: {msg}", "error")
+
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
 @bp.route("/<int:guest_id>/delete", methods=["POST"])
 @login_required
 def delete(guest_id):
@@ -382,3 +475,48 @@ def delete(guest_id):
     db.session.commit()
     flash(f"Guest '{name}' deleted.", "warning")
     return redirect(url_for("guests.index"))
+
+
+def guest_requires_snapshot(guest):
+    """Check if a snapshot is required before action on this guest."""
+    if guest.require_snapshot == "yes":
+        return True
+    if guest.require_snapshot == "no":
+        return False
+    # inherit — check global setting
+    return Setting.get("require_snapshot_before_action", "false") == "true"
+
+
+def auto_snapshot_if_needed(guest):
+    """Create an auto-snapshot if gating requires it and no recent snapshot exists.
+
+    Returns (ok, message) — ok is True if snapshot was created or not needed,
+    False if snapshot was required but creation failed.
+    """
+    import time
+    from datetime import datetime
+
+    if not guest.proxmox_host or not guest.vmid:
+        # Can't create snapshots without Proxmox — skip gating
+        return True, "No Proxmox host configured, skipping snapshot"
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = client.find_guest_node(guest.vmid)
+    if not node:
+        return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
+
+    # Check if a snapshot was taken within the last hour
+    snapshots = client.list_snapshots(node, guest.vmid, guest.guest_type)
+    now = time.time()
+    one_hour_ago = now - 3600
+    for snap in snapshots:
+        snap_time = snap.get("snaptime", 0)
+        if snap_time >= one_hour_ago:
+            return True, f"Recent snapshot '{snap.get('name')}' exists, skipping"
+
+    # Create auto-snapshot
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    snapname = f"auto-{timestamp}"
+    description = f"Auto-snapshot before user action at {timestamp}"
+    ok, msg = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+    return ok, msg

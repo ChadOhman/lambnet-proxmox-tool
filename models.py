@@ -216,6 +216,7 @@ class Guest(db.Model):
     replication_target = db.Column(db.String(128), nullable=True)  # node name if replicated
     mac_address = db.Column(db.String(17), nullable=True)  # MAC from Proxmox config (for UniFi matching)
     power_state = db.Column(db.String(16), default="unknown")  # running, stopped, paused, unknown
+    require_snapshot = db.Column(db.String(16), default="inherit")  # inherit, yes, no
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     updates = db.relationship("UpdatePackage", backref="guest", lazy=True, cascade="all, delete-orphan")

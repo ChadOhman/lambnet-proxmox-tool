@@ -45,6 +45,7 @@ def _get_settings_dict():
         "unifi_filter_subnet": Setting.get("unifi_filter_subnet", ""),
         "app_auto_update": Setting.get("app_auto_update", "false"),
         "app_update_branch": Setting.get("app_update_branch", ""),
+        "require_snapshot_before_action": Setting.get("require_snapshot_before_action", "false"),
     }
 
 
@@ -148,6 +149,15 @@ def save_local_bypass():
     Setting.set("trusted_subnets", subnets)
 
     flash("Local network access settings saved.", "success")
+    return redirect(url_for("settings.index"))
+
+
+@bp.route("/snapshots", methods=["POST"])
+def save_snapshots():
+    require_snapshot = "require_snapshot_before_action" in request.form
+    Setting.set("require_snapshot_before_action", "true" if require_snapshot else "false")
+
+    flash("Snapshot settings saved.", "success")
     return redirect(url_for("settings.index"))
 
 

@@ -124,6 +124,14 @@
                         <input type="checkbox" class="form-check-input" name="auto_update" id="autoUpdate" {{ 'checked' if guest.auto_update }}>
                         <label class="form-check-label" for="autoUpdate">Enable Auto-Update</label>
                     </div>
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">Require Snapshot</label>
+                        <select class="form-select form-select-sm" name="require_snapshot">
+                            <option value="inherit" {{ 'selected' if guest.require_snapshot == 'inherit' }}>Inherit (global setting)</option>
+                            <option value="yes" {{ 'selected' if guest.require_snapshot == 'yes' }}>Yes</option>
+                            <option value="no" {{ 'selected' if guest.require_snapshot == 'no' }}>No</option>
+                        </select>
+                    </div>
                     {% if current_user.is_admin %}
                     <div class="mb-2">
                         <label class="form-label form-label-sm">Tags</label>
@@ -349,6 +357,81 @@
                 <button type="submit" class="btn btn-sm btn-info"><i class="bi bi-plus-lg"></i> Enable Replication</button>
             </div>
         </form>
+    </div>
+</div>
+{% endif %}
+
+{% if guest.proxmox_host and guest.vmid %}
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-camera"></i> Snapshots</h5>
+        {% if current_user.is_admin %}
+        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#createSnapshotForm">
+            <i class="bi bi-plus-lg"></i> Create Snapshot
+        </button>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if current_user.is_admin %}
+        <div class="collapse mb-3" id="createSnapshotForm">
+            <form method="post" action="/guests/{{ guest.id }}/snapshot/create" class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label form-label-sm">Name <small class="text-muted">(optional)</small></label>
+                    <input type="text" class="form-control form-control-sm" name="snapname" placeholder="auto-generated if blank">
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label form-label-sm">Description</label>
+                    <input type="text" class="form-control form-control-sm" name="description" placeholder="Optional description">
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-camera"></i> Create</button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+        {% if snapshots %}
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Date</th>
+                        {% if current_user.is_admin %}
+                        <th>Actions</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for snap in snapshots %}
+                    <tr>
+                        <td><code>{{ snap.name }}</code></td>
+                        <td>{{ snap.description or '' }}</td>
+                        <td>
+                            {% if snap.snaptime %}
+                            {{ snap.snaptime | int | timestamp_to_datetime }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        {% if current_user.is_admin %}
+                        <td>
+                            <form method="post" action="/guests/{{ guest.id }}/snapshot/{{ snap.name }}/rollback" class="d-inline" onsubmit="return confirm('Rollback {{ guest.name }} to snapshot {{ snap.name }}? This will revert the guest to that point in time.')">
+                                <button type="submit" class="btn btn-outline-warning btn-sm" title="Rollback"><i class="bi bi-arrow-counterclockwise"></i></button>
+                            </form>
+                            <form method="post" action="/guests/{{ guest.id }}/snapshot/{{ snap.name }}/delete" class="d-inline" onsubmit="return confirm('Delete snapshot {{ snap.name }}?')">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No snapshots found for this guest.</p>
+        {% endif %}
     </div>
 </div>
 {% endif %}

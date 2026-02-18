@@ -353,6 +353,43 @@ class ProxmoxClient:
             logger.error(f"Failed to create snapshot for {guest_type}/{vmid}: {e}")
             return False, str(e)
 
+    def list_snapshots(self, node, vmid, guest_type):
+        """List snapshots for a VM or CT. Returns list of dicts with name, description, snaptime."""
+        try:
+            if guest_type == "vm":
+                data = self.api.nodes(node).qemu(vmid).snapshot.get()
+            else:
+                data = self.api.nodes(node).lxc(vmid).snapshot.get()
+            # Filter out the virtual "current" entry that Proxmox always includes
+            return [s for s in data if s.get("name") != "current"]
+        except Exception as e:
+            logger.error(f"Failed to list snapshots for {guest_type}/{vmid}: {e}")
+            return []
+
+    def delete_snapshot(self, node, vmid, guest_type, snapname):
+        """Delete a snapshot. Returns (success, message)."""
+        try:
+            if guest_type == "vm":
+                self.api.nodes(node).qemu(vmid).snapshot(snapname).delete()
+            else:
+                self.api.nodes(node).lxc(vmid).snapshot(snapname).delete()
+            return True, f"Snapshot '{snapname}' deleted"
+        except Exception as e:
+            logger.error(f"Failed to delete snapshot '{snapname}' for {guest_type}/{vmid}: {e}")
+            return False, str(e)
+
+    def rollback_snapshot(self, node, vmid, guest_type, snapname):
+        """Rollback to a snapshot. Returns (success, message)."""
+        try:
+            if guest_type == "vm":
+                self.api.nodes(node).qemu(vmid).snapshot(snapname).rollback.post()
+            else:
+                self.api.nodes(node).lxc(vmid).snapshot(snapname).rollback.post()
+            return True, f"Rolled back to snapshot '{snapname}'"
+        except Exception as e:
+            logger.error(f"Failed to rollback to snapshot '{snapname}' for {guest_type}/{vmid}: {e}")
+            return False, str(e)
+
     def find_guest_node(self, vmid):
         """Find which node a guest (VM or CT) is running on. Returns node name or None."""
         try:

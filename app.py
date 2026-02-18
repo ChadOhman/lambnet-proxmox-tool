@@ -116,6 +116,17 @@ def create_app():
     from cloudflare_access import init_cf_access
     init_cf_access(app)
 
+    # Custom Jinja filters
+    from datetime import datetime, timezone as tz
+
+    @app.template_filter("timestamp_to_datetime")
+    def timestamp_to_datetime(epoch):
+        """Convert a Unix epoch timestamp to a formatted datetime string."""
+        try:
+            return datetime.fromtimestamp(int(epoch), tz=tz.utc).strftime("%Y-%m-%d %H:%M")
+        except (ValueError, TypeError, OSError):
+            return ""
+
     # Security headers
     @app.after_request
     def _security_headers(response):
@@ -149,6 +160,10 @@ def _migrate_schema():
         if "power_state" not in guest_columns:
             logger.info("Adding power_state column to guests table...")
             db.session.execute(text("ALTER TABLE guests ADD COLUMN power_state VARCHAR(16) DEFAULT 'unknown'"))
+            db.session.commit()
+        if "require_snapshot" not in guest_columns:
+            logger.info("Adding require_snapshot column to guests table...")
+            db.session.execute(text("ALTER TABLE guests ADD COLUMN require_snapshot VARCHAR(16) DEFAULT 'inherit'"))
             db.session.commit()
 
     if "credentials" in table_names:
