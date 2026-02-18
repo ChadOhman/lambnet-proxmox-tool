@@ -8,7 +8,14 @@ bp = Blueprint("guests", __name__)
 @bp.route("/")
 @login_required
 def index():
-    tag_filter = request.args.get("tag", "")
+    tag_filter = request.args.get("tag", None)
+    user_tag_names = [t.name for t in current_user.allowed_tags]
+
+    # Default: if user has tags assigned and no explicit filter, use their tags
+    if tag_filter is None and user_tag_names:
+        tag_filter = "__my_tags__"
+    elif tag_filter is None:
+        tag_filter = ""
 
     if current_user.is_admin:
         query = Guest.query
@@ -21,7 +28,10 @@ def index():
                 Guest.tags.any(Tag.id.in_(user_tag_ids))
             )
 
-    if tag_filter:
+    # Apply tag filter
+    if tag_filter == "__my_tags__":
+        query = query.filter(Guest.tags.any(Tag.name.in_(user_tag_names)))
+    elif tag_filter:
         query = query.filter(Guest.tags.any(Tag.name == tag_filter))
 
     guests = query.order_by(Guest.name).all()
@@ -29,7 +39,7 @@ def index():
     hosts = ProxmoxHost.query.all()
     credentials = Credential.query.all()
     tags = Tag.query.order_by(Tag.name).all()
-    return render_template("guests.html", guests=guests, hosts=hosts, credentials=credentials, tags=tags, current_tag=tag_filter)
+    return render_template("guests.html", guests=guests, hosts=hosts, credentials=credentials, tags=tags, current_tag=tag_filter, user_tag_names=user_tag_names)
 
 
 @bp.route("/add", methods=["POST"])

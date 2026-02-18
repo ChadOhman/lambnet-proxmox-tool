@@ -7,10 +7,17 @@
     <div class="d-flex align-items-center gap-2">
         <div class="dropdown">
             <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                <i class="bi bi-tag"></i> {{ current_tag if current_tag else 'All Tags' }}
+                <i class="bi bi-tag"></i>
+                {%- if current_tag == '__my_tags__' %} My Tags
+                {%- elif current_tag %} {{ current_tag }}
+                {%- else %} All Tags
+                {%- endif %}
             </button>
             <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
-                <li><a class="dropdown-item {% if not current_tag %}active{% endif %}" href="/guests">All Tags</a></li>
+                {% if user_tag_names %}
+                <li><a class="dropdown-item {% if current_tag == '__my_tags__' %}active{% endif %}" href="/guests">My Tags</a></li>
+                {% endif %}
+                <li><a class="dropdown-item {% if not current_tag %}active{% endif %}" href="/guests?tag=">All Tags</a></li>
                 {% if tags %}
                 <li><hr class="dropdown-divider"></li>
                 {% for tag in tags %}
