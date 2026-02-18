@@ -99,6 +99,107 @@ def _check_mastodon_release(app):
                 logger.error(f"Mastodon auto-upgrade failed")
 
 
+def _run_discovery(app):
+    """Refresh guest discovery for all Proxmox hosts."""
+    with app.app_context():
+        import re
+        from models import Setting, ProxmoxHost, Guest, Tag
+        from proxmox_api import ProxmoxClient
+
+        if Setting.get("discovery_enabled", "true") == "false":
+            logger.info("Automatic discovery is disabled, skipping.")
+            return
+
+        hosts = ProxmoxHost.query.all()
+        if not hosts:
+            return
+
+        for host in hosts:
+            try:
+                client = ProxmoxClient(host)
+                node_name = client.get_local_node_name()
+                if node_name:
+                    node_guests = client.get_node_guests(node_name)
+                else:
+                    node_guests = client.get_all_guests()
+                    node_name = "cluster"
+
+                repl_map = client.get_replication_map()
+
+                # Clean up stale guests on this host
+                node_vmids = {g.get("vmid") for g in node_guests}
+                stale = Guest.query.filter(
+                    Guest.proxmox_host_id == host.id,
+                    Guest.vmid.isnot(None),
+                    ~Guest.vmid.in_(node_vmids),
+                ).all()
+                for s in stale:
+                    db.session.delete(s)
+
+                added = 0
+                updated = 0
+                for g in node_guests:
+                    vmid = g.get("vmid")
+                    status = g.get("status", "")
+
+                    existing = Guest.query.filter_by(proxmox_host_id=host.id, vmid=vmid).first()
+
+                    if not existing:
+                        other = Guest.query.filter(Guest.vmid == vmid, Guest.proxmox_host_id != host.id).first()
+                        if other:
+                            if status != "running":
+                                continue
+                            existing = other
+                            existing.proxmox_host_id = host.id
+
+                    proxmox_tags = g.get("tags", "")
+                    tag_names = [t.strip() for t in re.split(r"[;,]", proxmox_tags) if t.strip()] if proxmox_tags else []
+
+                    ip = None
+                    if status == "running":
+                        ip = client.get_guest_ip(g["node"], vmid, g["type"])
+
+                    repl_target = repl_map.get(vmid)
+
+                    if not existing:
+                        guest = Guest(
+                            proxmox_host_id=host.id,
+                            vmid=vmid,
+                            name=g.get("name", f"guest-{vmid}"),
+                            guest_type=g["type"],
+                            ip_address=ip,
+                            connection_method="auto",
+                            replication_target=repl_target,
+                        )
+                        db.session.add(guest)
+                        added += 1
+
+                        for tag_name in tag_names:
+                            tag = Tag.query.filter_by(name=tag_name).first()
+                            if not tag:
+                                tag = Tag(name=tag_name)
+                                db.session.add(tag)
+                            guest.tags.append(tag)
+                    else:
+                        if ip:
+                            existing.ip_address = ip
+                        existing.name = g.get("name", existing.name)
+                        existing.replication_target = repl_target
+                        existing.tags.clear()
+                        for tag_name in tag_names:
+                            tag = Tag.query.filter_by(name=tag_name).first()
+                            if not tag:
+                                tag = Tag(name=tag_name)
+                                db.session.add(tag)
+                            existing.tags.append(tag)
+                        updated += 1
+
+                db.session.commit()
+                logger.info(f"Discovery for '{host.name}' node '{node_name}': {added} new, {updated} updated, {len(stale)} stale removed")
+            except Exception as e:
+                logger.error(f"Scheduled discovery failed for '{host.name}': {e}")
+
+
 def _check_app_update(app):
     """Check for new app releases, store result, and optionally auto-update."""
     with app.app_context():
@@ -172,10 +273,22 @@ def init_scheduler(app):
 
     _scheduler = BackgroundScheduler()
 
-    # Scan job - runs every N hours
     with app.app_context():
         from models import Setting
         interval_hours = int(Setting.get("scan_interval", "6") or 6)
+        discovery_hours = int(Setting.get("discovery_interval", "4") or 4)
+
+    # Discovery job - refresh hosts periodically
+    _scheduler.add_job(
+        _run_discovery,
+        trigger=IntervalTrigger(hours=discovery_hours),
+        args=[app],
+        id="discovery",
+        name="Refresh guest discovery for all hosts",
+        replace_existing=True,
+    )
+
+    # Scan job - runs every N hours
 
     _scheduler.add_job(
         _run_scan,
@@ -217,6 +330,6 @@ def init_scheduler(app):
     )
 
     _scheduler.start()
-    logger.info(f"Scheduler started: scan every {interval_hours}h, auto-update check every 15m, mastodon check every {interval_hours}h, app update check every 6h")
+    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, mastodon check every {interval_hours}h, app update check every 6h")
 
     return _scheduler

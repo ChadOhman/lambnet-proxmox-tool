@@ -25,6 +25,8 @@ def _get_settings_dict():
         "email_enabled": Setting.get("email_enabled", "false"),
         "scan_interval": Setting.get("scan_interval", "6"),
         "scan_enabled": Setting.get("scan_enabled", "true"),
+        "discovery_interval": Setting.get("discovery_interval", "4"),
+        "discovery_enabled": Setting.get("discovery_enabled", "true"),
         "cf_access_enabled": Setting.get("cf_access_enabled", "false"),
         "cf_access_team_domain": Setting.get("cf_access_team_domain", ""),
         "cf_access_audience": Setting.get("cf_access_audience", ""),
@@ -104,11 +106,15 @@ def test_email():
 def save_scan():
     interval = request.form.get("scan_interval", "6").strip()
     enabled = "scan_enabled" in request.form
+    discovery_interval = request.form.get("discovery_interval", "4").strip()
+    discovery_enabled = "discovery_enabled" in request.form
 
     Setting.set("scan_interval", interval)
     Setting.set("scan_enabled", "true" if enabled else "false")
+    Setting.set("discovery_interval", discovery_interval)
+    Setting.set("discovery_enabled", "true" if discovery_enabled else "false")
 
-    flash("Scan settings saved.", "success")
+    flash("Scan & discovery settings saved.", "success")
     return redirect(url_for("settings.index"))
 
 

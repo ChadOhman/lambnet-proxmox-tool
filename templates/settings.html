@@ -197,20 +197,32 @@
 
         <div class="card bg-dark mt-4">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-clock"></i> Scan Settings</h5>
+                <h5 class="mb-0"><i class="bi bi-clock"></i> Scan & Discovery Settings</h5>
             </div>
             <div class="card-body">
                 <form method="post" action="/settings/scan">
+                    <h6 class="text-muted mb-2">Guest Discovery</h6>
+                    <div class="mb-3">
+                        <label class="form-label">Discovery Interval (hours)</label>
+                        <input type="number" class="form-control" name="discovery_interval" value="{{ settings.discovery_interval or '4' }}" min="1" max="168">
+                        <div class="form-text">How often to refresh guest lists from Proxmox hosts (1-168 hours).</div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" name="discovery_enabled" id="discoveryEnabled" {{ 'checked' if settings.discovery_enabled != 'false' }}>
+                        <label class="form-check-label" for="discoveryEnabled">Enable automatic discovery</label>
+                    </div>
+                    <hr class="border-secondary">
+                    <h6 class="text-muted mb-2">Update Scanning</h6>
                     <div class="mb-3">
                         <label class="form-label">Scan Interval (hours)</label>
                         <input type="number" class="form-control" name="scan_interval" value="{{ settings.scan_interval or '6' }}" min="1" max="168">
-                        <div class="form-text">How often to automatically scan for updates (1-168 hours).</div>
+                        <div class="form-text">How often to automatically scan guests for updates (1-168 hours).</div>
                     </div>
                     <div class="form-check mb-3">
                         <input type="checkbox" class="form-check-input" name="scan_enabled" id="scanEnabled" {{ 'checked' if settings.scan_enabled != 'false' }}>
                         <label class="form-check-label" for="scanEnabled">Enable automatic scanning</label>
                     </div>
-                    <button type="submit" class="btn btn-primary">Save Scan Settings</button>
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
                 </form>
             </div>
         </div>
