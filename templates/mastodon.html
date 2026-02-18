@@ -52,9 +52,15 @@
                     </div>
 
                     <div class="mb-3">
+                        <label class="form-label">GitHub Repository</label>
+                        <input type="text" class="form-control font-monospace" name="mastodon_repo" value="{{ settings.repo or 'mastodon/mastodon' }}" placeholder="e.g. glitch-soc/mastodon">
+                        <div class="form-text">Change this if using a fork (e.g. <code>glitch-soc/mastodon</code>).</div>
+                    </div>
+
+                    <div class="mb-3">
                         <label class="form-label">Current Installed Version</label>
                         <input type="text" class="form-control" name="mastodon_current_version" value="{{ settings.current_version }}" placeholder="e.g. 4.3.4">
-                        <div class="form-text">Set this to your currently running Mastodon version to enable update detection.</div>
+                        <div class="form-text">Set manually or use "Detect Versions" to auto-fill.</div>
                     </div>
 
                     <hr class="border-secondary">
@@ -143,6 +149,20 @@
                         </td>
                     </tr>
                     <tr>
+                        <td class="text-muted">PostgreSQL Version</td>
+                        <td>
+                            {% if settings.pg_version %}
+                            <span class="badge bg-secondary">{{ settings.pg_version }}</span>
+                            {% else %}
+                            <span class="text-muted">Not detected</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Repository</td>
+                        <td><code>{{ settings.repo or 'mastodon/mastodon' }}</code></td>
+                    </tr>
+                    <tr>
                         <td class="text-muted">Auto-Upgrade</td>
                         <td>
                             {% if settings.auto_upgrade == 'true' %}
@@ -165,7 +185,12 @@
                 </div>
                 {% endif %}
 
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 flex-wrap">
+                    <form method="post" action="/mastodon/detect-versions">
+                        <button type="submit" class="btn btn-outline-success" title="SSH into configured guests to detect Mastodon and PostgreSQL versions">
+                            <i class="bi bi-search"></i> Detect Versions
+                        </button>
+                    </form>
                     <form method="post" action="/mastodon/check">
                         <button type="submit" class="btn btn-outline-info">
                             <i class="bi bi-arrow-repeat"></i> Check for Updates

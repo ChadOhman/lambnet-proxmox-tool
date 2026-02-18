@@ -169,6 +169,7 @@ class Credential(db.Model):
     username = db.Column(db.String(128), nullable=False, default="root")
     auth_type = db.Column(db.String(32), default="password")  # password or key
     encrypted_value = db.Column(db.Text, nullable=False)  # encrypted password or private key
+    encrypted_sudo_password = db.Column(db.Text, nullable=True)  # optional sudo password
     is_default = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 

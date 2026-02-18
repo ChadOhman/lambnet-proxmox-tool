@@ -1,6 +1,9 @@
+import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required
 from models import db, Setting, Guest
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("mastodon", __name__)
 
@@ -20,12 +23,14 @@ def _get_mastodon_settings():
         "db_guest_id": Setting.get("mastodon_db_guest_id", ""),
         "user": Setting.get("mastodon_user", "mastodon"),
         "app_dir": Setting.get("mastodon_app_dir", "/home/mastodon/live"),
+        "repo": Setting.get("mastodon_repo", "mastodon/mastodon"),
         "pgbouncer_host": Setting.get("mastodon_pgbouncer_host", ""),
         "pgbouncer_port": Setting.get("mastodon_pgbouncer_port", ""),
         "direct_db_host": Setting.get("mastodon_direct_db_host", ""),
         "direct_db_port": Setting.get("mastodon_direct_db_port", "5432"),
         "auto_upgrade": Setting.get("mastodon_auto_upgrade", "false"),
         "current_version": Setting.get("mastodon_current_version", ""),
+        "pg_version": Setting.get("mastodon_pg_version", ""),
         "latest_version": Setting.get("mastodon_latest_version", ""),
         "latest_release_url": Setting.get("mastodon_latest_release_url", ""),
         "last_upgrade_at": Setting.get("mastodon_last_upgrade_at", ""),
@@ -47,6 +52,7 @@ def save():
     Setting.set("mastodon_db_guest_id", request.form.get("mastodon_db_guest_id", "").strip())
     Setting.set("mastodon_user", request.form.get("mastodon_user", "mastodon").strip())
     Setting.set("mastodon_app_dir", request.form.get("mastodon_app_dir", "/home/mastodon/live").strip())
+    Setting.set("mastodon_repo", request.form.get("mastodon_repo", "mastodon/mastodon").strip())
     Setting.set("mastodon_pgbouncer_host", request.form.get("mastodon_pgbouncer_host", "").strip())
     Setting.set("mastodon_pgbouncer_port", request.form.get("mastodon_pgbouncer_port", "").strip())
     Setting.set("mastodon_direct_db_host", request.form.get("mastodon_direct_db_host", "").strip())
@@ -96,5 +102,68 @@ def upgrade():
         Setting.set("mastodon_last_upgrade_log", log_output)
         db.session.commit()
         flash(f"Mastodon upgrade failed. Check the log for details.", "error")
+
+    return redirect(url_for("mastodon.index"))
+
+
+@bp.route("/detect-versions", methods=["POST"])
+def detect_versions():
+    from scanner import _execute_command
+
+    guest_id = Setting.get("mastodon_guest_id", "")
+    db_guest_id = Setting.get("mastodon_db_guest_id", "")
+    user = Setting.get("mastodon_user", "mastodon")
+    app_dir = Setting.get("mastodon_app_dir", "/home/mastodon/live")
+
+    detected = []
+
+    # Detect Mastodon version
+    if guest_id:
+        mastodon_guest = Guest.query.get(int(guest_id))
+        if mastodon_guest:
+            stdout, error = _execute_command(
+                mastodon_guest,
+                f"sudo -u {user} cat {app_dir}/VERSION 2>/dev/null || sudo -u {user} bash -c 'cd {app_dir} && git describe --tags 2>/dev/null'",
+                timeout=15,
+            )
+            if stdout and not error:
+                version = stdout.strip().lstrip("v")
+                if version:
+                    Setting.set("mastodon_current_version", version)
+                    detected.append(f"Mastodon: v{version}")
+            elif error:
+                logger.warning(f"Mastodon version detection failed: {error}")
+                flash(f"Could not detect Mastodon version: {error}", "warning")
+        else:
+            flash("Mastodon app guest not found.", "error")
+    else:
+        flash("Mastodon app guest not configured.", "warning")
+
+    # Detect PostgreSQL version
+    if db_guest_id:
+        db_guest = Guest.query.get(int(db_guest_id))
+        if db_guest:
+            stdout, error = _execute_command(
+                db_guest,
+                "psql --version 2>/dev/null || postgres --version 2>/dev/null",
+                timeout=15,
+            )
+            if stdout and not error:
+                import re
+                match = re.search(r"(\d+[\.\d]*)", stdout.strip())
+                if match:
+                    pg_version = match.group(1)
+                    Setting.set("mastodon_pg_version", pg_version)
+                    detected.append(f"PostgreSQL: {pg_version}")
+            elif error:
+                logger.warning(f"PostgreSQL version detection failed: {error}")
+                flash(f"Could not detect PostgreSQL version: {error}", "warning")
+        else:
+            flash("PostgreSQL guest not found.", "error")
+    else:
+        flash("PostgreSQL guest not configured.", "warning")
+
+    if detected:
+        flash(f"Detected: {', '.join(detected)}", "success")
 
     return redirect(url_for("mastodon.index"))

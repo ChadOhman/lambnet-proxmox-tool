@@ -151,6 +151,13 @@ def _migrate_schema():
             db.session.execute(text("ALTER TABLE guests ADD COLUMN power_state VARCHAR(16) DEFAULT 'unknown'"))
             db.session.commit()
 
+    if "credentials" in table_names:
+        cred_columns = [c["name"] for c in inspector.get_columns("credentials")]
+        if "encrypted_sudo_password" not in cred_columns:
+            logger.info("Adding encrypted_sudo_password column to credentials table...")
+            db.session.execute(text("ALTER TABLE credentials ADD COLUMN encrypted_sudo_password TEXT"))
+            db.session.commit()
+
 
 def _migrate_roles():
     """Migrate from old boolean permission columns to role-based model."""

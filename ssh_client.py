@@ -9,12 +9,13 @@ logger = logging.getLogger(__name__)
 class SSHClient:
     """SSH connection manager using paramiko."""
 
-    def __init__(self, hostname, port=22, username="root", password=None, private_key=None, timeout=30):
+    def __init__(self, hostname, port=22, username="root", password=None, private_key=None, sudo_password=None, timeout=30):
         self.hostname = hostname
         self.port = port
         self.username = username
         self.password = password
         self.private_key = private_key
+        self.sudo_password = sudo_password
         self.timeout = timeout
         self._client = None
 
@@ -23,11 +24,15 @@ class SSHClient:
         """Create SSHClient from a Credential database model."""
         password = None
         private_key = None
+        sudo_password = None
 
         if credential_model.auth_type == "password":
             password = decrypt(credential_model.encrypted_value)
         else:
             private_key = decrypt(credential_model.encrypted_value)
+
+        if credential_model.encrypted_sudo_password:
+            sudo_password = decrypt(credential_model.encrypted_sudo_password)
 
         return cls(
             hostname=hostname,
@@ -35,7 +40,27 @@ class SSHClient:
             username=credential_model.username,
             password=password,
             private_key=private_key,
+            sudo_password=sudo_password,
         )
+
+    @property
+    def needs_sudo(self):
+        """Check if commands should be wrapped with sudo (non-root user)."""
+        return self.username != "root"
+
+    def sudo_wrap(self, command):
+        """Wrap a command with sudo if the user is not root.
+
+        If a sudo password is set, pipes it via stdin using -S flag.
+        Otherwise assumes passwordless sudo is configured.
+        """
+        if not self.needs_sudo:
+            return command
+        if self.sudo_password:
+            # Use -S to read password from stdin, wrap command in sh -c
+            escaped_cmd = command.replace("'", "'\\''")
+            return f"echo '{self.sudo_password}' | sudo -S sh -c '{escaped_cmd}'"
+        return f"sudo {command}"
 
     def connect(self):
         self._client = paramiko.SSHClient()
@@ -78,6 +103,10 @@ class SSHClient:
         except Exception as e:
             logger.error(f"SSH command failed on {self.hostname}: {e}")
             return "", str(e), -1
+
+    def execute_sudo(self, command, timeout=120):
+        """Execute a command with sudo wrapping if needed."""
+        return self.execute(self.sudo_wrap(command), timeout=timeout)
 
     def close(self):
         if self._client:

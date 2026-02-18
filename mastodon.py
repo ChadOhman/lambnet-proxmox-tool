@@ -18,8 +18,7 @@ from proxmox_api import ProxmoxClient
 
 logger = logging.getLogger(__name__)
 
-MASTODON_GITHUB_REPO = "mastodon/mastodon"
-RELEASES_URL = f"https://api.github.com/repos/{MASTODON_GITHUB_REPO}/releases/latest"
+DEFAULT_MASTODON_REPO = "mastodon/mastodon"
 
 
 def check_mastodon_release():
@@ -28,7 +27,9 @@ def check_mastodon_release():
     Returns (update_available, latest_version, release_url).
     """
     try:
-        req = Request(RELEASES_URL, headers={"User-Agent": "MCAT"})
+        repo = Setting.get("mastodon_repo", DEFAULT_MASTODON_REPO) or DEFAULT_MASTODON_REPO
+        releases_url = f"https://api.github.com/repos/{repo}/releases/latest"
+        req = Request(releases_url, headers={"User-Agent": "MCAT"})
         with urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
 

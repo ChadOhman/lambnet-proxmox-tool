@@ -44,11 +44,14 @@ def add():
     if is_default:
         Credential.query.filter_by(is_default=True).update({"is_default": False})
 
+    sudo_password = request.form.get("sudo_password", "").strip()
+
     cred = Credential(
         name=name,
         username=username,
         auth_type=auth_type,
         encrypted_value=encrypt(value),
+        encrypted_sudo_password=encrypt(sudo_password) if sudo_password else None,
         is_default=is_default,
     )
     db.session.add(cred)

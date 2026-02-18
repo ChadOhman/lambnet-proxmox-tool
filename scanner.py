@@ -61,13 +61,13 @@ def _execute_on_guest(guest):
         if credential and _has_valid_ip(guest):
             try:
                 with SSHClient.from_credential(guest.ip_address, credential) as ssh:
-                    # Update package lists
-                    ssh.execute("apt-get update -qq 2>/dev/null", timeout=120)
+                    # Update package lists (needs root)
+                    ssh.execute_sudo("apt-get update -qq 2>/dev/null", timeout=120)
                     # Get upgradable list
                     stdout, stderr, code = ssh.execute(APT_LIST_CMD, timeout=60)
                     if code == 0:
                         # Check for security updates
-                        sec_out, _, _ = ssh.execute(APT_SECURITY_CMD, timeout=60)
+                        sec_out, _, _ = ssh.execute_sudo(APT_SECURITY_CMD, timeout=60)
                         return stdout, sec_out, None
                     if guest.connection_method == "ssh":
                         return None, None, f"SSH apt list failed: {stderr}"
@@ -105,8 +105,11 @@ def _execute_on_guest(guest):
     return None, None, "No viable connection method available"
 
 
-def _execute_command(guest, command, timeout=60):
-    """Execute a single command on a guest via SSH or agent. Returns (stdout, error)."""
+def _execute_command(guest, command, timeout=60, sudo=False):
+    """Execute a single command on a guest via SSH or agent. Returns (stdout, error).
+
+    If sudo=True, wraps the command with sudo when connected as a non-root user.
+    """
     if guest.connection_method in ("ssh", "auto") and _has_valid_ip(guest):
         credential = guest.credential
         if not credential:
@@ -116,7 +119,10 @@ def _execute_command(guest, command, timeout=60):
         if credential and _has_valid_ip(guest):
             try:
                 with SSHClient.from_credential(guest.ip_address, credential) as ssh:
-                    stdout, stderr, code = ssh.execute(command, timeout=timeout)
+                    if sudo:
+                        stdout, stderr, code = ssh.execute_sudo(command, timeout=timeout)
+                    else:
+                        stdout, stderr, code = ssh.execute(command, timeout=timeout)
                     if code == 0:
                         return stdout, None
                     if guest.connection_method == "ssh":
@@ -229,7 +235,7 @@ def service_action(guest, service, action):
         return False, "Invalid action"
 
     cmd = f"systemctl {action} {service.unit_name}"
-    stdout, error = _execute_command(guest, cmd, timeout=30)
+    stdout, error = _execute_command(guest, cmd, timeout=30, sudo=True)
 
     if error:
         return False, error
@@ -361,8 +367,8 @@ def apply_updates(guest, dist_upgrade=False):
         if credential:
             try:
                 with SSHClient.from_credential(guest.ip_address, credential) as ssh:
-                    ssh.execute("apt-get update -qq", timeout=120)
-                    stdout, stderr, code = ssh.execute(cmd, timeout=600)
+                    ssh.execute_sudo("apt-get update -qq", timeout=120)
+                    stdout, stderr, code = ssh.execute_sudo(cmd, timeout=600)
                     if code == 0:
                         # Mark all pending as applied
                         now = datetime.now(timezone.utc)

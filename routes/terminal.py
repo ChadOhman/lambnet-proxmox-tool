@@ -6,7 +6,7 @@ import io
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from flask_sock import Sock
-from models import db, Guest, Credential
+from models import db, Guest, Credential, Tag
 from credential_store import decrypt
 
 logger = logging.getLogger(__name__)
@@ -77,12 +77,39 @@ def index():
         flash("You don't have SSH terminal permission.", "error")
         return redirect(url_for("dashboard.index"))
 
-    if current_user.is_admin:
-        guests = Guest.query.filter_by(enabled=True).order_by(Guest.name).all()
-    else:
-        guests = current_user.accessible_guests()
+    tag_filter = request.args.get("tag", None)
+    user_tag_names = [t.name for t in current_user.allowed_tags]
 
-    return render_template("terminal.html", guests=guests)
+    if tag_filter is not None:
+        session["guest_tag_filter"] = tag_filter
+    elif "guest_tag_filter" in session:
+        tag_filter = session["guest_tag_filter"]
+    elif user_tag_names:
+        tag_filter = "__my_tags__"
+    else:
+        tag_filter = ""
+
+    if current_user.is_admin:
+        query = Guest.query.filter_by(enabled=True)
+    else:
+        user_tag_ids = [t.id for t in current_user.allowed_tags]
+        if not user_tag_ids:
+            query = Guest.query.filter(False)
+        else:
+            query = Guest.query.filter_by(enabled=True).filter(
+                Guest.tags.any(Tag.id.in_(user_tag_ids))
+            )
+
+    if tag_filter == "__my_tags__":
+        query = query.filter(Guest.tags.any(Tag.name.in_(user_tag_names)))
+    elif tag_filter:
+        query = query.filter(Guest.tags.any(Tag.name == tag_filter))
+
+    guests = query.order_by(Guest.name).all()
+    tags = Tag.query.order_by(Tag.name).all()
+
+    return render_template("terminal.html", guests=guests, tags=tags,
+                           current_tag=tag_filter, user_tag_names=user_tag_names)
 
 
 @bp.route("/<int:guest_id>")
