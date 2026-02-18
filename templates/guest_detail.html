@@ -26,7 +26,7 @@
         </h2>
     </div>
     <div>
-        {% if guest.ip_address and (current_user.can_ssh or current_user.is_admin) %}
+        {% if guest.ip_address and (current_user.can_ssh or current_user.can_manage_guests) %}
         <a href="/terminal/{{ guest.id }}" class="btn btn-outline-success">
             <i class="bi bi-terminal"></i> SSH
         </a>
@@ -132,7 +132,7 @@
                             <option value="no" {{ 'selected' if guest.require_snapshot == 'no' }}>No</option>
                         </select>
                     </div>
-                    {% if current_user.is_admin %}
+                    {% if current_user.can_manage_guests %}
                     <div class="mb-2">
                         <label class="form-label form-label-sm">Tags</label>
                         {% set guest_tag_ids = guest.tags | map(attribute='id') | list %}
@@ -151,7 +151,7 @@
     </div>
 </div>
 
-{% if current_user.is_admin and guest.proxmox_host and guest.vmid %}
+{% if current_user.can_manage_guests and guest.proxmox_host and guest.vmid %}
 <div class="card bg-dark mb-4">
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-power"></i> Power Management</h5></div>
     <div class="card-body">
@@ -188,7 +188,7 @@
 </div>
 {% endif %}
 
-{% if current_user.is_admin and (guest.services or True) %}
+{% if current_user.can_manage_guests and (guest.services or True) %}
 <div class="card bg-dark mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-gear-wide-connected"></i> Services</h5>
@@ -293,7 +293,7 @@
 </div>
 {% endif %}
 
-{% if current_user.is_admin and guest.proxmox_host and guest.vmid and cluster_nodes|length > 1 %}
+{% if current_user.can_manage_guests and guest.proxmox_host and guest.vmid and cluster_nodes|length > 1 %}
 <div class="card bg-dark mb-4">
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-arrow-repeat"></i> Replication</h5></div>
     <div class="card-body">
@@ -365,14 +365,14 @@
 <div class="card bg-dark mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-camera"></i> Snapshots</h5>
-        {% if current_user.is_admin %}
+        {% if current_user.can_manage_guests %}
         <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#createSnapshotForm">
             <i class="bi bi-plus-lg"></i> Create Snapshot
         </button>
         {% endif %}
     </div>
     <div class="card-body">
-        {% if current_user.is_admin %}
+        {% if current_user.can_manage_guests %}
         <div class="collapse mb-3" id="createSnapshotForm">
             <form method="post" action="/guests/{{ guest.id }}/snapshot/create" class="row g-2 align-items-end">
                 <div class="col-md-4">
@@ -397,7 +397,7 @@
                         <th>Name</th>
                         <th>Description</th>
                         <th>Date</th>
-                        {% if current_user.is_admin %}
+                        {% if current_user.can_manage_guests %}
                         <th>Actions</th>
                         {% endif %}
                     </tr>
@@ -414,7 +414,7 @@
                             -
                             {% endif %}
                         </td>
-                        {% if current_user.is_admin %}
+                        {% if current_user.can_manage_guests %}
                         <td>
                             <form method="post" action="/guests/{{ guest.id }}/snapshot/{{ snap.name }}/rollback" class="d-inline" onsubmit="return confirm('Rollback {{ guest.name }} to snapshot {{ snap.name }}? This will revert the guest to that point in time.')">
                                 <button type="submit" class="btn btn-outline-warning btn-sm" title="Rollback"><i class="bi bi-arrow-counterclockwise"></i></button>
@@ -440,14 +440,14 @@
 <div class="card bg-dark mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-hdd"></i> Backups</h5>
-        {% if current_user.is_admin %}
+        {% if current_user.can_manage_guests %}
         <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#createBackupForm">
             <i class="bi bi-plus-lg"></i> Create Backup
         </button>
         {% endif %}
     </div>
     <div class="card-body">
-        {% if current_user.is_admin %}
+        {% if current_user.can_manage_guests %}
         <div class="collapse mb-3" id="createBackupForm">
             <form method="post" action="/guests/{{ guest.id }}/backup/create">
                 <div class="row g-2 align-items-end">
@@ -504,7 +504,7 @@
                         <th>Date</th>
                         <th>Notes</th>
                         <th>Protected</th>
-                        {% if current_user.is_admin %}
+                        {% if current_user.can_manage_guests %}
                         <th>Actions</th>
                         {% endif %}
                     </tr>
@@ -533,7 +533,7 @@
                             <span class="text-muted">No</span>
                             {% endif %}
                         </td>
-                        {% if current_user.is_admin %}
+                        {% if current_user.can_manage_guests %}
                         <td>
                             <div class="btn-group btn-group-sm">
                                 {% if backup.protected | default(false) %}
@@ -565,7 +565,7 @@
 </div>
 {% endif %}
 
-{% if unifi_client and current_user.is_admin %}
+{% if unifi_client and current_user.can_manage_guests %}
 <div class="card bg-dark mb-4">
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-router"></i> UniFi Network</h5></div>
     <div class="card-body">
@@ -617,7 +617,7 @@
         </div>
     </div>
 </div>
-{% elif guest.mac_address and not unifi_client and current_user.is_admin %}
+{% elif guest.mac_address and not unifi_client and current_user.can_manage_guests %}
 <div class="card bg-dark mb-4">
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-router"></i> UniFi Network</h5></div>
     <div class="card-body">

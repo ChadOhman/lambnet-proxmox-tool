@@ -25,7 +25,7 @@
                             <i class="bi bi-speedometer2"></i> Dashboard
                         </a>
                     </li>
-                    {% if current_user.is_admin %}
+                    {% if current_user.can_manage_hosts %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'hosts' %}active{% endif %}" href="/hosts">
                             <i class="bi bi-server"></i> Hosts
@@ -73,8 +73,8 @@
                         </ul>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.blueprint == 'users' %}active{% endif %}" href="/users">
-                            <i class="bi bi-people"></i> Users
+                        <a class="nav-link {% if request.blueprint == 'security' %}active{% endif %}" href="/security">
+                            <i class="bi bi-shield-lock"></i> Security
                         </a>
                     </li>
                     {% endif %}

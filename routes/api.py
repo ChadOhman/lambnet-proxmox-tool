@@ -194,7 +194,7 @@ def scan_single(guest_id):
 @bp.route("/scan-all", methods=["POST"])
 @login_required
 def scan_all():
-    if not current_user.is_admin:
+    if not current_user.can_manage_guests:
         flash("Only admins can scan all guests.", "error")
         return redirect(url_for("dashboard.index"))
 

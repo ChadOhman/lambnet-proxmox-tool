@@ -3,7 +3,7 @@ import logging
 from flask import Flask
 from flask_login import LoginManager
 from config import Config, BASE_DIR, DATA_DIR
-from models import db, User
+from models import db, User, Role, DEFAULT_ROLES
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +25,14 @@ def create_app():
 
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        return User.query.options(db.joinedload(User.role_obj)).get(int(user_id))
 
     with app.app_context():
         db.create_all()
         _migrate_schema()
         _migrate_roles()
+        _seed_roles()
+        _migrate_users_to_role_fk()
         _ensure_default_admin()
 
     # Read version from file
@@ -83,7 +85,7 @@ def create_app():
     from routes.credentials import bp as credentials_bp
     from routes.settings import bp as settings_bp
     from routes.schedules import bp as schedules_bp
-    from routes.users import bp as users_bp
+    from routes.security import bp as security_bp
     from routes.terminal import bp as terminal_bp
     from routes.mastodon import bp as mastodon_bp
     from routes.api import bp as api_bp
@@ -97,7 +99,7 @@ def create_app():
     app.register_blueprint(credentials_bp, url_prefix="/credentials")
     app.register_blueprint(settings_bp, url_prefix="/settings")
     app.register_blueprint(schedules_bp, url_prefix="/schedules")
-    app.register_blueprint(users_bp, url_prefix="/users")
+    app.register_blueprint(security_bp, url_prefix="/security")
     app.register_blueprint(terminal_bp, url_prefix="/terminal")
     app.register_blueprint(mastodon_bp, url_prefix="/mastodon")
     app.register_blueprint(services_bp, url_prefix="/services")
@@ -237,13 +239,111 @@ def _migrate_roles():
     logger.info("Role migration complete.")
 
 
+def _seed_roles():
+    """Seed the default roles if the roles table is empty."""
+    if Role.query.count() > 0:
+        return
+    logger.info("Seeding default roles...")
+    for role_data in DEFAULT_ROLES:
+        role = Role(**role_data)
+        db.session.add(role)
+    db.session.commit()
+    logger.info(f"Seeded {len(DEFAULT_ROLES)} default roles.")
+
+
+def _migrate_users_to_role_fk():
+    """Migrate users from role VARCHAR column to role_id FK."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+
+    if "users" not in inspector.get_table_names():
+        return
+
+    columns = [c["name"] for c in inspector.get_columns("users")]
+
+    # Already migrated if role_id exists
+    if "role_id" in columns:
+        return
+
+    # Need the old "role" string column to migrate from
+    if "role" not in columns:
+        return
+
+    logger.info("Migrating users table from role string to role_id FK...")
+
+    # Read old user data
+    rows = db.session.execute(
+        text("SELECT id, username, display_name, password_hash, role, is_active_user, created_at FROM users")
+    ).fetchall()
+
+    # Preserve user_tags data
+    tag_rows = []
+    if "user_tags" in inspector.get_table_names():
+        tag_rows = db.session.execute(text("SELECT user_id, tag_id FROM user_tags")).fetchall()
+        db.session.execute(text("DROP TABLE user_tags"))
+        db.session.commit()
+
+    # Build role name -> id mapping
+    role_map = {}
+    for r in Role.query.all():
+        role_map[r.name] = r.id
+
+    # Default fallback to viewer role
+    viewer_id = role_map.get("viewer", 1)
+
+    # Recreate users table with role_id
+    db.session.execute(text("DROP TABLE users"))
+    db.session.execute(text("""
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY,
+            username VARCHAR(64) UNIQUE NOT NULL,
+            display_name VARCHAR(128),
+            password_hash VARCHAR(256) NOT NULL,
+            role_id INTEGER NOT NULL REFERENCES roles(id),
+            is_active_user BOOLEAN DEFAULT 1,
+            created_at DATETIME
+        )
+    """))
+
+    for row in rows:
+        uid, username, display_name, password_hash, role_str, is_active, created_at = row
+        role_id = role_map.get(role_str, viewer_id)
+        db.session.execute(
+            text("""INSERT INTO users (id, username, display_name, password_hash, role_id, is_active_user, created_at)
+                    VALUES (:id, :username, :display_name, :password_hash, :role_id, :is_active, :created_at)"""),
+            {"id": uid, "username": username, "display_name": display_name,
+             "password_hash": password_hash, "role_id": role_id,
+             "is_active": is_active, "created_at": created_at},
+        )
+
+    # Restore user_tags
+    db.session.execute(text("""
+        CREATE TABLE user_tags (
+            user_id INTEGER REFERENCES users(id),
+            tag_id INTEGER REFERENCES tags(id),
+            PRIMARY KEY (user_id, tag_id)
+        )
+    """))
+    for tr in tag_rows:
+        db.session.execute(
+            text("INSERT INTO user_tags (user_id, tag_id) VALUES (:uid, :tid)"),
+            {"uid": tr[0], "tid": tr[1]},
+        )
+
+    db.session.commit()
+    logger.info("User role FK migration complete.")
+
+
 def _ensure_default_admin():
     """Create default admin user if no users exist."""
     if User.query.count() == 0:
+        sa_role = Role.query.filter_by(name="super_admin").first()
+        if not sa_role:
+            return
         admin = User(
             username="admin",
             display_name="Administrator",
-            role="super_admin",
+            role_id=sa_role.id,
         )
         admin.set_password("admin")
         db.session.add(admin)

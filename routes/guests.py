@@ -80,8 +80,8 @@ def index():
 @bp.route("/add", methods=["POST"])
 @login_required
 def add():
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.index"))
 
     name = request.form.get("name", "").strip()
@@ -186,8 +186,8 @@ def detail(guest_id):
 def edit(guest_id):
     guest = Guest.query.get_or_404(guest_id)
 
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
     guest.ip_address = request.form.get("ip_address", "").strip() or None
@@ -214,8 +214,8 @@ def edit(guest_id):
 @bp.route("/<int:guest_id>/replication", methods=["POST"])
 @login_required
 def create_replication(guest_id):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -245,8 +245,8 @@ def create_replication(guest_id):
 @bp.route("/<int:guest_id>/replication/<job_id>/delete", methods=["POST"])
 @login_required
 def delete_replication(guest_id, job_id):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -269,8 +269,8 @@ def delete_replication(guest_id, job_id):
 @bp.route("/<int:guest_id>/unifi/reconnect", methods=["POST"])
 @login_required
 def unifi_reconnect(guest_id):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -296,8 +296,8 @@ def unifi_reconnect(guest_id):
 @bp.route("/<int:guest_id>/unifi/block", methods=["POST"])
 @login_required
 def unifi_block(guest_id):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -323,8 +323,8 @@ def unifi_block(guest_id):
 @bp.route("/<int:guest_id>/unifi/unblock", methods=["POST"])
 @login_required
 def unifi_unblock(guest_id):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -350,8 +350,8 @@ def unifi_unblock(guest_id):
 @bp.route("/<int:guest_id>/power/<action>", methods=["POST"])
 @login_required
 def power_action(guest_id, action):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     if action not in ("start", "shutdown", "stop", "reboot"):
@@ -397,8 +397,8 @@ def power_action(guest_id, action):
 @bp.route("/<int:guest_id>/snapshot/create", methods=["POST"])
 @login_required
 def create_snapshot(guest_id):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -431,8 +431,8 @@ def create_snapshot(guest_id):
 @bp.route("/<int:guest_id>/snapshot/<snapname>/delete", methods=["POST"])
 @login_required
 def delete_snapshot(guest_id, snapname):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -458,8 +458,8 @@ def delete_snapshot(guest_id, snapname):
 @bp.route("/<int:guest_id>/snapshot/<snapname>/rollback", methods=["POST"])
 @login_required
 def rollback_snapshot(guest_id, snapname):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -485,8 +485,8 @@ def rollback_snapshot(guest_id, snapname):
 @bp.route("/<int:guest_id>/backup/create", methods=["POST"])
 @login_required
 def create_backup(guest_id):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -530,8 +530,8 @@ def create_backup(guest_id):
 @bp.route("/<int:guest_id>/backup/<path:volid>/delete", methods=["POST"])
 @login_required
 def delete_backup(guest_id, volid):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -559,8 +559,8 @@ def delete_backup(guest_id, volid):
 @bp.route("/<int:guest_id>/backup/<path:volid>/protect", methods=["POST"])
 @login_required
 def toggle_backup_protection(guest_id, volid):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -589,8 +589,8 @@ def toggle_backup_protection(guest_id, volid):
 @bp.route("/<int:guest_id>/backup/<path:volid>/notes", methods=["POST"])
 @login_required
 def update_backup_notes(guest_id, volid):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest_id))
 
     guest = Guest.query.get_or_404(guest_id)
@@ -619,8 +619,8 @@ def update_backup_notes(guest_id, volid):
 @bp.route("/<int:guest_id>/delete", methods=["POST"])
 @login_required
 def delete(guest_id):
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
         return redirect(url_for("guests.index"))
 
     guest = Guest.query.get_or_404(guest_id)

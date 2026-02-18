@@ -1,0 +1,250 @@
+from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask_login import login_required, current_user
+from models import db, User, Role, Tag
+
+bp = Blueprint("security", __name__)
+
+
+@bp.before_request
+@login_required
+def _require_access():
+    # Roles and tags management: super_admin only
+    if request.path.startswith("/security/roles") or request.path.startswith("/security/tags"):
+        if not current_user.is_super_admin:
+            flash("Super admin access required.", "error")
+            return redirect(url_for("dashboard.index"))
+    # Users management: can_manage_users permission
+    elif not current_user.can_manage_users:
+        flash("Admin access required.", "error")
+        return redirect(url_for("dashboard.index"))
+
+
+@bp.route("/")
+def index():
+    users = User.query.options(db.joinedload(User.role_obj)).order_by(User.username).all()
+    roles = Role.query.order_by(Role.level.desc(), Role.name).all()
+    tags = Tag.query.order_by(Tag.name).all()
+    return render_template("security.html", users=users, roles=roles, tags=tags)
+
+
+# --- User management ---
+
+@bp.route("/users/add", methods=["POST"])
+def add_user():
+    username = request.form.get("username", "").strip().lower()
+    display_name = request.form.get("display_name", "").strip()
+    password = request.form.get("password", "")
+    role_id = request.form.get("role_id", "")
+    tag_ids = request.form.getlist("tag_ids")
+
+    if not username or not password:
+        flash("Username and password are required.", "error")
+        return redirect(url_for("security.index"))
+
+    if User.query.filter_by(username=username).first():
+        flash(f"Username '{username}' already exists.", "error")
+        return redirect(url_for("security.index"))
+
+    if len(password) < 8:
+        flash("Password must be at least 8 characters.", "error")
+        return redirect(url_for("security.index"))
+
+    # Resolve role
+    target_role = Role.query.get(int(role_id)) if role_id else None
+    if not target_role:
+        target_role = Role.query.filter_by(name="viewer").first()
+
+    # Cannot assign a role with equal or higher level (unless super_admin)
+    if target_role.level >= current_user.role_level and not current_user.is_super_admin:
+        flash("You cannot create a user with an equal or higher role.", "error")
+        return redirect(url_for("security.index"))
+
+    user = User(
+        username=username,
+        display_name=display_name or username,
+        role_id=target_role.id,
+    )
+    user.set_password(password)
+
+    if tag_ids:
+        tags = Tag.query.filter(Tag.id.in_([int(t) for t in tag_ids])).all()
+        user.allowed_tags = tags
+
+    db.session.add(user)
+    db.session.commit()
+
+    flash(f"User '{username}' created.", "success")
+    return redirect(url_for("security.index"))
+
+
+@bp.route("/users/<int:user_id>/edit", methods=["POST"])
+def edit_user(user_id):
+    user = User.query.get_or_404(user_id)
+
+    if not current_user.can_edit_user(user):
+        flash("You cannot edit a user with an equal or higher role.", "error")
+        return redirect(url_for("security.index"))
+
+    user.display_name = request.form.get("display_name", user.display_name).strip()
+    user.is_active_user = "is_active" in request.form
+
+    # Role change (only if not editing self)
+    new_role_id = request.form.get("role_id", "")
+    if new_role_id and user.id != current_user.id:
+        target_role = Role.query.get(int(new_role_id))
+        if target_role:
+            if target_role.level >= current_user.role_level and not current_user.is_super_admin:
+                flash("You cannot assign a role equal to or higher than your own.", "error")
+                return redirect(url_for("security.index"))
+            user.role_id = target_role.id
+
+    tag_ids = request.form.getlist("tag_ids")
+    tags = Tag.query.filter(Tag.id.in_([int(t) for t in tag_ids])).all() if tag_ids else []
+    user.allowed_tags = tags
+
+    new_password = request.form.get("new_password", "").strip()
+    if new_password:
+        if len(new_password) < 8:
+            flash("Password must be at least 8 characters.", "error")
+            return redirect(url_for("security.index"))
+        user.set_password(new_password)
+
+    db.session.commit()
+    flash(f"User '{user.username}' updated.", "success")
+    return redirect(url_for("security.index"))
+
+
+@bp.route("/users/<int:user_id>/delete", methods=["POST"])
+def delete_user(user_id):
+    if user_id == current_user.id:
+        flash("You cannot delete your own account.", "error")
+        return redirect(url_for("security.index"))
+
+    user = User.query.get_or_404(user_id)
+
+    if not current_user.can_edit_user(user):
+        flash("You cannot delete a user with an equal or higher role.", "error")
+        return redirect(url_for("security.index"))
+
+    username = user.username
+    db.session.delete(user)
+    db.session.commit()
+    flash(f"User '{username}' deleted.", "warning")
+    return redirect(url_for("security.index"))
+
+
+# --- Role management (super_admin only, enforced by before_request) ---
+
+@bp.route("/roles/add", methods=["POST"])
+def add_role():
+    name = request.form.get("name", "").strip().lower().replace(" ", "_")
+    display_name = request.form.get("display_name", "").strip()
+    base_tier = request.form.get("base_tier", "viewer")
+
+    if not name or not display_name:
+        flash("Role name and display name are required.", "error")
+        return redirect(url_for("security.index"))
+
+    if Role.query.filter_by(name=name).first():
+        flash(f"Role '{name}' already exists.", "error")
+        return redirect(url_for("security.index"))
+
+    level = Role.BASE_TIER_LEVELS.get(base_tier, 1)
+
+    role = Role(
+        name=name,
+        display_name=display_name,
+        level=level,
+        is_builtin=False,
+        base_tier=base_tier,
+    )
+
+    # Set permissions from form checkboxes
+    for perm in Role.PERMISSION_FIELDS:
+        setattr(role, perm, perm in request.form)
+
+    db.session.add(role)
+    db.session.commit()
+
+    flash(f"Role '{display_name}' created.", "success")
+    return redirect(url_for("security.index"))
+
+
+@bp.route("/roles/<int:role_id>/edit", methods=["POST"])
+def edit_role(role_id):
+    role = Role.query.get_or_404(role_id)
+
+    if role.name == "super_admin":
+        flash("The Super Admin role cannot be edited.", "error")
+        return redirect(url_for("security.index"))
+
+    # For custom roles, allow editing display_name and base_tier
+    if not role.is_builtin:
+        new_display = request.form.get("display_name", "").strip()
+        if new_display:
+            role.display_name = new_display
+
+        new_tier = request.form.get("base_tier", "")
+        if new_tier and new_tier in Role.BASE_TIER_LEVELS:
+            role.base_tier = new_tier
+            role.level = Role.BASE_TIER_LEVELS[new_tier]
+
+    # Update permissions from checkboxes
+    for perm in Role.PERMISSION_FIELDS:
+        setattr(role, perm, perm in request.form)
+
+    db.session.commit()
+    flash(f"Role '{role.display_name}' updated.", "success")
+    return redirect(url_for("security.index"))
+
+
+@bp.route("/roles/<int:role_id>/delete", methods=["POST"])
+def delete_role(role_id):
+    role = Role.query.get_or_404(role_id)
+
+    if role.is_builtin:
+        flash("Built-in roles cannot be deleted.", "error")
+        return redirect(url_for("security.index"))
+
+    if role.users:
+        flash(f"Cannot delete role '{role.display_name}' — {len(role.users)} user(s) are assigned to it. Reassign them first.", "error")
+        return redirect(url_for("security.index"))
+
+    name = role.display_name
+    db.session.delete(role)
+    db.session.commit()
+    flash(f"Role '{name}' deleted.", "warning")
+    return redirect(url_for("security.index"))
+
+
+# --- Tag management (super_admin only, enforced by before_request) ---
+
+@bp.route("/tags/add", methods=["POST"])
+def add_tag():
+    name = request.form.get("name", "").strip()
+    color = request.form.get("color", "#6c757d").strip()
+
+    if not name:
+        flash("Tag name is required.", "error")
+        return redirect(url_for("security.index"))
+
+    if Tag.query.filter_by(name=name).first():
+        flash(f"Tag '{name}' already exists.", "error")
+        return redirect(url_for("security.index"))
+
+    tag = Tag(name=name, color=color)
+    db.session.add(tag)
+    db.session.commit()
+
+    flash(f"Tag '{name}' created.", "success")
+    return redirect(url_for("security.index"))
+
+
+@bp.route("/tags/<int:tag_id>/delete", methods=["POST"])
+def delete_tag(tag_id):
+    tag = Tag.query.get_or_404(tag_id)
+    name = tag.name
+    db.session.delete(tag)
+    db.session.commit()
+    flash(f"Tag '{name}' deleted.", "warning")
+    return redirect(url_for("security.index"))

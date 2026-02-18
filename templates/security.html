@@ -1,0 +1,525 @@
+{% extends "base.html" %}
+{% block title %}Security - Proxmox Administration Tool{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-shield-lock"></i> Security</h2>
+
+<ul class="nav nav-pills mb-4" id="securityTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="users-tab" data-bs-toggle="pill" data-bs-target="#usersPane" type="button" role="tab">
+            <i class="bi bi-people"></i> Users
+        </button>
+    </li>
+    {% if current_user.is_super_admin %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="roles-tab" data-bs-toggle="pill" data-bs-target="#rolesPane" type="button" role="tab">
+            <i class="bi bi-key"></i> Roles
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tags-tab" data-bs-toggle="pill" data-bs-target="#tagsPane" type="button" role="tab">
+            <i class="bi bi-tags"></i> Tags
+        </button>
+    </li>
+    {% endif %}
+</ul>
+
+<div class="tab-content">
+
+    <!-- ============ USERS TAB ============ -->
+    <div class="tab-pane fade show active" id="usersPane" role="tabpanel">
+        <div class="card bg-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Users</h5>
+                <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                    <i class="bi bi-plus-lg"></i> Add User
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Display Name</th>
+                                <th>Role</th>
+                                <th>Tags</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr>
+                                <td><code>{{ user.username }}</code></td>
+                                <td>{{ user.display_name or '-' }}</td>
+                                <td>
+                                    {% if user.role_level >= 4 %}
+                                    <span class="badge bg-danger">{{ user.role_display }}</span>
+                                    {% elif user.role_level == 3 %}
+                                    <span class="badge bg-warning text-dark">{{ user.role_display }}</span>
+                                    {% elif user.role_level == 2 %}
+                                    <span class="badge bg-info">{{ user.role_display }}</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ user.role_display }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% for tag in user.allowed_tags %}
+                                    <span class="badge" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
+                                    {% endfor %}
+                                    {% if not user.allowed_tags and not user.is_admin %}
+                                    <span class="text-muted">None</span>
+                                    {% elif user.is_admin %}
+                                    <span class="text-muted">All (admin)</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if user.is_active %}
+                                    <span class="text-success"><i class="bi bi-check-circle"></i></span>
+                                    {% else %}
+                                    <span class="text-danger"><i class="bi bi-x-circle"></i></span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if current_user.can_edit_user(user) %}
+                                    <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editUser{{ user.id }}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    {% endif %}
+                                    {% if user.id != current_user.id and current_user.can_edit_user(user) %}
+                                    <form method="post" action="/security/users/{{ user.id }}/delete" class="d-inline" onsubmit="return confirm('Delete user {{ user.username }}?')">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if current_user.is_super_admin %}
+    <!-- ============ ROLES TAB ============ -->
+    <div class="tab-pane fade" id="rolesPane" role="tabpanel">
+        <div class="card bg-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Roles & Permissions</h5>
+                <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addRoleModal">
+                    <i class="bi bi-plus-lg"></i> Add Custom Role
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0 align-middle">
+                        <thead>
+                            <tr>
+                                <th>Role</th>
+                                <th>Type</th>
+                                <th>Level</th>
+                                <th>Permissions</th>
+                                <th>Users</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for role in roles %}
+                            <tr>
+                                <td>
+                                    {% if role.level >= 4 %}
+                                    <span class="badge bg-danger">{{ role.display_name }}</span>
+                                    {% elif role.level == 3 %}
+                                    <span class="badge bg-warning text-dark">{{ role.display_name }}</span>
+                                    {% elif role.level == 2 %}
+                                    <span class="badge bg-info">{{ role.display_name }}</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ role.display_name }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if role.is_builtin %}
+                                    <span class="text-muted">Built-in</span>
+                                    {% else %}
+                                    <span class="text-info">Custom</span>
+                                    <small class="text-muted">({{ role.base_tier }})</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ role.level }}</td>
+                                <td>
+                                    {% if role.name == 'super_admin' %}
+                                    <span class="badge bg-danger">All Permissions</span>
+                                    {% else %}
+                                    {% for perm in role.PERMISSION_FIELDS %}
+                                    {% if role[perm] %}
+                                    <span class="badge bg-success bg-opacity-75 mb-1">{{ role.PERMISSION_LABELS[perm] }}</span>
+                                    {% endif %}
+                                    {% endfor %}
+                                    {% set has_any = role.PERMISSION_FIELDS | select('in', role.__dict__) | list %}
+                                    {% set active_perms = [] %}
+                                    {% for perm in role.PERMISSION_FIELDS %}
+                                        {% if role[perm] %}{% if active_perms.append(perm) %}{% endif %}{% endif %}
+                                    {% endfor %}
+                                    {% if not active_perms %}
+                                    <span class="text-muted">None</span>
+                                    {% endif %}
+                                    {% endif %}
+                                </td>
+                                <td><span class="badge bg-secondary">{{ role.users|length }}</span></td>
+                                <td>
+                                    {% if role.name != 'super_admin' %}
+                                    <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editRole{{ role.id }}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    {% endif %}
+                                    {% if not role.is_builtin %}
+                                    <form method="post" action="/security/roles/{{ role.id }}/delete" class="d-inline" onsubmit="return confirm('Delete role {{ role.display_name }}?')">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-dark mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> About Roles</h5>
+            </div>
+            <div class="card-body">
+                <ul class="mb-0 ps-3">
+                    <li><strong>Super Admin</strong> (Level 4) &mdash; Always has all permissions. Cannot be edited.</li>
+                    <li><strong>Admin</strong> (Level 3) &mdash; Can manage guests, hosts, users. Sees all guests regardless of tags.</li>
+                    <li><strong>Operator</strong> (Level 2) &mdash; Can SSH and apply updates on assigned guests.</li>
+                    <li><strong>Viewer</strong> (Level 1) &mdash; Read-only access to assigned guests.</li>
+                </ul>
+                <hr class="border-secondary">
+                <small class="text-muted">
+                    Custom roles inherit a level from their base tier, which determines hierarchy.
+                    Users can only manage other users with a lower role level.
+                    Permissions on built-in roles (except Super Admin) can be customized.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ TAGS TAB ============ -->
+    <div class="tab-pane fade" id="tagsPane" role="tabpanel">
+        <div class="card bg-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-tags"></i> Tags</h5>
+                <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addTagModal">
+                    <i class="bi bi-plus-lg"></i> Add Tag
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush">
+                    {% for tag in tags %}
+                    <div class="list-group-item bg-dark border-secondary d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
+                            <small class="text-muted ms-2">{{ tag.guests|length }} guest(s), {{ tag.users|length }} user(s)</small>
+                        </div>
+                        <form method="post" action="/security/tags/{{ tag.id }}/delete" onsubmit="return confirm('Delete tag {{ tag.name }}?')">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x"></i></button>
+                        </form>
+                    </div>
+                    {% else %}
+                    <div class="list-group-item bg-dark border-secondary text-center text-muted py-3">
+                        No tags yet. Tags sync with Proxmox guest tags and control user access.
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-dark mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> About Tags</h5>
+            </div>
+            <div class="card-body">
+                <small class="text-muted">
+                    Tags control which guests non-admin users can see and interact with.
+                    Match tag names to Proxmox tags on your VMs/CTs. When discovery runs, guest tags are synced automatically.
+                    Admins can see all guests regardless of tag assignments.
+                </small>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+<!-- ============ MODALS ============ -->
+
+<!-- Add User Modal -->
+<div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <form method="post" action="/security/users/add">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title">Add User</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" name="username" required placeholder="e.g. john">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Display Name</label>
+                        <input type="text" class="form-control" name="display_name" placeholder="e.g. John Doe">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" name="password" required minlength="8">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Role</label>
+                        <select class="form-select" name="role_id">
+                            {% for role in roles %}
+                            {% if role.level < current_user.role_level or current_user.is_super_admin %}
+                            <option value="{{ role.id }}" {{ 'selected' if role.name == 'operator' }}>{{ role.display_name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Allowed Tags</label>
+                        {% for tag in tags %}
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="tag_ids" value="{{ tag.id }}" id="newUserTag{{ tag.id }}">
+                            <label class="form-check-label" for="newUserTag{{ tag.id }}">
+                                <span class="badge" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
+                            </label>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0">No tags available. Create tags first.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% if current_user.is_super_admin %}
+<!-- Add Tag Modal -->
+<div class="modal fade" id="addTagModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content bg-dark">
+            <form method="post" action="/security/tags/add">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title">Add Tag</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Tag Name</label>
+                        <input type="text" class="form-control" name="name" required placeholder="e.g. webservers">
+                        <div class="form-text">Match this to Proxmox tags on your VMs/CTs.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Color</label>
+                        <input type="color" class="form-control form-control-color" name="color" value="#0d6efd">
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="submit" class="btn btn-primary">Create Tag</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Custom Role Modal -->
+<div class="modal fade" id="addRoleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <form method="post" action="/security/roles/add">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title">Add Custom Role</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Role Name (internal)</label>
+                        <input type="text" class="form-control" name="name" required placeholder="e.g. network_operator">
+                        <div class="form-text">Lowercase, underscores. Used internally.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Display Name</label>
+                        <input type="text" class="form-control" name="display_name" required placeholder="e.g. Network Operator">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Base Tier</label>
+                        <select class="form-select" name="base_tier" id="newRoleBaseTier" onchange="prefillPermissions(this.value)">
+                            <option value="viewer">Viewer (Level 1)</option>
+                            <option value="operator" selected>Operator (Level 2)</option>
+                            <option value="admin">Admin (Level 3)</option>
+                        </select>
+                        <div class="form-text">Determines hierarchy level. Select a base, then customize permissions below.</div>
+                    </div>
+                    <hr class="border-secondary">
+                    <label class="form-label">Permissions</label>
+                    {% for perm in roles[0].PERMISSION_FIELDS if roles %}
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input new-role-perm" name="{{ perm }}" id="newRole_{{ perm }}">
+                        <label class="form-check-label" for="newRole_{{ perm }}">{{ roles[0].PERMISSION_LABELS[perm] }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Role</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Role Modals -->
+{% for role in roles %}
+{% if role.name != 'super_admin' %}
+<div class="modal fade" id="editRole{{ role.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <form method="post" action="/security/roles/{{ role.id }}/edit">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title">Edit Role: {{ role.display_name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    {% if not role.is_builtin %}
+                    <div class="mb-3">
+                        <label class="form-label">Display Name</label>
+                        <input type="text" class="form-control" name="display_name" value="{{ role.display_name }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Base Tier</label>
+                        <select class="form-select" name="base_tier">
+                            <option value="viewer" {{ 'selected' if role.base_tier == 'viewer' }}>Viewer (Level 1)</option>
+                            <option value="operator" {{ 'selected' if role.base_tier == 'operator' }}>Operator (Level 2)</option>
+                            <option value="admin" {{ 'selected' if role.base_tier == 'admin' }}>Admin (Level 3)</option>
+                        </select>
+                    </div>
+                    {% else %}
+                    <p class="text-muted">This is a built-in role. Only permissions can be changed.</p>
+                    {% endif %}
+                    <hr class="border-secondary">
+                    <label class="form-label">Permissions</label>
+                    {% for perm in role.PERMISSION_FIELDS %}
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" name="{{ perm }}" id="editRole{{ role.id }}_{{ perm }}" {{ 'checked' if role[perm] }}>
+                        <label class="form-check-label" for="editRole{{ role.id }}_{{ perm }}">{{ role.PERMISSION_LABELS[perm] }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endif %}
+
+<!-- Edit User Modals -->
+{% for user in users %}
+{% if current_user.can_edit_user(user) %}
+<div class="modal fade" id="editUser{{ user.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <form method="post" action="/security/users/{{ user.id }}/edit">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title">Edit: {{ user.username }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Display Name</label>
+                        <input type="text" class="form-control" name="display_name" value="{{ user.display_name or '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">New Password (leave blank to keep)</label>
+                        <input type="password" class="form-control" name="new_password" minlength="8">
+                    </div>
+                    {% if user.id != current_user.id %}
+                    <div class="mb-3">
+                        <label class="form-label">Role</label>
+                        <select class="form-select" name="role_id">
+                            {% for role in roles %}
+                            {% if role.level < current_user.role_level or current_user.is_super_admin %}
+                            <option value="{{ role.id }}" {{ 'selected' if user.role_id == role.id }}>{{ role.display_name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="is_active" {{ 'checked' if user.is_active }}>
+                            <label class="form-check-label">Active</label>
+                        </div>
+                    </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label class="form-label">Allowed Tags</label>
+                        {% set user_tag_ids = user.allowed_tags | map(attribute='id') | list %}
+                        {% for tag in tags %}
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="tag_ids" value="{{ tag.id }}" {{ 'checked' if tag.id in user_tag_ids }}>
+                            <label class="form-check-label">
+                                <span class="badge" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Pre-fill permissions when base tier changes in the Add Custom Role modal
+const tierPerms = {
+    viewer: [],
+    operator: ['can_ssh', 'can_update'],
+    admin: ['can_ssh', 'can_update', 'can_manage_users', 'can_manage_hosts', 'can_manage_guests', 'can_restart_unifi']
+};
+
+function prefillPermissions(tier) {
+    const perms = tierPerms[tier] || [];
+    document.querySelectorAll('.new-role-perm').forEach(function(cb) {
+        cb.checked = perms.includes(cb.name);
+    });
+}
+
+// Trigger prefill on page load for default selection
+document.addEventListener('DOMContentLoaded', function() {
+    const tierSelect = document.getElementById('newRoleBaseTier');
+    if (tierSelect) prefillPermissions(tierSelect.value);
+});
+</script>
+{% endblock %}
