@@ -108,6 +108,49 @@ class SSHClient:
         """Execute a command with sudo wrapping if needed."""
         return self.execute(self.sudo_wrap(command), timeout=timeout)
 
+    def execute_streaming(self, command, callback, timeout=600):
+        """Execute a command and call callback(chunk) as output arrives.
+
+        Returns (exit_code).  The callback receives raw string chunks
+        from both stdout and stderr as they become available.
+        """
+        if self._client is None:
+            self.connect()
+
+        try:
+            stdin, stdout, stderr = self._client.exec_command(command, timeout=timeout)
+            channel = stdout.channel
+
+            while not channel.exit_status_ready():
+                if channel.recv_ready():
+                    data = channel.recv(4096).decode("utf-8", errors="replace")
+                    if data:
+                        callback(data)
+                if channel.recv_stderr_ready():
+                    data = channel.recv_stderr(4096).decode("utf-8", errors="replace")
+                    if data:
+                        callback(data)
+
+            # Drain remaining output
+            while channel.recv_ready():
+                data = channel.recv(4096).decode("utf-8", errors="replace")
+                if data:
+                    callback(data)
+            while channel.recv_stderr_ready():
+                data = channel.recv_stderr(4096).decode("utf-8", errors="replace")
+                if data:
+                    callback(data)
+
+            return channel.recv_exit_status()
+        except Exception as e:
+            logger.error(f"SSH streaming command failed on {self.hostname}: {e}")
+            callback(f"\n[SSH Error: {e}]\n")
+            return -1
+
+    def execute_sudo_streaming(self, command, callback, timeout=600):
+        """Execute a command with sudo wrapping, streaming output via callback."""
+        return self.execute_streaming(self.sudo_wrap(command), callback, timeout=timeout)
+
     def close(self):
         if self._client:
             self._client.close()

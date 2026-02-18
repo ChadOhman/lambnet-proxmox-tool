@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Updating {{ guest.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/guests">Guests</a></li>
+        <li class="breadcrumb-item"><a href="/guests/{{ guest.id }}">{{ guest.name }}</a></li>
+        <li class="breadcrumb-item active">Applying Updates</li>
+    </ol>
+</nav>
+
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="card bg-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-arrow-repeat" id="spinIcon"></i>
+                    Updating {{ guest.name }}
+                </h5>
+                <span id="statusBadge" class="badge bg-info">Starting...</span>
+            </div>
+            <div class="card-body p-0">
+                <pre id="logOutput" style="background: #1a1a2e; color: #e0e0e0; padding: 1rem; margin: 0; min-height: 400px; max-height: 600px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; word-wrap: break-word; border-radius: 0;"></pre>
+            </div>
+            <div class="card-footer d-flex justify-content-between align-items-center">
+                <small class="text-muted" id="statusText">Waiting for update output...</small>
+                <a href="/guests/{{ guest.id }}" id="backBtn" class="btn btn-secondary btn-sm disabled">
+                    <i class="bi bi-arrow-left"></i> Back to Guest
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const logEl = document.getElementById('logOutput');
+    const badge = document.getElementById('statusBadge');
+    const statusText = document.getElementById('statusText');
+    const backBtn = document.getElementById('backBtn');
+    const spinIcon = document.getElementById('spinIcon');
+
+    let updateComplete = false;
+    const pollInterval = 1500;
+    const guestId = {{ guest.id }};
+
+    function setStatus(text, badgeClass, badgeText) {
+        statusText.textContent = text;
+        badge.className = 'badge ' + badgeClass;
+        badge.textContent = badgeText;
+    }
+
+    function enableBackBtn() {
+        backBtn.classList.remove('disabled');
+        backBtn.removeAttribute('aria-disabled');
+        spinIcon.classList.remove('spin-animation');
+    }
+
+    async function poll() {
+        if (updateComplete) return;
+
+        try {
+            const resp = await fetch('/api/apply/' + guestId + '/status', { cache: 'no-store' });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const data = await resp.json();
+
+            if (data.log) {
+                const wasAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 50;
+                logEl.textContent = data.log;
+                if (wasAtBottom) {
+                    logEl.scrollTop = logEl.scrollHeight;
+                }
+            }
+
+            if (data.running) {
+                setStatus('Update in progress...', 'bg-info', 'Updating...');
+            } else {
+                updateComplete = true;
+                if (data.success) {
+                    logEl.textContent += '\n--- Update complete ---\n';
+                    setStatus('Updates applied successfully!', 'bg-success', 'Complete');
+                } else {
+                    logEl.textContent += '\n--- Update failed ---\n';
+                    setStatus('Update failed. Check the output above.', 'bg-danger', 'Failed');
+                }
+                logEl.scrollTop = logEl.scrollHeight;
+                enableBackBtn();
+                return;
+            }
+        } catch (e) {
+            // Transient error, keep polling
+        }
+
+        setTimeout(poll, pollInterval);
+    }
+
+    // Add spin animation
+    const style = document.createElement('style');
+    style.textContent = '.spin-animation { animation: spin 1s linear infinite; } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+    document.head.appendChild(style);
+    spinIcon.classList.add('spin-animation');
+
+    // Start polling
+    setTimeout(poll, 500);
+})();
+</script>
+{% endblock %}
