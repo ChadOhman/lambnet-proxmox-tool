@@ -1,3 +1,4 @@
+import re
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from models import db, ProxmoxHost, Guest, Tag
@@ -78,9 +79,15 @@ def discover(host_id):
     try:
         all_guests = client.get_all_guests()
         added = 0
+        updated = 0
         for g in all_guests:
             vmid = g.get("vmid")
             existing = Guest.query.filter_by(proxmox_host_id=host.id, vmid=vmid).first()
+
+            # Parse tags - Proxmox uses semicolons (PVE 8+) or commas (older)
+            proxmox_tags = g.get("tags", "")
+            tag_names = [t.strip() for t in re.split(r"[;,]", proxmox_tags) if t.strip()] if proxmox_tags else []
+
             if not existing:
                 ip = client.get_guest_ip(g["node"], vmid, g["type"])
                 guest = Guest(
@@ -94,33 +101,29 @@ def discover(host_id):
                 db.session.add(guest)
                 added += 1
 
-                # Sync Proxmox tags if available
-                proxmox_tags = g.get("tags", "")
-                if proxmox_tags:
-                    for tag_name in proxmox_tags.split(";"):
-                        tag_name = tag_name.strip()
-                        if tag_name:
-                            tag = Tag.query.filter_by(name=tag_name).first()
-                            if not tag:
-                                tag = Tag(name=tag_name)
-                                db.session.add(tag)
-                            guest.tags.append(tag)
+                for tag_name in tag_names:
+                    tag = Tag.query.filter_by(name=tag_name).first()
+                    if not tag:
+                        tag = Tag(name=tag_name)
+                        db.session.add(tag)
+                    guest.tags.append(tag)
             else:
-                # Update tags for existing guests
-                proxmox_tags = g.get("tags", "")
-                if proxmox_tags:
-                    existing.tags.clear()
-                    for tag_name in proxmox_tags.split(";"):
-                        tag_name = tag_name.strip()
-                        if tag_name:
-                            tag = Tag.query.filter_by(name=tag_name).first()
-                            if not tag:
-                                tag = Tag(name=tag_name)
-                                db.session.add(tag)
-                            existing.tags.append(tag)
+                # Update IP and tags for existing guests
+                ip = client.get_guest_ip(g["node"], vmid, g["type"])
+                if ip:
+                    existing.ip_address = ip
+                existing.name = g.get("name", existing.name)
+                existing.tags.clear()
+                for tag_name in tag_names:
+                    tag = Tag.query.filter_by(name=tag_name).first()
+                    if not tag:
+                        tag = Tag(name=tag_name)
+                        db.session.add(tag)
+                    existing.tags.append(tag)
+                updated += 1
 
         db.session.commit()
-        flash(f"Discovered {len(all_guests)} guests on '{host.name}' ({added} new). Tags synced.", "success")
+        flash(f"Discovered {len(all_guests)} guests on '{host.name}' ({added} new, {updated} updated). Tags synced.", "success")
     except Exception as e:
         flash(f"Discovery failed for '{host.name}': {e}", "error")
 

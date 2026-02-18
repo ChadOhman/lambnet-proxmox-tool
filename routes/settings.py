@@ -39,6 +39,7 @@ def _get_settings_dict():
         "unifi_is_udm": Setting.get("unifi_is_udm", "true"),
         "unifi_filter_subnet": Setting.get("unifi_filter_subnet", ""),
         "app_auto_update": Setting.get("app_auto_update", "false"),
+        "app_update_branch": Setting.get("app_update_branch", ""),
     }
 
 
@@ -197,8 +198,10 @@ def test_unifi():
 @bp.route("/app-update-mode", methods=["POST"])
 def save_app_update_mode():
     auto_update = "app_auto_update" in request.form
+    update_branch = request.form.get("app_update_branch", "").strip()
     Setting.set("app_auto_update", "true" if auto_update else "false")
-    flash(f"Application auto-update {'enabled' if auto_update else 'disabled'}.", "success")
+    Setting.set("app_update_branch", update_branch)
+    flash(f"Application update settings saved.", "success")
     return redirect(url_for("settings.index"))
 
 
@@ -207,12 +210,33 @@ def check_update():
     import urllib.request
     import json
 
-    # Also save the auto-update toggle if submitted from the same form
+    # Also save the settings from the same form
     auto_update = "app_auto_update" in request.form
+    update_branch = request.form.get("app_update_branch", "").strip()
     Setting.set("app_auto_update", "true" if auto_update else "false")
+    Setting.set("app_update_branch", update_branch)
 
     repo = current_app.config.get("GITHUB_REPO", "")
     current_version = current_app.config.get("APP_VERSION", "0.0.0")
+
+    # If a branch is configured, check if it has new commits instead of releases
+    if update_branch:
+        try:
+            url = f"https://api.github.com/repos/{repo}/branches/{update_branch}"
+            req = urllib.request.Request(url, headers={"User-Agent": "MCAT"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                sha = data.get("commit", {}).get("sha", "")[:8]
+                message = data.get("commit", {}).get("commit", {}).get("message", "").split("\n")[0]
+                settings = _get_settings_dict()
+                return render_template(
+                    "settings.html", settings=settings,
+                    update_available=True,
+                    update_version=f"branch '{update_branch}' (latest: {sha} - {message})",
+                )
+        except Exception as e:
+            flash(f"Could not check branch '{update_branch}': {e}", "error")
+            return redirect(url_for("settings.index"))
 
     try:
         url = f"https://api.github.com/repos/{repo}/releases/latest"
@@ -236,8 +260,13 @@ def apply_update():
     update_script = os.path.join(BASE_DIR, "update.sh")
     if os.path.exists(update_script):
         try:
-            subprocess.Popen(["bash", update_script], cwd=BASE_DIR)
-            flash("Update started. The application will restart shortly.", "info")
+            update_branch = Setting.get("app_update_branch", "")
+            cmd = ["bash", update_script]
+            if update_branch:
+                cmd += ["--branch", update_branch]
+            subprocess.Popen(cmd, cwd=BASE_DIR)
+            branch_msg = f" from branch '{update_branch}'" if update_branch else ""
+            flash(f"Update started{branch_msg}. The application will restart shortly.", "info")
         except Exception as e:
             flash(f"Update failed: {e}", "error")
     else:

@@ -38,15 +38,18 @@ class ProxmoxClient:
         return self._api
 
     def get_nodes(self):
-        try:
-            return self.api.nodes.get()
-        except Exception as e:
-            logger.error(f"Failed to get nodes from {self.host_model.hostname}: {e}")
-            return []
+        """Get all nodes from the Proxmox cluster. Raises on failure."""
+        return self.api.nodes.get()
 
     def get_all_guests(self):
+        """Get all VMs and CTs across all nodes. Raises on connection failure."""
+        nodes = self.get_nodes()
+        if not nodes:
+            raise RuntimeError("No nodes returned from Proxmox API. Check API token permissions (need VM.Audit or PVEAuditor role).")
+
         guests = []
-        for node in self.get_nodes():
+        errors = []
+        for node in nodes:
             node_name = node["node"]
             try:
                 # Get VMs
@@ -54,13 +57,22 @@ class ProxmoxClient:
                     vm["node"] = node_name
                     vm["type"] = "vm"
                     guests.append(vm)
+            except Exception as e:
+                errors.append(f"VMs on {node_name}: {e}")
+                logger.error(f"Failed to list VMs on node {node_name}: {e}")
+            try:
                 # Get CTs
                 for ct in self.api.nodes(node_name).lxc.get():
                     ct["node"] = node_name
                     ct["type"] = "ct"
                     guests.append(ct)
             except Exception as e:
-                logger.error(f"Failed to list guests on node {node_name}: {e}")
+                errors.append(f"CTs on {node_name}: {e}")
+                logger.error(f"Failed to list CTs on node {node_name}: {e}")
+
+        if not guests and errors:
+            raise RuntimeError(f"Could not list guests: {'; '.join(errors)}")
+
         return guests
 
     def get_guest_ip(self, node, vmid, guest_type):
@@ -143,9 +155,12 @@ class ProxmoxClient:
 
     def find_guest_node(self, vmid):
         """Find which node a guest (VM or CT) is running on. Returns node name or None."""
-        for guest in self.get_all_guests():
-            if guest.get("vmid") == vmid:
-                return guest.get("node")
+        try:
+            for guest in self.get_all_guests():
+                if guest.get("vmid") == vmid:
+                    return guest.get("node")
+        except Exception as e:
+            logger.error(f"Failed to find guest node for vmid {vmid}: {e}")
         return None
 
     def test_connection(self):

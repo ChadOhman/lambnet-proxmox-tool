@@ -107,14 +107,29 @@ def _check_app_update(app):
         import json
         import subprocess
         import os
+        from config import BASE_DIR
 
         if Setting.get("app_auto_update", "false") != "true":
             return
 
         repo = app.config.get("GITHUB_REPO", "")
         current_version = app.config.get("APP_VERSION", "0.0.0")
+        update_branch = Setting.get("app_update_branch", "")
+        update_script = os.path.join(BASE_DIR, "update.sh")
 
-        if not repo or current_version == "unknown":
+        if not repo:
+            return
+
+        # Branch-based auto-update: always pull latest from configured branch
+        if update_branch:
+            logger.info(f"Auto-update from branch '{update_branch}'...")
+            if os.path.exists(update_script):
+                subprocess.Popen(["bash", update_script, "--branch", update_branch], cwd=BASE_DIR)
+            else:
+                logger.warning("update.sh not found, cannot auto-update")
+            return
+
+        if current_version == "unknown":
             return
 
         try:
@@ -134,8 +149,6 @@ def _check_app_update(app):
                 send_app_update_notification(current_version, latest)
 
                 # Run update.sh
-                from config import BASE_DIR
-                update_script = os.path.join(BASE_DIR, "update.sh")
                 if os.path.exists(update_script):
                     logger.info("Auto-update enabled, running update.sh...")
                     subprocess.Popen(["bash", update_script], cwd=BASE_DIR)

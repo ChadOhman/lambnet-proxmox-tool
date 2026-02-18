@@ -11,6 +11,15 @@ APP_NAME="lambnet-update-manager"
 APP_DIR="/opt/lambnet"
 DATA_DIR="/var/lib/lambnet"
 BACKUP_DIR="/var/lib/lambnet/backups"
+UPDATE_BRANCH=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --branch) UPDATE_BRANCH="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
 
 echo "============================================"
 echo " Mastodon Canada Administration Tool - Updating..."
@@ -70,10 +79,14 @@ fi
 
 if [ -d "$GIT_DIR/.git" ]; then
     cd "$GIT_DIR"
+    # Determine which branch to update from
+    BRANCH="${UPDATE_BRANCH:-main}"
+    echo "  Updating from branch: $BRANCH"
     git fetch --quiet origin
-    git reset --hard origin/main --quiet
+    git checkout --quiet "$BRANCH" 2>/dev/null || git checkout --quiet -b "$BRANCH" "origin/$BRANCH"
+    git reset --hard "origin/$BRANCH" --quiet
     cd "$APP_DIR"
-    echo "  Code updated from GitHub."
+    echo "  Code updated from GitHub ($BRANCH)."
 else
     echo "  WARNING: Not a git repository. Manual update may be needed."
 fi

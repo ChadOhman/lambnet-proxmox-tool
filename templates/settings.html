@@ -230,6 +230,11 @@
                         <label class="form-check-label" for="appAutoUpdate"><strong>Enable automatic updates</strong></label>
                         <div class="form-text">When enabled, the app will check for new releases every 6 hours and automatically update and restart.</div>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">Update Branch</label>
+                        <input type="text" class="form-control form-control-sm font-monospace" name="app_update_branch" value="{{ settings.app_update_branch or '' }}" placeholder="Leave blank for release-based updates">
+                        <div class="form-text">Set a branch name (e.g. <code>main</code>, <code>dev</code>) to pull updates from that branch instead of GitHub releases. Leave blank to use tagged releases.</div>
+                    </div>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary btn-sm">Save</button>
                         <button type="submit" formaction="/settings/check-update" class="btn btn-outline-info btn-sm">
@@ -239,7 +244,7 @@
                 </form>
                 {% if update_available %}
                 <div class="alert alert-info mt-3 mb-0">
-                    <strong>Update available:</strong> v{{ update_version }}
+                    <strong>Update available:</strong> {{ update_version }}
                     <form method="post" action="/settings/apply-update" class="mt-2">
                         <button type="submit" class="btn btn-sm btn-info" onclick="return confirm('This will update the application and restart the service. Continue?')">
                             <i class="bi bi-download"></i> Update Now
