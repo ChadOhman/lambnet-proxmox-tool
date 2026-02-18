@@ -31,4 +31,4 @@ class Config:
 
     # App info
     VERSION_FILE = os.path.join(BASE_DIR, "VERSION")
-    GITHUB_REPO = "ChadOhman/lambnet-proxmox-tool"
+    GITHUB_REPO = "ChadOhman/mstdnca-proxmox-tool"

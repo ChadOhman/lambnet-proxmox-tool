@@ -23,7 +23,7 @@ A datacenter-wide administration tool for Proxmox environments. Runs as an LXC c
 Run this on any Proxmox host to create a ready-to-use CT:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/lambnet-proxmox-tool/main/create-ct.sh)" -- \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/mstdnca-proxmox-tool/main/create-ct.sh)" -- \
   --hostname lambnet \
   --storage local-lvm \
   --memory 1024 \
@@ -36,7 +36,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/lambnet-proxmo
 With a static IP:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/lambnet-proxmox-tool/main/create-ct.sh)" -- \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/mstdnca-proxmox-tool/main/create-ct.sh)" -- \
   --hostname lambnet \
   --ip 10.0.0.100/24 \
   --gateway 10.0.0.1
@@ -45,7 +45,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/lambnet-proxmo
 With Cloudflare Tunnel support:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/lambnet-proxmox-tool/main/create-ct.sh)" -- \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/mstdnca-proxmox-tool/main/create-ct.sh)" -- \
   --hostname lambnet \
   --ip dhcp \
   --cloudflared
@@ -73,7 +73,7 @@ Create a Debian 12 or Ubuntu 22.04+ CT in Proxmox, then inside the CT:
 
 ```bash
 apt-get update && apt-get install -y git
-git clone https://github.com/ChadOhman/lambnet-proxmox-tool.git /tmp/lambnet
+git clone https://github.com/ChadOhman/mstdnca-proxmox-tool.git /tmp/lambnet
 cd /tmp/lambnet && bash setup.sh
 ```
 

@@ -14,7 +14,7 @@ APP_DIR="/opt/lambnet"
 DATA_DIR="/var/lib/lambnet"
 SECRET_DIR="/etc/lambnet"
 SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
-REPO_URL="https://github.com/ChadOhman/lambnet-proxmox-tool.git"
+REPO_URL="https://github.com/ChadOhman/mstdnca-proxmox-tool.git"
 INSTALL_CLOUDFLARED=false
 TARGET_VERSION=""
 

@@ -35,7 +35,7 @@ GATEWAY=""
 CT_ROOT_PASS=""
 TARGET_VERSION=""
 INSTALL_CLOUDFLARED=""
-REPO_URL="https://github.com/ChadOhman/lambnet-proxmox-tool.git"
+REPO_URL="https://github.com/ChadOhman/mstdnca-proxmox-tool.git"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do

@@ -26,8 +26,8 @@ fi
 # Navigate into the correct directory
 if [ -f "$APP_DIR/app.py" ]; then
     cd "$APP_DIR"
-elif [ -f "$APP_DIR/lambnet-proxmox-tool/app.py" ]; then
-    APP_DIR="$APP_DIR/lambnet-proxmox-tool"
+elif [ -f "$APP_DIR/mstdnca-proxmox-tool/app.py" ]; then
+    APP_DIR="$APP_DIR/mstdnca-proxmox-tool"
     cd "$APP_DIR"
 else
     echo "ERROR: Cannot find application directory."
