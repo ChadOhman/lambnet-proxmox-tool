@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from flask import Blueprint, redirect, url_for, flash, request, render_template, jsonify
 from flask_login import login_required, current_user
-from models import db, Guest, UpdatePackage
+from models import db, Guest, ProxmoxHost, UpdatePackage
 from scanner import scan_guest, scan_all_guests
 from notifier import send_update_notification
 
@@ -543,4 +543,121 @@ def guest_rrd(guest_id):
         "netin": netin,
         "netout": netout,
         "net_unit": net_unit,
+    })
+
+
+@bp.route("/hosts/<int:host_id>/rrd")
+@login_required
+def host_rrd(host_id):
+    """Return node-level RRD performance data as JSON for Chart.js."""
+    from proxmox_api import ProxmoxClient
+
+    if not current_user.can_view_hosts and not current_user.can_manage_hosts:
+        return jsonify({"error": "Permission denied"}), 403
+
+    host = ProxmoxHost.query.get_or_404(host_id)
+
+    timeframe = request.args.get("timeframe", "day")
+    if timeframe not in ("hour", "day", "week", "month", "year"):
+        timeframe = "day"
+
+    try:
+        client = ProxmoxClient(host)
+        node_name = client.get_local_node_name()
+        if not node_name:
+            return jsonify({"error": "Could not determine node name"}), 404
+
+        raw = client.get_node_rrd_data(node_name, timeframe=timeframe)
+    except Exception as e:
+        logger.error(f"RRD fetch error for host {host_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+    if not raw:
+        return jsonify({"labels": [], "cpu": [], "mem_percent": [], "mem_used_mb": [],
+                        "mem_total_mb": 0, "netin": [], "netout": [], "net_unit": "KB/s",
+                        "iowait": [], "rootfs_percent": []})
+
+    labels = []
+    cpu = []
+    iowait = []
+    mem_percent = []
+    mem_used_mb = []
+    netin = []
+    netout = []
+    rootfs_percent = []
+    mem_total_mb = 0
+
+    for point in raw:
+        ts = point.get("time")
+        if ts is None:
+            continue
+
+        labels.append(datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M"))
+
+        # CPU: fraction (0.0–1.0) → percentage
+        cpu_val = point.get("cpu")
+        if cpu_val is not None:
+            cpu.append(round(cpu_val * 100, 2))
+        else:
+            cpu.append(None)
+
+        # IO wait: fraction → percentage
+        iow = point.get("iowait")
+        if iow is not None:
+            iowait.append(round(iow * 100, 2))
+        else:
+            iowait.append(None)
+
+        # Memory: bytes → percentage + MB
+        mem_val = point.get("memused")
+        maxmem = point.get("memtotal", 1) or 1
+        if mem_val is not None:
+            mem_used_mb.append(round(mem_val / 1048576, 1))
+            mem_percent.append(round(mem_val / maxmem * 100, 2))
+        else:
+            mem_used_mb.append(None)
+            mem_percent.append(None)
+        mem_total_mb = round(maxmem / 1048576, 1)
+
+        # Root filesystem usage
+        rootfs_used = point.get("rootused")
+        rootfs_total = point.get("roottotal", 1) or 1
+        if rootfs_used is not None:
+            rootfs_percent.append(round(rootfs_used / rootfs_total * 100, 2))
+        else:
+            rootfs_percent.append(None)
+
+        # Network: bytes/sec
+        ni = point.get("netin")
+        no = point.get("netout")
+        netin.append(round(ni, 2) if ni is not None else None)
+        netout.append(round(no, 2) if no is not None else None)
+
+    # Pick a sensible unit for network values
+    max_net = max((v for v in netin + netout if v is not None), default=0)
+    if max_net > 1_000_000:
+        net_unit = "Mbps"
+        divisor = 125_000
+    elif max_net > 1_000:
+        net_unit = "KB/s"
+        divisor = 1024
+    else:
+        net_unit = "B/s"
+        divisor = 1
+
+    if divisor != 1:
+        netin = [round(v / divisor, 2) if v is not None else None for v in netin]
+        netout = [round(v / divisor, 2) if v is not None else None for v in netout]
+
+    return jsonify({
+        "labels": labels,
+        "cpu": cpu,
+        "iowait": iowait,
+        "mem_percent": mem_percent,
+        "mem_used_mb": mem_used_mb,
+        "mem_total_mb": mem_total_mb,
+        "netin": netin,
+        "netout": netout,
+        "net_unit": net_unit,
+        "rootfs_percent": rootfs_percent,
     })

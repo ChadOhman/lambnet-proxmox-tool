@@ -615,6 +615,15 @@ class ProxmoxClient:
     # RRD performance data
     # ------------------------------------------------------------------
 
+    def get_node_rrd_data(self, node, timeframe="hour"):
+        """Get node-level RRD performance data. timeframe: hour, day, week, month, year.
+        Returns list of dicts with keys: time, cpu, maxcpu, memused, memtotal, netin, netout, etc."""
+        try:
+            return self.api.nodes(node).rrddata.get(timeframe=timeframe)
+        except Exception as e:
+            logger.error(f"Failed to get node RRD data for {node}: {e}")
+            return []
+
     def get_rrd_data(self, node, vmid, guest_type, timeframe="hour"):
         """Get RRD performance data. timeframe: hour, day, week, month, year.
         Returns list of dicts with keys: time, cpu, maxcpu, mem, maxmem, netin, netout, etc."""
