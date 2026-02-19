@@ -50,7 +50,9 @@ def detail(host_id):
     except Exception as e:
         error = str(e)
 
-    guests = Guest.query.filter_by(proxmox_host_id=host.id, enabled=True).order_by(Guest.name).all()
+    # Filter guests by user's tag-based access
+    all_host_guests = Guest.query.filter_by(proxmox_host_id=host.id, enabled=True).order_by(Guest.name).all()
+    guests = [g for g in all_host_guests if current_user.can_access_guest(g)]
 
     return render_template(
         "host_detail.html",
