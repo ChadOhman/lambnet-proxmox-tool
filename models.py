@@ -196,7 +196,7 @@ class User(UserMixin, db.Model):
 
     def can_access_guest(self, guest):
         """Check if user can access a guest based on tag permissions."""
-        if self.is_admin:
+        if self.is_super_admin:
             return True
         if not guest.tags:
             return False  # untagged guests are admin-only
@@ -206,7 +206,7 @@ class User(UserMixin, db.Model):
 
     def accessible_guests(self):
         """Return list of guests this user can access."""
-        if self.is_admin:
+        if self.is_super_admin:
             return Guest.query.filter_by(enabled=True).all()
         user_tag_ids = [t.id for t in self.allowed_tags]
         if not user_tag_ids:
