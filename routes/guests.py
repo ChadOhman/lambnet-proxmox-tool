@@ -419,11 +419,13 @@ def create_snapshot(guest_id):
         flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    ok, msg = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+    ok, upid = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
     if ok:
-        flash(f"Snapshot '{snapname}' created.", "success")
+        from routes.api import start_proxmox_job
+        start_proxmox_job(guest, "snapshot", upid, node)
+        return redirect(url_for("api.task_progress", guest_id=guest.id, job_type="snapshot"))
     else:
-        flash(f"Failed to create snapshot: {msg}", "error")
+        flash(f"Failed to create snapshot: {upid}", "error")
 
     return redirect(url_for("guests.detail", guest_id=guest.id))
 
@@ -446,11 +448,13 @@ def delete_snapshot(guest_id, snapname):
         flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    ok, msg = client.delete_snapshot(node, guest.vmid, guest.guest_type, snapname)
+    ok, upid = client.delete_snapshot(node, guest.vmid, guest.guest_type, snapname)
     if ok:
-        flash(f"Snapshot '{snapname}' deleted.", "warning")
+        from routes.api import start_proxmox_job
+        start_proxmox_job(guest, "snapshot_delete", upid, node)
+        return redirect(url_for("api.task_progress", guest_id=guest.id, job_type="snapshot_delete"))
     else:
-        flash(f"Failed to delete snapshot: {msg}", "error")
+        flash(f"Failed to delete snapshot: {upid}", "error")
 
     return redirect(url_for("guests.detail", guest_id=guest.id))
 
@@ -473,11 +477,13 @@ def rollback_snapshot(guest_id, snapname):
         flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    ok, msg = client.rollback_snapshot(node, guest.vmid, guest.guest_type, snapname)
+    ok, upid = client.rollback_snapshot(node, guest.vmid, guest.guest_type, snapname)
     if ok:
-        flash(f"Rolled back to snapshot '{snapname}'.", "success")
+        from routes.api import start_proxmox_job
+        start_proxmox_job(guest, "rollback", upid, node)
+        return redirect(url_for("api.task_progress", guest_id=guest.id, job_type="rollback"))
     else:
-        flash(f"Failed to rollback: {msg}", "error")
+        flash(f"Failed to rollback: {upid}", "error")
 
     return redirect(url_for("guests.detail", guest_id=guest.id))
 
@@ -518,11 +524,13 @@ def create_backup(guest_id):
         flash(f"Could not find {guest.guest_type}/{guest.vmid} on any node.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    ok, msg = client.create_backup(node, guest.vmid, storage, mode=mode, compress=compress, protected=protected, notes=notes)
+    ok, upid = client.create_backup(node, guest.vmid, storage, mode=mode, compress=compress, protected=protected, notes=notes)
     if ok:
-        flash(f"Backup started for {guest.name}.", "success")
+        from routes.api import start_proxmox_job
+        start_proxmox_job(guest, "backup", upid, node)
+        return redirect(url_for("api.task_progress", guest_id=guest.id, job_type="backup"))
     else:
-        flash(f"Failed to create backup: {msg}", "error")
+        flash(f"Failed to create backup: {upid}", "error")
 
     return redirect(url_for("guests.detail", guest_id=guest.id))
 

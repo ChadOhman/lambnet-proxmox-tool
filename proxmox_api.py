@@ -338,14 +338,14 @@ class ProxmoxClient:
             return False, str(e)
 
     def create_snapshot(self, node, vmid, guest_type, snapname, description=""):
-        """Create a snapshot of a VM or CT. Returns (success, message)."""
+        """Create a snapshot of a VM or CT. Returns (success, upid_or_error)."""
         try:
             kwargs = {"snapname": snapname, "description": description}
             if guest_type == "vm":
-                self.api.nodes(node).qemu(vmid).snapshot.post(**kwargs)
+                upid = self.api.nodes(node).qemu(vmid).snapshot.post(**kwargs)
             else:
-                self.api.nodes(node).lxc(vmid).snapshot.post(**kwargs)
-            return True, f"Snapshot '{snapname}' created for {guest_type}/{vmid}"
+                upid = self.api.nodes(node).lxc(vmid).snapshot.post(**kwargs)
+            return True, upid
         except Exception as e:
             logger.error(f"Failed to create snapshot for {guest_type}/{vmid}: {e}")
             return False, str(e)
@@ -364,25 +364,25 @@ class ProxmoxClient:
             return []
 
     def delete_snapshot(self, node, vmid, guest_type, snapname):
-        """Delete a snapshot. Returns (success, message)."""
+        """Delete a snapshot. Returns (success, upid_or_error)."""
         try:
             if guest_type == "vm":
-                self.api.nodes(node).qemu(vmid).snapshot(snapname).delete()
+                upid = self.api.nodes(node).qemu(vmid).snapshot(snapname).delete()
             else:
-                self.api.nodes(node).lxc(vmid).snapshot(snapname).delete()
-            return True, f"Snapshot '{snapname}' deleted"
+                upid = self.api.nodes(node).lxc(vmid).snapshot(snapname).delete()
+            return True, upid
         except Exception as e:
             logger.error(f"Failed to delete snapshot '{snapname}' for {guest_type}/{vmid}: {e}")
             return False, str(e)
 
     def rollback_snapshot(self, node, vmid, guest_type, snapname):
-        """Rollback to a snapshot. Returns (success, message)."""
+        """Rollback to a snapshot. Returns (success, upid_or_error)."""
         try:
             if guest_type == "vm":
-                self.api.nodes(node).qemu(vmid).snapshot(snapname).rollback.post()
+                upid = self.api.nodes(node).qemu(vmid).snapshot(snapname).rollback.post()
             else:
-                self.api.nodes(node).lxc(vmid).snapshot(snapname).rollback.post()
-            return True, f"Rolled back to snapshot '{snapname}'"
+                upid = self.api.nodes(node).lxc(vmid).snapshot(snapname).rollback.post()
+            return True, upid
         except Exception as e:
             logger.error(f"Failed to rollback to snapshot '{snapname}' for {guest_type}/{vmid}: {e}")
             return False, str(e)
@@ -392,7 +392,7 @@ class ProxmoxClient:
     # ------------------------------------------------------------------
 
     def create_backup(self, node, vmid, storage, mode="snapshot", compress="zstd", protected=False, notes=""):
-        """Create a vzdump backup. Returns (success, message)."""
+        """Create a vzdump backup. Returns (success, upid_or_error)."""
         try:
             kwargs = {
                 "vmid": vmid,
@@ -404,8 +404,8 @@ class ProxmoxClient:
                 kwargs["protected"] = 1
             if notes:
                 kwargs["notes-template"] = notes
-            self.api.nodes(node).vzdump.post(**kwargs)
-            return True, f"Backup started for VMID {vmid} on storage '{storage}'"
+            upid = self.api.nodes(node).vzdump.post(**kwargs)
+            return True, upid
         except Exception as e:
             logger.error(f"Failed to create backup for VMID {vmid}: {e}")
             return False, str(e)
@@ -467,6 +467,18 @@ class ProxmoxClient:
         except Exception as e:
             logger.error(f"Failed to find guest node for vmid {vmid}: {e}")
         return None
+
+    # ------------------------------------------------------------------
+    # Task tracking
+    # ------------------------------------------------------------------
+
+    def get_task_status(self, node, upid):
+        """Get task status. Returns dict with status, exitstatus, etc."""
+        return self.api.nodes(node).tasks(upid).status.get()
+
+    def get_task_log(self, node, upid, start=0, limit=1000):
+        """Get task log lines. Returns list of dicts with n (line number), t (text)."""
+        return self.api.nodes(node).tasks(upid).log.get(start=start, limit=limit)
 
     def test_connection(self):
         """Test API connectivity and return version info."""

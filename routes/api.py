@@ -1,3 +1,4 @@
+import time
 import threading
 import logging
 from datetime import datetime, timezone
@@ -281,6 +282,160 @@ def update_progress(guest_id):
 @login_required
 def update_status(guest_id):
     job = _update_jobs.get(guest_id)
+    if not job:
+        return jsonify({"running": False, "log": "", "success": None})
+    return jsonify(job.to_dict())
+
+
+# ---------------------------------------------------------------------------
+# Proxmox task tracking (backups, snapshots, rollbacks)
+# ---------------------------------------------------------------------------
+
+_proxmox_jobs = {}  # keyed by f"{job_type}:{guest_id}"
+_proxmox_jobs_lock = threading.Lock()
+
+JOB_TYPE_LABELS = {
+    "backup": "Creating Backup",
+    "snapshot": "Creating Snapshot",
+    "snapshot_delete": "Deleting Snapshot",
+    "rollback": "Rolling Back",
+}
+
+
+class ProxmoxJob:
+    """Tracks a background Proxmox task (backup, snapshot, etc.)."""
+
+    def __init__(self, guest_id, guest_name, job_type, upid, node, host_model):
+        self.guest_id = guest_id
+        self.guest_name = guest_name
+        self.job_type = job_type
+        self.upid = upid
+        self.node = node
+        self.host_model = host_model
+        self.log = ""
+        self.running = True
+        self.success = None
+        self.started_at = datetime.now(timezone.utc)
+        self._lock = threading.Lock()
+        self._last_log_line = 0
+
+    @property
+    def label(self):
+        return JOB_TYPE_LABELS.get(self.job_type, self.job_type)
+
+    def append(self, text):
+        with self._lock:
+            self.log += text
+
+    def finish(self, success):
+        with self._lock:
+            self.running = False
+            self.success = success
+
+    def to_dict(self):
+        with self._lock:
+            return {
+                "guest_id": self.guest_id,
+                "guest_name": self.guest_name,
+                "job_type": self.job_type,
+                "label": self.label,
+                "log": self.log,
+                "running": self.running,
+                "success": self.success,
+                "started_at": self.started_at.isoformat(),
+            }
+
+
+def _poll_proxmox_task(app, job_key):
+    """Poll Proxmox task status and accumulate log output."""
+    from proxmox_api import ProxmoxClient
+
+    with app.app_context():
+        job = _proxmox_jobs.get(job_key)
+        if not job:
+            return
+
+        try:
+            client = ProxmoxClient(job.host_model)
+
+            while True:
+                time.sleep(2)
+
+                try:
+                    log_lines = client.get_task_log(job.node, job.upid, start=job._last_log_line)
+                    for line in log_lines:
+                        text = line.get("t", "")
+                        if text:
+                            job.append(text + "\n")
+                        line_num = line.get("n", 0)
+                        if line_num >= job._last_log_line:
+                            job._last_log_line = line_num + 1
+                except Exception as e:
+                    logger.debug(f"Error fetching task log: {e}")
+
+                try:
+                    status = client.get_task_status(job.node, job.upid)
+                    if status.get("status") == "stopped":
+                        exit_status = status.get("exitstatus", "")
+                        if exit_status == "OK":
+                            job.finish(True)
+                        else:
+                            job.append(f"\nTask failed: {exit_status}\n")
+                            job.finish(False)
+                        return
+                except Exception as e:
+                    logger.debug(f"Error fetching task status: {e}")
+
+        except Exception as e:
+            logger.error(f"Proxmox task polling error for {job_key}: {e}", exc_info=True)
+            job.append(f"\n[Error] {e}\n")
+            job.finish(False)
+
+
+def start_proxmox_job(guest, job_type, upid, node):
+    """Create a ProxmoxJob, start the polling thread, and return the job key."""
+    from flask import current_app
+    app = current_app._get_current_object()
+
+    job_key = f"{job_type}:{guest.id}"
+
+    job = ProxmoxJob(guest.id, guest.name, job_type, upid, node, guest.proxmox_host)
+    with _proxmox_jobs_lock:
+        _proxmox_jobs[job_key] = job
+
+    thread = threading.Thread(
+        target=_poll_proxmox_task,
+        args=(app, job_key),
+        daemon=True,
+    )
+    thread.start()
+
+    return job_key
+
+
+@bp.route("/task/<int:guest_id>/<job_type>/progress")
+@login_required
+def task_progress(guest_id, job_type):
+    guest = Guest.query.get_or_404(guest_id)
+
+    if not current_user.can_manage_guests and not current_user.can_access_guest(guest):
+        flash("You don't have permission to view this guest.", "error")
+        return redirect(url_for("guests.index"))
+
+    job_key = f"{job_type}:{guest_id}"
+    job = _proxmox_jobs.get(job_key)
+    if not job:
+        flash("No task in progress for this guest.", "info")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    return render_template("proxmox_task_progress.html", guest=guest, job=job)
+
+
+@bp.route("/task/<int:guest_id>/<job_type>/status")
+@login_required
+def task_status(guest_id, job_type):
+    job_key = f"{job_type}:{guest_id}"
+    job = _proxmox_jobs.get(job_key)
     if not job:
         return jsonify({"running": False, "log": "", "success": None})
     return jsonify(job.to_dict())
