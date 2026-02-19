@@ -184,13 +184,10 @@ if [ "$INSTALL_CLOUDFLARED" = true ]; then
     echo ""
     echo "[8/$TOTAL_STEPS] Installing cloudflared..."
 
-    # Detect architecture
+    # Detect architecture (cloudflared package repo handles arch automatically,
+    # but we still check for supported platforms)
     ARCH=$(dpkg --print-architecture)
-    if [ "$ARCH" = "amd64" ]; then
-        CLOUDFLARED_ARCH="amd64"
-    elif [ "$ARCH" = "arm64" ]; then
-        CLOUDFLARED_ARCH="arm64"
-    else
+    if [ "$ARCH" != "amd64" ] && [ "$ARCH" != "arm64" ]; then
         echo "  WARNING: Unsupported architecture $ARCH for cloudflared. Skipping."
         INSTALL_CLOUDFLARED=false
     fi

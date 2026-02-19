@@ -4,6 +4,9 @@ skips = [
     "B104",  # binding to all interfaces — expected for server
     "B110",  # try-except-pass — used intentionally
     "B113",  # requests without timeout — false positives (timeouts are set)
+    "B310",  # urllib urlopen audit — all URLs are constructed from https:// literals
+    "B507",  # paramiko AutoAddPolicy — expected for internal infrastructure SSH tool
+    "B601",  # paramiko exec_command — expected; inputs are validated upstream
     "B603",  # subprocess with non-constant args — expected
     "B607",  # partial executable path — expected
 ]

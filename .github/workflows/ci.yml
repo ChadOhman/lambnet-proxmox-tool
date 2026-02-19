@@ -40,6 +40,7 @@ jobs:
         env:
           FLASK_SECRET_KEY: ci-test-secret
           DATABASE_URL: "sqlite:////tmp/ci-test.db"
+          LAMBNET_DATA_DIR: /tmp/lambnet-ci
         run: python -c "from app import create_app; create_app()"
 
   ruff:

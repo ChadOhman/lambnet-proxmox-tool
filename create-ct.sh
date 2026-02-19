@@ -186,7 +186,7 @@ echo "  Waiting for CT to boot..."
 sleep 5
 
 # Wait for network
-for i in $(seq 1 30); do
+for _i in $(seq 1 30); do
     if pct exec "$CTID" -- ping -c 1 -W 1 8.8.8.8 > /dev/null 2>&1; then
         break
     fi
