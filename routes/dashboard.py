@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, session, current_app
 from flask_login import login_required, current_user
-from models import db, ProxmoxHost, Guest, UpdatePackage, ScanResult, Setting, Tag
+from collections import Counter
+from models import db, ProxmoxHost, Guest, GuestService, UpdatePackage, ScanResult, Setting, Tag
 
 bp = Blueprint("dashboard", __name__)
 
@@ -70,12 +71,51 @@ def index():
 
     reboot_required = [g for g in filtered_guests if g.reboot_required]
 
+    # Power state breakdown
+    power_states = Counter(g.power_state for g in filtered_guests)
+
+    # Guest type breakdown
+    guest_types = Counter(g.guest_type for g in filtered_guests)
+
+    # Update status breakdown
+    status_counts = Counter(g.status for g in filtered_guests)
+    guests_never_scanned = sum(1 for g in filtered_guests if g.last_scan is None)
+
+    # Auto-update coverage
+    auto_update_enabled = sum(1 for g in filtered_guests if g.auto_update)
+
+    # Service health
+    total_services = 0
+    services_running = 0
+    services_failed = 0
+    if filtered_guest_ids:
+        svc_statuses = db.session.query(GuestService.status, db.func.count()).filter(
+            GuestService.guest_id.in_(filtered_guest_ids)
+        ).group_by(GuestService.status).all()
+        for svc_status, count in svc_statuses:
+            total_services += count
+            if svc_status == "running":
+                services_running += count
+            elif svc_status == "failed":
+                services_failed += count
+
     stats = {
         "total_hosts": total_hosts,
         "total_guests": total_guests,
         "total_updates": total_updates,
         "security_updates": security_updates,
         "reboot_required": len(reboot_required),
+        "guests_running": power_states.get("running", 0),
+        "guests_stopped": power_states.get("stopped", 0),
+        "vms": guest_types.get("vm", 0),
+        "containers": guest_types.get("ct", 0),
+        "guests_up_to_date": status_counts.get("up-to-date", 0),
+        "guests_error": status_counts.get("error", 0),
+        "guests_never_scanned": guests_never_scanned,
+        "auto_update_enabled": auto_update_enabled,
+        "total_services": total_services,
+        "services_running": services_running,
+        "services_failed": services_failed,
     }
 
     tags = Tag.query.order_by(Tag.name).all()

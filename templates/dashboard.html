@@ -58,36 +58,106 @@
 </div>
 {% endif %}
 
-<div class="row g-4 mb-4">
-    <div class="col-md-3">
-        <div class="card stat-card bg-dark">
-            <div class="card-body text-center">
-                <div class="stat-number text-info">{{ stats.total_hosts }}</div>
-                <div class="stat-label text-muted">Proxmox Hosts</div>
+<!-- Infrastructure Overview -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold text-info">{{ stats.total_hosts }}</div>
+                <div class="small text-muted">Proxmox Hosts</div>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card stat-card bg-dark">
-            <div class="card-body text-center">
-                <div class="stat-number text-light">{{ stats.total_guests }}</div>
-                <div class="stat-label text-muted">Managed Guests</div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold text-light">{{ stats.total_guests }}</div>
+                <div class="small text-muted">Guests</div>
+                <div class="small text-muted">{{ stats.vms }} VM{{ 's' if stats.vms != 1 }} &middot; {{ stats.containers }} CT{{ 's' if stats.containers != 1 }}</div>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card stat-card bg-dark">
-            <div class="card-body text-center">
-                <div class="stat-number text-warning">{{ stats.total_updates }}</div>
-                <div class="stat-label text-muted">Pending Updates</div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold text-success">{{ stats.guests_running }}</div>
+                <div class="small text-muted">Running</div>
+                {% if stats.guests_stopped > 0 %}
+                <div class="small text-danger">{{ stats.guests_stopped }} stopped</div>
+                {% endif %}
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card stat-card bg-dark">
-            <div class="card-body text-center">
-                <div class="stat-number text-danger">{{ stats.security_updates }}</div>
-                <div class="stat-label text-muted">Security Updates</div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold {% if stats.services_failed > 0 %}text-danger{% else %}text-success{% endif %}">{{ stats.total_services }}</div>
+                <div class="small text-muted">Services</div>
+                {% if stats.services_failed > 0 %}
+                <div class="small text-danger">{{ stats.services_failed }} failed</div>
+                {% elif stats.total_services > 0 %}
+                <div class="small text-success">{{ stats.services_running }} healthy</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold text-primary">{{ stats.auto_update_enabled }}</div>
+                <div class="small text-muted">Auto-Update</div>
+                {% if stats.total_guests > 0 %}
+                <div class="small text-muted">of {{ stats.total_guests }} guests</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold {% if stats.guests_never_scanned > 0 %}text-warning{% else %}text-success{% endif %}">
+                    {% if stats.guests_never_scanned > 0 %}{{ stats.guests_never_scanned }}{% else %}<i class="bi bi-check-lg"></i>{% endif %}
+                </div>
+                <div class="small text-muted">Never Scanned</div>
+                {% if stats.guests_error > 0 %}
+                <div class="small text-danger">{{ stats.guests_error }} scan errors</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Update Summary -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold text-warning">{{ stats.total_updates }}</div>
+                <div class="small text-muted">Pending Updates</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold {% if stats.security_updates > 0 %}text-danger{% else %}text-muted{% endif %}">{{ stats.security_updates }}</div>
+                <div class="small text-muted">Security Updates</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold {% if stats.reboot_required > 0 %}text-warning{% else %}text-muted{% endif %}">{{ stats.reboot_required }}</div>
+                <div class="small text-muted">Reboots Required</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold text-success">{{ stats.guests_up_to_date }}</div>
+                <div class="small text-muted">Up to Date</div>
             </div>
         </div>
     </div>
