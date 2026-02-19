@@ -661,3 +661,66 @@ def host_rrd(host_id):
         "net_unit": net_unit,
         "rootfs_percent": rootfs_percent,
     })
+
+
+@bp.route("/dashboard/host-stats")
+@login_required
+def dashboard_host_stats():
+    """Return aggregated live stats from all Proxmox hosts for the dashboard."""
+    from proxmox_api import ProxmoxClient
+
+    if not current_user.can_view_hosts and not current_user.can_manage_hosts:
+        return jsonify({"error": "Permission denied"}), 403
+
+    hosts = ProxmoxHost.query.all()
+    if not hosts:
+        return jsonify({"hosts": []})
+
+    results = []
+    for host in hosts:
+        entry = {"id": host.id, "name": host.name, "online": False}
+        try:
+            client = ProxmoxClient(host)
+            node_name = client.get_local_node_name()
+            if not node_name:
+                results.append(entry)
+                continue
+
+            status = client.get_node_status(node_name)
+            if not status:
+                results.append(entry)
+                continue
+
+            entry["online"] = True
+            entry["cpu_usage"] = status["cpu_usage"]
+            entry["cpu_threads"] = status["cpu_threads"]
+            entry["memory_used"] = status["memory_used"]
+            entry["memory_total"] = status["memory_total"]
+            entry["swap_used"] = status["swap_used"]
+            entry["swap_total"] = status["swap_total"]
+            entry["rootfs_used"] = status["rootfs_used"]
+            entry["rootfs_total"] = status["rootfs_total"]
+            entry["uptime"] = status["uptime"]
+            entry["loadavg"] = status["loadavg"]
+        except Exception as e:
+            logger.error(f"Dashboard host stats error for {host.name}: {e}")
+
+        results.append(entry)
+
+    # Compute aggregates across all online hosts
+    online = [h for h in results if h.get("online")]
+    agg = {}
+    if online:
+        agg["total_cpu_threads"] = sum(h.get("cpu_threads", 0) for h in online)
+        agg["avg_cpu"] = round(sum(h.get("cpu_usage", 0) for h in online) / len(online), 1)
+        agg["max_cpu"] = max(h.get("cpu_usage", 0) for h in online)
+        agg["total_memory_used"] = sum(h.get("memory_used", 0) for h in online)
+        agg["total_memory"] = sum(h.get("memory_total", 0) for h in online)
+        agg["total_swap_used"] = sum(h.get("swap_used", 0) for h in online)
+        agg["total_swap"] = sum(h.get("swap_total", 0) for h in online)
+        agg["total_rootfs_used"] = sum(h.get("rootfs_used", 0) for h in online)
+        agg["total_rootfs"] = sum(h.get("rootfs_total", 0) for h in online)
+        agg["hosts_online"] = len(online)
+        agg["hosts_offline"] = len(results) - len(online)
+
+    return jsonify({"hosts": results, "aggregate": agg})
