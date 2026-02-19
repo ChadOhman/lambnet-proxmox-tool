@@ -66,8 +66,8 @@ jobs:
           echo "" >> release_notes.md
           echo "### Default Credentials" >> release_notes.md
           echo "- Username: \`admin\`" >> release_notes.md
-          echo "- Password: \`admin\`" >> release_notes.md
-          echo "- **Change immediately after first login!**" >> release_notes.md
+          echo "- Password: randomly generated on first run (check console/log output)" >> release_notes.md
+          echo "- **Change the default password after first login!**" >> release_notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

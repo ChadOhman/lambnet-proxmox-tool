@@ -101,7 +101,7 @@ def upgrade():
         Setting.set("mastodon_last_upgrade_status", "error")
         Setting.set("mastodon_last_upgrade_log", log_output)
         db.session.commit()
-        flash(f"Mastodon upgrade failed. Check the log for details.", "error")
+        flash("Mastodon upgrade failed. Check the log for details.", "error")
 
     return redirect(url_for("mastodon.index"))
 

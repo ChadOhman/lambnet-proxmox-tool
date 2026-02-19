@@ -189,13 +189,13 @@ def detect_services(guest):
 
         if stdout or not error:
             lines = (stdout or "").strip().split("\n")
-            for i, (key, (display_name, unit_name, default_port)) in enumerate(fixed_services.items()):
+            for i, (key, (_display_name, unit_name, default_port)) in enumerate(fixed_services.items()):
                 status_str = lines[i].strip() if i < len(lines) else "unknown"
                 status = _map_systemctl_status(status_str)
                 _upsert_service(guest, key, unit_name, default_port, status, now)
 
     # Discover glob-pattern services (e.g., mastodon-sidekiq*.service)
-    for key, (display_name, unit_pattern, default_port) in glob_services.items():
+    for key, (_display_name, unit_pattern, default_port) in glob_services.items():
         cmd = f"systemctl list-units '{unit_pattern}' --no-legend --plain 2>/dev/null"
         stdout, error = _execute_command(guest, cmd)
         if not stdout:
@@ -355,7 +355,6 @@ def _parse_redis_info(output):
 
 def get_service_stats(guest, service):
     """Fetch service-specific stats via SSH. Returns a dict with stats and a 'type' key."""
-    import json as _json
 
     stype = service.service_name
     stats = {"type": stype, "error": None}
@@ -676,7 +675,7 @@ def _stats_libretranslate(guest, service):
         try:
             langs = _json.loads(out)
             stats["languages_count"] = len(langs)
-            stats["languages"] = [l.get("name", l.get("code", "")) for l in langs[:20]]
+            stats["languages"] = [lang.get("name", lang.get("code", "")) for lang in langs[:20]]
         except _json.JSONDecodeError:
             pass
 

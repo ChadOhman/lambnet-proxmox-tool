@@ -1,0 +1,26 @@
+target-version = "py310"
+line-length = 120
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (unused imports, undefined names, etc.)
+    "W",   # pycodestyle warnings
+    "B",   # flake8-bugbear (common Python gotchas)
+    "S",   # flake8-bandit (security checks)
+]
+ignore = [
+    "E501",   # line too long — handled case-by-case, not globally
+    "E712",   # `== True` comparisons — required by SQLAlchemy filter syntax
+    "S603",   # subprocess call with non-constant args — expected in this app
+    "S607",   # starting a process with a partial executable path
+    "S108",   # hardcoded temp directory — false positives on /tmp paths in config
+    "S104",   # binding to all interfaces — expected for a server application
+    "S105",   # hardcoded password variable names — false positives on field names like password_hash
+    "S106",   # hardcoded password in function arg — false positives on default parameter names
+    "S310",   # URL open audit — all URLs are constructed from https:// literals
+    "S110",   # try-except-pass — used intentionally for optional features (git info, etc.)
+]
+
+[lint.per-file-ignores]
+"routes/terminal.py" = ["S602"]   # shell=True needed for SSH terminal

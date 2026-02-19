@@ -29,7 +29,7 @@ def _run_scan(app):
 def _run_auto_updates(app):
     """Apply updates to guests with auto-update enabled during their maintenance window."""
     with app.app_context():
-        from models import Guest, MaintenanceWindow
+        from models import Guest
         from scanner import apply_updates
         import calendar
 
@@ -96,14 +96,14 @@ def _check_mastodon_release(app):
             if ok:
                 logger.info("Mastodon auto-upgrade completed successfully")
             else:
-                logger.error(f"Mastodon auto-upgrade failed")
+                logger.error("Mastodon auto-upgrade failed")
 
 
 def _run_discovery(app):
     """Refresh guest discovery for all Proxmox hosts."""
     with app.app_context():
         import re
-        from models import Setting, ProxmoxHost, Guest, Tag
+        from models import db, Setting, ProxmoxHost, Guest, Tag
         from proxmox_api import ProxmoxClient
 
         if Setting.get("discovery_enabled", "true") == "false":
@@ -247,7 +247,7 @@ def _check_app_update(app):
         if update_branch:
             import re as _re
             if not _re.match(r'^[A-Za-z0-9._\-/]+$', update_branch) or update_branch.startswith("-"):
-                logger.error(f"Invalid update branch name, skipping auto-update")
+                logger.error("Invalid update branch name, skipping auto-update")
                 return
             logger.info(f"Auto-update from branch '{update_branch}'...")
             if os.path.exists(update_script):
