@@ -262,9 +262,13 @@ def apply_update():
         return redirect(url_for("settings.index"))
 
     try:
+        import re as _re
         update_branch = Setting.get("app_update_branch", "")
         cmd = ["bash", update_script]
         if update_branch:
+            if not _re.match(r'^[A-Za-z0-9._\-/]+$', update_branch) or update_branch.startswith("-"):
+                flash(f"Invalid branch name.", "error")
+                return redirect(url_for("settings.index"))
             cmd += ["--branch", update_branch]
 
         proc = subprocess.Popen(cmd, cwd=BASE_DIR)

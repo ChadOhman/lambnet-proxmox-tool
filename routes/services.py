@@ -44,7 +44,10 @@ def control(service_id, action):
 
     referrer = request.referrer
     if referrer and f"/guests/{guest.id}" in referrer:
-        return redirect(url_for("guests.detail", guest_id=guest.id))
+        from urllib.parse import urlparse
+        parsed = urlparse(referrer)
+        if not parsed.netloc or parsed.netloc == request.host:
+            return redirect(url_for("guests.detail", guest_id=guest.id))
     return redirect(url_for("services.index"))
 
 
@@ -70,7 +73,11 @@ def refresh_all():
 
     referrer = request.referrer
     if referrer and "/guests/" in referrer:
-        return redirect(referrer)
+        from urllib.parse import urlparse
+        parsed = urlparse(referrer)
+        # Only redirect to same-host paths to prevent open redirect
+        if not parsed.netloc or parsed.netloc == request.host:
+            return redirect(parsed.path)
     return redirect(url_for("services.index"))
 
 
@@ -114,7 +121,10 @@ def remove(service_id):
 
     referrer = request.referrer
     if referrer and f"/guests/{guest_id}" in referrer:
-        return redirect(url_for("guests.detail", guest_id=guest_id))
+        from urllib.parse import urlparse
+        parsed = urlparse(referrer)
+        if not parsed.netloc or parsed.netloc == request.host:
+            return redirect(url_for("guests.detail", guest_id=guest_id))
     return redirect(url_for("services.index"))
 
 

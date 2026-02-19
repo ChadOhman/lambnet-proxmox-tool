@@ -109,11 +109,19 @@ def upgrade():
 @bp.route("/detect-versions", methods=["POST"])
 def detect_versions():
     from scanner import _execute_command
+    from mastodon import _validate_shell_param
 
     guest_id = Setting.get("mastodon_guest_id", "")
     db_guest_id = Setting.get("mastodon_db_guest_id", "")
     user = Setting.get("mastodon_user", "mastodon")
     app_dir = Setting.get("mastodon_app_dir", "/home/mastodon/live")
+
+    try:
+        _validate_shell_param(user, "Mastodon user")
+        _validate_shell_param(app_dir, "Mastodon app_dir")
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("mastodon.index"))
 
     detected = []
 

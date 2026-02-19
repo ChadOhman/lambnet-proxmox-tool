@@ -245,6 +245,10 @@ def _check_app_update(app):
 
         # Branch-based auto-update: always pull latest from configured branch
         if update_branch:
+            import re as _re
+            if not _re.match(r'^[A-Za-z0-9._\-/]+$', update_branch) or update_branch.startswith("-"):
+                logger.error(f"Invalid update branch name, skipping auto-update")
+                return
             logger.info(f"Auto-update from branch '{update_branch}'...")
             if os.path.exists(update_script):
                 subprocess.Popen(["bash", update_script, "--branch", update_branch], cwd=BASE_DIR)

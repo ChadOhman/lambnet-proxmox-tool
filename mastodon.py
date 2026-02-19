@@ -9,6 +9,7 @@ swap for migrations, and service restarts.
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from urllib.request import urlopen, Request
 
@@ -17,6 +18,17 @@ from ssh_client import SSHClient
 from proxmox_api import ProxmoxClient
 
 logger = logging.getLogger(__name__)
+
+# Shell-safe value pattern: alphanumeric, hyphens, underscores, dots, forward slashes, colons
+_SHELL_SAFE_RE = re.compile(r'^[\w.\-/:~]+$')
+
+
+def _validate_shell_param(value, label):
+    """Raise ValueError if a config value contains shell-unsafe characters."""
+    if not value:
+        raise ValueError(f"{label} is empty")
+    if not _SHELL_SAFE_RE.match(value):
+        raise ValueError(f"{label} contains unsafe characters: {value!r}")
 
 DEFAULT_MASTODON_REPO = "mastodon/mastodon"
 
@@ -90,6 +102,11 @@ def _get_mastodon_config():
 
 def _swap_env_db(ssh, app_dir, new_host, new_port):
     """Swap DB_HOST and DB_PORT in .env.production via sed."""
+    _validate_shell_param(app_dir, "app_dir")
+    _validate_shell_param(new_host, "DB host")
+    if not re.match(r'^\d+$', str(new_port)):
+        return False, f"Invalid DB port: {new_port}"
+
     env_file = f"{app_dir}/.env.production"
     cmds = [
         f"sed -i 's/^DB_HOST=.*/DB_HOST={new_host}/' {env_file}",
@@ -134,6 +151,13 @@ def run_mastodon_upgrade():
 
     user = config["user"]
     app_dir = config["app_dir"]
+
+    # Validate shell-interpolated values to prevent command injection
+    try:
+        _validate_shell_param(user, "Mastodon user")
+        _validate_shell_param(app_dir, "Mastodon app_dir")
+    except ValueError as e:
+        return False, str(e)
 
     # --- Step 1: Snapshots ---
     log("=== Step 1: Creating Proxmox snapshots ===")
