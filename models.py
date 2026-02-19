@@ -212,6 +212,8 @@ class User(UserMixin, db.Model):
         """Check if this user can edit another user."""
         if self.id == other_user.id:
             return True
+        if self.is_super_admin:
+            return True
         return self.role_level > other_user.role_level
 
     def __repr__(self):
