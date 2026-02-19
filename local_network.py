@@ -44,21 +44,33 @@ def _get_client_ip():
       3. First entry in X-Forwarded-For
       4. request.remote_addr (direct connection)
     """
-    # When behind Cloudflare, the real client IP is here
-    cf_ip = request.headers.get("CF-Connecting-IP")
-    if cf_ip:
-        return cf_ip.strip()
+    remote_addr = request.remote_addr
+    if not remote_addr:
+        return None
 
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip.strip()
+    # Only trust forwarded headers when traffic is coming from local/private
+    # infrastructure (e.g. reverse proxy). This prevents direct clients from
+    # spoofing X-Forwarded-For / X-Real-IP / CF-Connecting-IP.
+    try:
+        remote_ip = ipaddress.ip_address(remote_addr)
+        trust_forwarded = remote_ip.is_loopback or remote_ip.is_private
+    except ValueError:
+        trust_forwarded = False
 
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        # Take the first (leftmost) IP -- the original client
-        return forwarded.split(",")[0].strip()
+    if trust_forwarded:
+        cf_ip = request.headers.get("CF-Connecting-IP")
+        if cf_ip:
+            return cf_ip.strip()
 
-    return request.remote_addr
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+
+    return remote_addr
 
 
 def _is_trusted(client_ip, networks):
