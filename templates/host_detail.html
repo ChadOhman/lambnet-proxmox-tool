@@ -293,7 +293,7 @@
                             <tr>
                                 <td colspan="4" class="text-center text-muted py-3">
                                     No guests discovered on this host.
-                                    {% if current_user.can_manage_hosts %}
+                                    {% if current_user.is_super_admin %}
                                     <a href="#" onclick="document.querySelector('form[action=\'/hosts/{{ host.id }}/discover\']').submit()">Discover now</a>.
                                     {% endif %}
                                 </td>
