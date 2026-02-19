@@ -28,10 +28,12 @@
         {% endif %}
     </div>
     <div>
-        {% if current_user.can_manage_hosts %}
+        {% if current_user.is_super_admin %}
         <form method="post" action="/hosts/{{ host.id }}/discover" class="d-inline">
             <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i> Discover Guests</button>
         </form>
+        {% endif %}
+        {% if current_user.can_manage_hosts %}
         <form method="post" action="/hosts/{{ host.id }}/test" class="d-inline">
             <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-plug"></i> Test</button>
         </form>

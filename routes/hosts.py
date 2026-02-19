@@ -12,12 +12,18 @@ bp = Blueprint("hosts", __name__)
 @login_required
 def _require_login():
     # Read-only routes (index, detail) require can_view_hosts
-    # Write routes (add, delete, discover, test) require can_manage_hosts
+    # Discover routes require super_admin
+    # Other write routes (add, delete, test) require can_manage_hosts
     read_only_endpoints = {"hosts.index", "hosts.detail"}
+    discover_endpoints = {"hosts.discover", "hosts.discover_all"}
     if request.endpoint in read_only_endpoints:
         if not current_user.can_view_hosts and not current_user.can_manage_hosts:
             flash("Access denied.", "error")
             return redirect(url_for("dashboard.index"))
+    elif request.endpoint in discover_endpoints:
+        if not current_user.is_super_admin:
+            flash("Super admin access required.", "error")
+            return redirect(url_for("hosts.index"))
     else:
         if not current_user.can_manage_hosts:
             flash("Admin access required.", "error")
