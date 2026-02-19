@@ -1,7 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from models import db, User, Role, Tag, Setting
-from credential_store import encrypt
 
 bp = Blueprint("security", __name__)
 

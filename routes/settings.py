@@ -2,7 +2,7 @@ import os
 import subprocess
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
-from models import db, Setting
+from models import Setting
 from credential_store import encrypt
 from config import BASE_DIR, DATA_DIR
 
@@ -195,7 +195,7 @@ def save_app_update_mode():
     update_branch = request.form.get("app_update_branch", "").strip()
     Setting.set("app_auto_update", "true" if auto_update else "false")
     Setting.set("app_update_branch", update_branch)
-    flash(f"Application update settings saved.", "success")
+    flash("Application update settings saved.", "success")
     return redirect(url_for("settings.index"))
 
 
@@ -267,7 +267,7 @@ def apply_update():
         cmd = ["bash", update_script]
         if update_branch:
             if not _re.match(r'^[A-Za-z0-9._\-/]+$', update_branch) or update_branch.startswith("-"):
-                flash(f"Invalid branch name.", "error")
+                flash("Invalid branch name.", "error")
                 return redirect(url_for("settings.index"))
             cmd += ["--branch", update_branch]
 

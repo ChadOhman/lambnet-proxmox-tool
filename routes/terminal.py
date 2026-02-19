@@ -258,7 +258,7 @@ def terminal_ws(ws, guest_id):
 
         # Build SSH connection
         ssh_client = paramiko.SSHClient()
-        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # noqa: S507
 
         connect_kwargs = {
             "hostname": ssh_host,

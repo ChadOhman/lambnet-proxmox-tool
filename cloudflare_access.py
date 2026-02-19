@@ -17,7 +17,6 @@ fetched and cached from https://<team-domain>/cdn-cgi/access/certs.
 import json
 import logging
 import time
-from functools import wraps
 from urllib.request import urlopen, Request
 
 import jwt as pyjwt  # PyJWT library
@@ -99,11 +98,11 @@ def validate_cf_token(token, team_domain, audience):
             return payload
         except pyjwt.exceptions.InvalidSignatureError:
             continue
-        except pyjwt.exceptions.ExpiredSignatureError:
-            raise ValueError("Token has expired")
-        except pyjwt.exceptions.InvalidAudienceError:
-            raise ValueError("Invalid audience")
-        except Exception:
+        except pyjwt.exceptions.ExpiredSignatureError as err:
+            raise ValueError("Token has expired") from err
+        except pyjwt.exceptions.InvalidAudienceError as err:
+            raise ValueError("Invalid audience") from err
+        except Exception:  # noqa: S112
             continue
 
     raise ValueError("Token signature could not be verified with any key")

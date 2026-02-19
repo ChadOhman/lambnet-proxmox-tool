@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from flask import Blueprint, redirect, url_for, flash, request, render_template, jsonify
 from flask_login import login_required, current_user
-from models import db, Guest, ProxmoxHost, UpdatePackage
+from models import db, Guest, ProxmoxHost
 from scanner import scan_guest, scan_all_guests
 from notifier import send_update_notification
 
@@ -113,7 +113,7 @@ def _run_update_background(app, guest_id, dist_upgrade=False):
                             job.append(f"\n[SSH Error] {e}\n")
                             job.finish(False)
                             return
-                        job.append(f"SSH failed, trying guest agent...\n")
+                        job.append("SSH failed, trying guest agent...\n")
 
             # Guest agent path (non-streaming fallback)
             if guest.connection_method in ("agent", "auto") and guest.proxmox_host and guest.guest_type == "vm":

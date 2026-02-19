@@ -1,0 +1,9 @@
+[tool.bandit]
+exclude_dirs = [".venv", "__pycache__"]
+skips = [
+    "B104",  # binding to all interfaces — expected for server
+    "B110",  # try-except-pass — used intentionally
+    "B113",  # requests without timeout — false positives (timeouts are set)
+    "B603",  # subprocess with non-constant args — expected
+    "B607",  # partial executable path — expected
+]

@@ -377,7 +377,7 @@ def _ensure_default_admin():
         logger.warning("=" * 60)
         print("=" * 60)
         print("  DEFAULT ADMIN ACCOUNT CREATED")
-        print(f"  Username: admin")
+        print("  Username: admin")
         print(f"  Password: {default_password}")
         print("  Please change this password immediately!")
         print("=" * 60)
