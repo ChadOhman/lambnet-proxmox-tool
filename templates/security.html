@@ -48,6 +48,7 @@
                                 <th>Username</th>
                                 <th>Display Name</th>
                                 <th>Role</th>
+                                <th>Source</th>
                                 <th>Tags</th>
                                 <th>Status</th>
                                 <th>Actions</th>
@@ -67,6 +68,15 @@
                                     <span class="badge bg-info">{{ user.role_display }}</span>
                                     {% else %}
                                     <span class="badge bg-secondary">{{ user.role_display }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if user.created_via == 'cloudflare' %}
+                                    <span class="badge bg-info"><i class="bi bi-cloud"></i> Cloudflare</span>
+                                    {% elif user.created_via == 'local_bypass' %}
+                                    <span class="badge bg-secondary"><i class="bi bi-house-door"></i> Local Net</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary"><i class="bi bi-person"></i> Local</span>
                                     {% endif %}
                                 </td>
                                 <td>

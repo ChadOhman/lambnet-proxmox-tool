@@ -128,6 +128,7 @@ def _get_or_create_cf_user(email, name=None):
         username=email,
         display_name=name or email.split("@")[0],
         role_id=viewer_role.id,
+        created_via="cloudflare",
     )
     # Set a random unusable password (login is via CF Access)
     import secrets

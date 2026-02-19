@@ -73,6 +73,8 @@
                             <li><a class="dropdown-item {% if request.blueprint == 'mastodon' %}active{% endif %}" href="/mastodon"><i class="bi bi-rocket-takeoff"></i> Mastodon</a></li>
                         </ul>
                     </li>
+                    {% endif %}
+                    {% if current_user.can_manage_users %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'security' %}active{% endif %}" href="/security">
                             <i class="bi bi-shield-lock"></i> Security

@@ -100,6 +100,7 @@ class User(UserMixin, db.Model):
     display_name = db.Column(db.String(128))
     password_hash = db.Column(db.String(256), nullable=False)
     role_id = db.Column(db.Integer, db.ForeignKey("roles.id"), nullable=False)
+    created_via = db.Column(db.String(32), default="local")  # local, cloudflare, local_bypass
     is_active_user = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 

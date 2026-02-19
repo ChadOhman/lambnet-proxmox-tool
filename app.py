@@ -168,6 +168,13 @@ def _migrate_schema():
             db.session.execute(text("ALTER TABLE guests ADD COLUMN require_snapshot VARCHAR(16) DEFAULT 'inherit'"))
             db.session.commit()
 
+    if "users" in table_names:
+        user_columns = [c["name"] for c in inspector.get_columns("users")]
+        if "created_via" not in user_columns:
+            logger.info("Adding created_via column to users table...")
+            db.session.execute(text("ALTER TABLE users ADD COLUMN created_via VARCHAR(32) DEFAULT 'local'"))
+            db.session.commit()
+
     if "credentials" in table_names:
         cred_columns = [c["name"] for c in inspector.get_columns("credentials")]
         if "encrypted_sudo_password" not in cred_columns:
