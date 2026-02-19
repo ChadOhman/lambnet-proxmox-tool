@@ -77,6 +77,9 @@
                             {% if guest.replication_target %}
                             <span class="text-info ms-1" title="Replicated to {{ guest.replication_target }}"><i class="bi bi-arrow-repeat"></i></span>
                             {% endif %}
+                            {% if guest.reboot_required %}
+                            <span class="text-warning ms-1" title="Reboot required"><i class="bi bi-exclamation-triangle-fill"></i></span>
+                            {% endif %}
                         </td>
                         <td>
                             <span class="badge bg-{{ 'primary' if guest.guest_type == 'vm' else 'success' }}">

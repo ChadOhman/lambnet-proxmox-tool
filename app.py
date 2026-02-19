@@ -167,6 +167,10 @@ def _migrate_schema():
             logger.info("Adding require_snapshot column to guests table...")
             db.session.execute(text("ALTER TABLE guests ADD COLUMN require_snapshot VARCHAR(16) DEFAULT 'inherit'"))
             db.session.commit()
+        if "reboot_required" not in guest_columns:
+            logger.info("Adding reboot_required column to guests table...")
+            db.session.execute(text("ALTER TABLE guests ADD COLUMN reboot_required BOOLEAN DEFAULT 0"))
+            db.session.commit()
 
     if "users" in table_names:
         user_columns = [c["name"] for c in inspector.get_columns("users")]

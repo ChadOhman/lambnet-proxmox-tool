@@ -658,6 +658,14 @@ def _stats_libretranslate(guest, service):
     return stats
 
 
+def check_reboot_required(guest):
+    """Check if a guest needs a reboot (Debian/Ubuntu: /var/run/reboot-required)."""
+    stdout, error = _execute_command(guest, "[ -f /var/run/reboot-required ] && echo yes || echo no")
+    if not error and stdout:
+        guest.reboot_required = stdout.strip() == "yes"
+        db.session.commit()
+
+
 def scan_guest(guest):
     """Scan a single guest for updates. Returns ScanResult."""
     logger.info(f"Scanning {guest.name} ({guest.guest_type})...")
@@ -727,6 +735,12 @@ def scan_guest(guest):
     except Exception as e:
         logger.debug(f"Service detection failed for {guest.name}: {e}")
 
+    # Check if guest needs a reboot
+    try:
+        check_reboot_required(guest)
+    except Exception as e:
+        logger.debug(f"Reboot check failed for {guest.name}: {e}")
+
     return result
 
 
@@ -768,6 +782,10 @@ def apply_updates(guest, dist_upgrade=False):
                             pkg.applied_at = now
                         guest.status = "up-to-date"
                         db.session.commit()
+                        try:
+                            check_reboot_required(guest)
+                        except Exception:
+                            pass
                         return True, stdout
                     return False, stderr
             except Exception as e:
@@ -792,6 +810,10 @@ def apply_updates(guest, dist_upgrade=False):
                         pkg.applied_at = now
                     guest.status = "up-to-date"
                     db.session.commit()
+                    try:
+                        check_reboot_required(guest)
+                    except Exception:
+                        pass
                     return True, stdout
                 return False, err
         except Exception as e:

@@ -68,11 +68,14 @@ def index():
         security_updates = 0
         recent_scans = []
 
+    reboot_required = [g for g in filtered_guests if g.reboot_required]
+
     stats = {
         "total_hosts": total_hosts,
         "total_guests": total_guests,
         "total_updates": total_updates,
         "security_updates": security_updates,
+        "reboot_required": len(reboot_required),
     }
 
     tags = Tag.query.order_by(Tag.name).all()
@@ -92,6 +95,7 @@ def index():
         "dashboard.html",
         stats=stats,
         guests_with_updates=guests_with_updates,
+        guests_needing_reboot=reboot_required,
         recent_scans=recent_scans,
         app_update_available=app_update_available,
         tags=tags,
