@@ -24,7 +24,7 @@ import jwt as pyjwt  # PyJWT library
 from flask import request, abort, g
 from flask_login import login_user
 
-from models import db, User, Setting
+from models import db, User, Role, Setting
 
 logger = logging.getLogger(__name__)
 
@@ -120,10 +120,14 @@ def _get_or_create_cf_user(email, name=None):
         return None
 
     # Auto-create user with basic permissions
+    viewer_role = Role.query.filter_by(name="viewer").first()
+    if not viewer_role:
+        logger.error("Cannot auto-provision user: viewer role not found")
+        return None
     user = User(
         username=email,
         display_name=name or email.split("@")[0],
-        role="viewer",
+        role_id=viewer_role.id,
     )
     # Set a random unusable password (login is via CF Access)
     import secrets

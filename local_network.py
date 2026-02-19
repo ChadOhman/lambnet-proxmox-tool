@@ -13,7 +13,7 @@ import ipaddress
 import logging
 from flask import request, g
 from flask_login import login_user, current_user
-from models import User, Setting
+from models import User, Role, Setting
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +94,9 @@ def init_local_bypass(app):
             return
 
         # Auto-login as admin
-        admin = User.query.filter(
+        admin = User.query.join(Role).filter(
             User.username == "admin",
-            User.role.in_(("super_admin", "admin")),
+            Role.name.in_(("super_admin", "admin")),
         ).first()
         if admin and admin.is_active:
             login_user(admin)
