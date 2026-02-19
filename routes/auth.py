@@ -1,8 +1,17 @@
+from urllib.parse import urlparse
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required, current_user
 from models import db, User
 
 bp = Blueprint("auth", __name__)
+
+
+def _is_safe_next_url(target):
+    """Allow redirects only to local paths."""
+    if not target:
+        return False
+    parsed = urlparse(target)
+    return parsed.scheme == "" and parsed.netloc == "" and target.startswith("/")
 
 
 @bp.route("/login", methods=["GET", "POST"])
@@ -18,7 +27,9 @@ def login():
         if user and user.check_password(password) and user.is_active:
             login_user(user, remember="remember" in request.form)
             next_page = request.args.get("next")
-            return redirect(next_page or url_for("dashboard.index"))
+            if _is_safe_next_url(next_page):
+                return redirect(next_page)
+            return redirect(url_for("dashboard.index"))
 
         flash("Invalid username or password.", "error")
 

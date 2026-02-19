@@ -188,7 +188,15 @@ def popout(guest_id):
 @login_required
 def connect_adhoc(guest_id):
     """Store ad-hoc SSH credentials in the session and redirect to the terminal."""
+    if not current_user.can_ssh and not current_user.is_admin:
+        flash("You don't have SSH terminal permission.", "error")
+        return redirect(url_for("dashboard.index"))
+
     guest = Guest.query.get_or_404(guest_id)
+    if not current_user.is_admin and not current_user.can_access_guest(guest):
+        flash("You don't have permission to access this guest.", "error")
+        return redirect(url_for("terminal.index"))
+
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
 
