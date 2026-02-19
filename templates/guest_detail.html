@@ -188,6 +188,41 @@
 </div>
 {% endif %}
 
+{% if guest.proxmox_host and guest.vmid %}
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Performance</h5>
+        <div class="btn-group btn-group-sm" id="perfTimeframe">
+            <button class="btn btn-outline-secondary active" data-tf="day">1 Day</button>
+            <button class="btn btn-outline-secondary" data-tf="week">7 Days</button>
+            <button class="btn btn-outline-secondary" data-tf="month">30 Days</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="perfLoading" class="text-center text-muted py-4">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading performance data...
+        </div>
+        <div id="perfError" class="text-center text-muted py-4 d-none"></div>
+        <div id="perfCharts" class="d-none">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <h6 class="text-center text-muted mb-1">CPU Usage</h6>
+                    <canvas id="cpuChart"></canvas>
+                </div>
+                <div class="col-md-4">
+                    <h6 class="text-center text-muted mb-1">Memory Usage</h6>
+                    <canvas id="memChart"></canvas>
+                </div>
+                <div class="col-md-4">
+                    <h6 class="text-center text-muted mb-1">Network I/O</h6>
+                    <canvas id="netChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% if current_user.can_manage_guests and (guest.services or True) %}
 <div class="card bg-dark mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
@@ -687,6 +722,135 @@
 
 {% block scripts %}
 <script>
+// --- Performance Charts ---
+(function() {
+    if (!document.getElementById('cpuChart')) return;
+
+    const guestId = {{ guest.id }};
+    let cpuChart, memChart, netChart;
+
+    const chartDefaults = {
+        responsive: true,
+        animation: { duration: 300 },
+        scales: {
+            x: {
+                ticks: { color: '#888', maxTicksLimit: 8, maxRotation: 0 },
+                grid: { color: 'rgba(255,255,255,0.05)' }
+            },
+            y: {
+                ticks: { color: '#888' },
+                grid: { color: 'rgba(255,255,255,0.08)' },
+                beginAtZero: true
+            }
+        },
+        plugins: {
+            legend: { display: false },
+            tooltip: { mode: 'index', intersect: false }
+        },
+        elements: { point: { radius: 0 }, line: { borderWidth: 1.5, tension: 0.3 } },
+        interaction: { mode: 'index', intersect: false }
+    };
+
+    function makeChart(ctx, label, color, yMax, yCallback) {
+        const opts = JSON.parse(JSON.stringify(chartDefaults));
+        if (yMax) opts.scales.y.max = yMax;
+        if (yCallback) opts.scales.y.ticks.callback = yCallback;
+        return new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: label, data: [], borderColor: color, backgroundColor: color + '22', fill: true }] },
+            options: opts
+        });
+    }
+
+    function makeNetChart(ctx) {
+        const opts = JSON.parse(JSON.stringify(chartDefaults));
+        opts.plugins.legend = { display: true, labels: { color: '#aaa', boxWidth: 12, padding: 8 } };
+        return new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'In', data: [], borderColor: '#8b5cf6', backgroundColor: '#8b5cf622', fill: true },
+                    { label: 'Out', data: [], borderColor: '#f97316', backgroundColor: '#f9731622', fill: true }
+                ]
+            },
+            options: opts
+        });
+    }
+
+    cpuChart = makeChart(document.getElementById('cpuChart'), 'CPU %', '#3b82f6', 100, v => v + '%');
+    memChart = makeChart(document.getElementById('memChart'), 'Memory %', '#10b981', 100, v => v + '%');
+    netChart = makeNetChart(document.getElementById('netChart'));
+
+    function loadData(timeframe) {
+        document.getElementById('perfLoading').classList.remove('d-none');
+        document.getElementById('perfCharts').classList.add('d-none');
+        document.getElementById('perfError').classList.add('d-none');
+
+        fetch('/api/guests/' + guestId + '/rrd?timeframe=' + timeframe, { cache: 'no-store' })
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(data => {
+                document.getElementById('perfLoading').classList.add('d-none');
+                if (data.error) {
+                    document.getElementById('perfError').textContent = data.error;
+                    document.getElementById('perfError').classList.remove('d-none');
+                    return;
+                }
+                if (!data.labels || data.labels.length === 0) {
+                    document.getElementById('perfError').textContent = 'No performance data available.';
+                    document.getElementById('perfError').classList.remove('d-none');
+                    return;
+                }
+                document.getElementById('perfCharts').classList.remove('d-none');
+
+                // Shorten labels for display
+                const labels = data.labels.map(l => {
+                    const parts = l.split(' ');
+                    return parts.length > 1 ? parts[1] : l;
+                });
+
+                cpuChart.data.labels = labels;
+                cpuChart.data.datasets[0].data = data.cpu;
+                cpuChart.update();
+
+                memChart.data.labels = labels;
+                memChart.data.datasets[0].data = data.mem_percent;
+                memChart.options.plugins.tooltip.callbacks = {
+                    afterLabel: function(ctx) {
+                        const mb = data.mem_used_mb[ctx.dataIndex];
+                        if (mb == null) return '';
+                        if (mb > 1024) return (mb / 1024).toFixed(1) + ' GB / ' + (data.mem_total_mb / 1024).toFixed(1) + ' GB';
+                        return mb + ' MB / ' + data.mem_total_mb + ' MB';
+                    }
+                };
+                memChart.update();
+
+                netChart.data.labels = labels;
+                netChart.data.datasets[0].data = data.netin;
+                netChart.data.datasets[1].data = data.netout;
+                netChart.options.scales.y.title = { display: true, text: data.net_unit, color: '#888' };
+                netChart.update();
+            })
+            .catch(err => {
+                document.getElementById('perfLoading').classList.add('d-none');
+                document.getElementById('perfError').textContent = 'Failed to load performance data.';
+                document.getElementById('perfError').classList.remove('d-none');
+            });
+    }
+
+    // Timeframe button handling
+    document.querySelectorAll('#perfTimeframe button').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('#perfTimeframe button').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            loadData(this.dataset.tf);
+        });
+    });
+
+    // Initial load
+    loadData('day');
+})();
+
 function fetchLogs(serviceId) {
     const modal = new bootstrap.Modal(document.getElementById('logsModal'));
     document.getElementById('logsContent').textContent = 'Loading...';

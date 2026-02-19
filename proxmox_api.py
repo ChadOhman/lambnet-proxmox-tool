@@ -480,6 +480,22 @@ class ProxmoxClient:
         """Get task log lines. Returns list of dicts with n (line number), t (text)."""
         return self.api.nodes(node).tasks(upid).log.get(start=start, limit=limit)
 
+    # ------------------------------------------------------------------
+    # RRD performance data
+    # ------------------------------------------------------------------
+
+    def get_rrd_data(self, node, vmid, guest_type, timeframe="hour"):
+        """Get RRD performance data. timeframe: hour, day, week, month, year.
+        Returns list of dicts with keys: time, cpu, maxcpu, mem, maxmem, netin, netout, etc."""
+        try:
+            if guest_type == "vm":
+                return self.api.nodes(node).qemu(vmid).rrddata.get(timeframe=timeframe)
+            else:
+                return self.api.nodes(node).lxc(vmid).rrddata.get(timeframe=timeframe)
+        except Exception as e:
+            logger.error(f"Failed to get RRD data for {guest_type}/{vmid}: {e}")
+            return []
+
     def test_connection(self):
         """Test API connectivity and return version info."""
         try:

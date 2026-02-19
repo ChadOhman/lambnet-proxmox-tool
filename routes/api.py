@@ -439,3 +439,108 @@ def task_status(guest_id, job_type):
     if not job:
         return jsonify({"running": False, "log": "", "success": None})
     return jsonify(job.to_dict())
+
+
+# ---------------------------------------------------------------------------
+# RRD performance data
+# ---------------------------------------------------------------------------
+
+@bp.route("/guests/<int:guest_id>/rrd")
+@login_required
+def guest_rrd(guest_id):
+    """Return RRD performance data as JSON for Chart.js."""
+    from proxmox_api import ProxmoxClient
+
+    guest = Guest.query.get_or_404(guest_id)
+
+    if not current_user.is_admin and not current_user.can_access_guest(guest):
+        return jsonify({"error": "Permission denied"}), 403
+
+    if not guest.proxmox_host or not guest.vmid:
+        return jsonify({"error": "Guest has no Proxmox host configured"}), 400
+
+    timeframe = request.args.get("timeframe", "day")
+    if timeframe not in ("hour", "day", "week", "month", "year"):
+        timeframe = "day"
+
+    try:
+        client = ProxmoxClient(guest.proxmox_host)
+        node = client.find_guest_node(guest.vmid)
+        if not node:
+            return jsonify({"error": "Guest not found on any node"}), 404
+
+        raw = client.get_rrd_data(node, guest.vmid, guest.guest_type, timeframe=timeframe)
+    except Exception as e:
+        logger.error(f"RRD fetch error for guest {guest_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+    if not raw:
+        return jsonify({"labels": [], "cpu": [], "mem_percent": [], "mem_used_mb": [],
+                        "mem_total_mb": 0, "netin": [], "netout": [], "net_unit": "KB/s"})
+
+    labels = []
+    cpu = []
+    mem_percent = []
+    mem_used_mb = []
+    netin = []
+    netout = []
+    mem_total_mb = 0
+
+    for point in raw:
+        ts = point.get("time")
+        if ts is None:
+            continue
+
+        labels.append(datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M"))
+
+        # CPU: fraction (0.0–N where N = num cores) → percentage of allocated cores
+        cpu_val = point.get("cpu")
+        maxcpu = point.get("maxcpu", 1) or 1
+        if cpu_val is not None:
+            cpu.append(round(cpu_val / maxcpu * 100, 2))
+        else:
+            cpu.append(None)
+
+        # Memory: bytes → percentage + MB
+        mem_val = point.get("mem")
+        maxmem = point.get("maxmem", 1) or 1
+        if mem_val is not None:
+            mem_used_mb.append(round(mem_val / 1048576, 1))
+            mem_percent.append(round(mem_val / maxmem * 100, 2))
+        else:
+            mem_used_mb.append(None)
+            mem_percent.append(None)
+        mem_total_mb = round(maxmem / 1048576, 1)
+
+        # Network: bytes/sec
+        ni = point.get("netin")
+        no = point.get("netout")
+        netin.append(round(ni, 2) if ni is not None else None)
+        netout.append(round(no, 2) if no is not None else None)
+
+    # Pick a sensible unit for network values
+    max_net = max((v for v in netin + netout if v is not None), default=0)
+    if max_net > 1_000_000:
+        net_unit = "Mbps"
+        divisor = 125_000  # bytes/sec → Mbps
+    elif max_net > 1_000:
+        net_unit = "KB/s"
+        divisor = 1024
+    else:
+        net_unit = "B/s"
+        divisor = 1
+
+    if divisor != 1:
+        netin = [round(v / divisor, 2) if v is not None else None for v in netin]
+        netout = [round(v / divisor, 2) if v is not None else None for v in netout]
+
+    return jsonify({
+        "labels": labels,
+        "cpu": cpu,
+        "mem_percent": mem_percent,
+        "mem_used_mb": mem_used_mb,
+        "mem_total_mb": mem_total_mb,
+        "netin": netin,
+        "netout": netout,
+        "net_unit": net_unit,
+    })
