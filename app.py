@@ -179,6 +179,14 @@ def _migrate_schema():
             db.session.execute(text("ALTER TABLE users ADD COLUMN created_via VARCHAR(32) DEFAULT 'local'"))
             db.session.commit()
 
+    if "roles" in table_names:
+        role_columns = [c["name"] for c in inspector.get_columns("roles")]
+        if "can_view_hosts" not in role_columns:
+            logger.info("Adding can_view_hosts column to roles table...")
+            db.session.execute(text("ALTER TABLE roles ADD COLUMN can_view_hosts BOOLEAN DEFAULT 0"))
+            db.session.execute(text("UPDATE roles SET can_view_hosts = 1 WHERE level >= 2"))
+            db.session.commit()
+
     if "credentials" in table_names:
         cred_columns = [c["name"] for c in inspector.get_columns("credentials")]
         if "encrypted_sudo_password" not in cred_columns:

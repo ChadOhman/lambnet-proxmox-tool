@@ -11,15 +11,56 @@ bp = Blueprint("hosts", __name__)
 @bp.before_request
 @login_required
 def _require_login():
-    if not current_user.can_manage_hosts:
-        flash("Admin access required.", "error")
-        return redirect(url_for("dashboard.index"))
+    # Read-only routes (index, detail) require can_view_hosts
+    # Write routes (add, delete, discover, test) require can_manage_hosts
+    read_only_endpoints = {"hosts.index", "hosts.detail"}
+    if request.endpoint in read_only_endpoints:
+        if not current_user.can_view_hosts and not current_user.can_manage_hosts:
+            flash("Access denied.", "error")
+            return redirect(url_for("dashboard.index"))
+    else:
+        if not current_user.can_manage_hosts:
+            flash("Admin access required.", "error")
+            return redirect(url_for("dashboard.index"))
 
 
 @bp.route("/")
 def index():
     hosts = ProxmoxHost.query.all()
     return render_template("hosts.html", hosts=hosts)
+
+
+@bp.route("/<int:host_id>")
+def detail(host_id):
+    host = ProxmoxHost.query.get_or_404(host_id)
+
+    node_status = None
+    node_storage = []
+    node_name = None
+    error = None
+
+    try:
+        client = ProxmoxClient(host)
+        node_name = client.get_local_node_name()
+        if node_name:
+            node_status = client.get_node_status(node_name)
+            node_storage = client.get_node_storage(node_name)
+        else:
+            error = "Could not determine node name."
+    except Exception as e:
+        error = str(e)
+
+    guests = Guest.query.filter_by(proxmox_host_id=host.id, enabled=True).order_by(Guest.name).all()
+
+    return render_template(
+        "host_detail.html",
+        host=host,
+        node_name=node_name,
+        node_status=node_status,
+        node_storage=node_storage,
+        guests=guests,
+        error=error,
+    )
 
 
 @bp.route("/add", methods=["POST"])

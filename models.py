@@ -25,8 +25,8 @@ class Role(db.Model):
 
     PERMISSION_FIELDS = [
         "can_ssh", "can_update", "can_manage_users", "can_manage_settings",
-        "can_manage_credentials", "can_manage_hosts", "can_manage_guests",
-        "can_restart_unifi",
+        "can_manage_credentials", "can_view_hosts", "can_manage_hosts",
+        "can_manage_guests", "can_restart_unifi",
     ]
 
     PERMISSION_LABELS = {
@@ -35,6 +35,7 @@ class Role(db.Model):
         "can_manage_users": "Manage Users",
         "can_manage_settings": "Manage Settings",
         "can_manage_credentials": "Manage Credentials",
+        "can_view_hosts": "View Host Statistics",
         "can_manage_hosts": "Manage Hosts",
         "can_manage_guests": "Manage Guests",
         "can_restart_unifi": "Restart UniFi Devices",
@@ -55,6 +56,7 @@ class Role(db.Model):
     can_manage_users = db.Column(db.Boolean, default=False)
     can_manage_settings = db.Column(db.Boolean, default=False)
     can_manage_credentials = db.Column(db.Boolean, default=False)
+    can_view_hosts = db.Column(db.Boolean, default=False)
     can_manage_hosts = db.Column(db.Boolean, default=False)
     can_manage_guests = db.Column(db.Boolean, default=False)
     can_restart_unifi = db.Column(db.Boolean, default=False)
@@ -76,19 +78,19 @@ DEFAULT_ROLES = [
     {"name": "super_admin", "display_name": "Super Admin", "level": 4, "is_builtin": True,
      "can_ssh": True, "can_update": True, "can_manage_users": True,
      "can_manage_settings": True, "can_manage_credentials": True,
-     "can_manage_hosts": True, "can_manage_guests": True, "can_restart_unifi": True},
+     "can_view_hosts": True, "can_manage_hosts": True, "can_manage_guests": True, "can_restart_unifi": True},
     {"name": "admin", "display_name": "Admin", "level": 3, "is_builtin": True,
      "can_ssh": True, "can_update": True, "can_manage_users": True,
      "can_manage_settings": False, "can_manage_credentials": False,
-     "can_manage_hosts": True, "can_manage_guests": True, "can_restart_unifi": True},
+     "can_view_hosts": True, "can_manage_hosts": True, "can_manage_guests": True, "can_restart_unifi": True},
     {"name": "operator", "display_name": "Operator", "level": 2, "is_builtin": True,
      "can_ssh": True, "can_update": True, "can_manage_users": False,
      "can_manage_settings": False, "can_manage_credentials": False,
-     "can_manage_hosts": False, "can_manage_guests": False, "can_restart_unifi": False},
+     "can_view_hosts": True, "can_manage_hosts": False, "can_manage_guests": False, "can_restart_unifi": False},
     {"name": "viewer", "display_name": "Viewer", "level": 1, "is_builtin": True,
      "can_ssh": False, "can_update": False, "can_manage_users": False,
      "can_manage_settings": False, "can_manage_credentials": False,
-     "can_manage_hosts": False, "can_manage_guests": False, "can_restart_unifi": False},
+     "can_view_hosts": False, "can_manage_hosts": False, "can_manage_guests": False, "can_restart_unifi": False},
 ]
 
 
@@ -163,6 +165,12 @@ class User(UserMixin, db.Model):
         if self.is_super_admin:
             return True
         return self.role_obj.can_manage_credentials if self.role_obj else False
+
+    @property
+    def can_view_hosts(self):
+        if self.is_super_admin:
+            return True
+        return self.role_obj.can_view_hosts if self.role_obj else False
 
     @property
     def can_manage_hosts(self):

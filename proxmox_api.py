@@ -469,6 +469,62 @@ class ProxmoxClient:
         return None
 
     # ------------------------------------------------------------------
+    # Node-level statistics
+    # ------------------------------------------------------------------
+
+    def get_node_status(self, node):
+        """Get node-level stats: CPU, memory, rootfs, swap, uptime, loadavg, etc."""
+        try:
+            data = self.api.nodes(node).status.get()
+            cpuinfo = data.get("cpuinfo", {})
+            memory = data.get("memory", {})
+            rootfs = data.get("rootfs", {})
+            swap = data.get("swap", {})
+            return {
+                "cpu_usage": round(data.get("cpu", 0) * 100, 1),
+                "cpu_cores": cpuinfo.get("cores", 0),
+                "cpu_sockets": cpuinfo.get("sockets", 0),
+                "cpu_threads": cpuinfo.get("cpus", 0),
+                "cpu_model": cpuinfo.get("model", "Unknown"),
+                "memory_used": memory.get("used", 0),
+                "memory_total": memory.get("total", 0),
+                "memory_free": memory.get("free", 0),
+                "swap_used": swap.get("used", 0),
+                "swap_total": swap.get("total", 0),
+                "rootfs_used": rootfs.get("used", 0),
+                "rootfs_total": rootfs.get("total", 0),
+                "uptime": data.get("uptime", 0),
+                "loadavg": data.get("loadavg", [0, 0, 0]),
+                "kversion": data.get("kversion", ""),
+                "pveversion": data.get("pveversion", ""),
+            }
+        except Exception as e:
+            logger.error(f"Failed to get node status for {node}: {e}")
+            return None
+
+    def get_node_storage(self, node):
+        """Get all storage pools on a node with usage stats."""
+        try:
+            storages = self.api.nodes(node).storage.get()
+            result = []
+            for s in storages:
+                result.append({
+                    "name": s.get("storage", ""),
+                    "type": s.get("type", ""),
+                    "total": s.get("total", 0),
+                    "used": s.get("used", 0),
+                    "avail": s.get("avail", 0),
+                    "active": s.get("active", 0),
+                    "enabled": s.get("enabled", 0),
+                    "content": s.get("content", ""),
+                    "shared": s.get("shared", 0),
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get node storage for {node}: {e}")
+            return []
+
+    # ------------------------------------------------------------------
     # Task tracking
     # ------------------------------------------------------------------
 

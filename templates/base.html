@@ -26,7 +26,7 @@
                             <i class="bi bi-speedometer2"></i> Dashboard
                         </a>
                     </li>
-                    {% if current_user.can_manage_hosts %}
+                    {% if current_user.can_view_hosts or current_user.can_manage_hosts %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'hosts' %}active{% endif %}" href="/hosts">
                             <i class="bi bi-server"></i> Hosts

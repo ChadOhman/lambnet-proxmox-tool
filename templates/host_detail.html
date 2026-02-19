@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% block title %}{{ host.name }} - Proxmox Administration Tool{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/hosts">Hosts</a></li>
+        <li class="breadcrumb-item active">{{ host.name }}</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>
+            {% if node_status %}
+            <span class="text-success"><i class="bi bi-circle-fill"></i></span>
+            {% else %}
+            <span class="text-danger"><i class="bi bi-circle-fill"></i></span>
+            {% endif %}
+            {{ host.name }}
+        </h2>
+        <span class="text-muted">{{ host.hostname }}:{{ host.port }}</span>
+        {% if node_name %}
+        <span class="badge bg-secondary ms-2">Node: {{ node_name }}</span>
+        {% endif %}
+        {% if node_status and node_status.pveversion %}
+        <span class="badge bg-info ms-1">{{ node_status.pveversion }}</span>
+        {% endif %}
+    </div>
+    <div>
+        {% if current_user.can_manage_hosts %}
+        <form method="post" action="/hosts/{{ host.id }}/discover" class="d-inline">
+            <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i> Discover Guests</button>
+        </form>
+        <form method="post" action="/hosts/{{ host.id }}/test" class="d-inline">
+            <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-plug"></i> Test</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+{% if error %}
+<div class="alert alert-danger">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+    Could not fetch node statistics: {{ error }}
+</div>
+{% endif %}
+
+{% if node_status %}
+<!-- Stats Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card bg-dark">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-muted mb-0"><i class="bi bi-cpu"></i> CPU</h6>
+                    <span class="fs-4 fw-bold {% if node_status.cpu_usage > 80 %}text-danger{% elif node_status.cpu_usage > 50 %}text-warning{% else %}text-success{% endif %}">{{ node_status.cpu_usage }}%</span>
+                </div>
+                <div class="progress bg-secondary" style="height: 6px;">
+                    <div class="progress-bar {% if node_status.cpu_usage > 80 %}bg-danger{% elif node_status.cpu_usage > 50 %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ node_status.cpu_usage }}%;"></div>
+                </div>
+                <small class="text-muted d-block mt-2">
+                    {{ node_status.cpu_threads }} threads ({{ node_status.cpu_sockets }}S / {{ node_status.cpu_cores }}C)
+                </small>
+                <small class="text-muted">{{ node_status.cpu_model }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-dark">
+            <div class="card-body">
+                {% set mem_pct = ((node_status.memory_used / node_status.memory_total) * 100)|round(1) if node_status.memory_total else 0 %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-muted mb-0"><i class="bi bi-memory"></i> Memory</h6>
+                    <span class="fs-4 fw-bold {% if mem_pct > 80 %}text-danger{% elif mem_pct > 50 %}text-warning{% else %}text-success{% endif %}">{{ mem_pct }}%</span>
+                </div>
+                <div class="progress bg-secondary" style="height: 6px;">
+                    <div class="progress-bar {% if mem_pct > 80 %}bg-danger{% elif mem_pct > 50 %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ mem_pct }}%;"></div>
+                </div>
+                <small class="text-muted d-block mt-2">
+                    {{ (node_status.memory_used / 1073741824)|round(1) }} / {{ (node_status.memory_total / 1073741824)|round(1) }} GB
+                </small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-dark">
+            <div class="card-body">
+                {% set swap_pct = ((node_status.swap_used / node_status.swap_total) * 100)|round(1) if node_status.swap_total else 0 %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-muted mb-0"><i class="bi bi-arrow-left-right"></i> Swap</h6>
+                    <span class="fs-4 fw-bold {% if swap_pct > 80 %}text-danger{% elif swap_pct > 30 %}text-warning{% else %}text-success{% endif %}">{{ swap_pct }}%</span>
+                </div>
+                <div class="progress bg-secondary" style="height: 6px;">
+                    <div class="progress-bar {% if swap_pct > 80 %}bg-danger{% elif swap_pct > 30 %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ swap_pct }}%;"></div>
+                </div>
+                <small class="text-muted d-block mt-2">
+                    {{ (node_status.swap_used / 1073741824)|round(1) }} / {{ (node_status.swap_total / 1073741824)|round(1) }} GB
+                </small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-dark">
+            <div class="card-body">
+                {% set days = (node_status.uptime // 86400)|int %}
+                {% set hours = ((node_status.uptime % 86400) // 3600)|int %}
+                {% set minutes = ((node_status.uptime % 3600) // 60)|int %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-muted mb-0"><i class="bi bi-clock-history"></i> Uptime</h6>
+                </div>
+                <span class="fs-4 fw-bold text-light">
+                    {% if days > 0 %}{{ days }}d {% endif %}{{ hours }}h {{ minutes }}m
+                </span>
+                <small class="text-muted d-block mt-2">
+                    Load: {{ node_status.loadavg[0] }}, {{ node_status.loadavg[1] }}, {{ node_status.loadavg[2] }}
+                </small>
+                {% if node_status.kversion %}
+                <small class="text-muted">{{ node_status.kversion[:40] }}</small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Root Filesystem -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-body">
+                {% set rootfs_pct = ((node_status.rootfs_used / node_status.rootfs_total) * 100)|round(1) if node_status.rootfs_total else 0 %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-muted mb-0"><i class="bi bi-hdd"></i> Root Filesystem</h6>
+                    <span class="fw-bold {% if rootfs_pct > 80 %}text-danger{% elif rootfs_pct > 60 %}text-warning{% else %}text-success{% endif %}">
+                        {{ (node_status.rootfs_used / 1073741824)|round(1) }} / {{ (node_status.rootfs_total / 1073741824)|round(1) }} GB ({{ rootfs_pct }}%)
+                    </span>
+                </div>
+                <div class="progress bg-secondary" style="height: 8px;">
+                    <div class="progress-bar {% if rootfs_pct > 80 %}bg-danger{% elif rootfs_pct > 60 %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ rootfs_pct }}%;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <!-- Storage Pools -->
+    {% if node_storage %}
+    <div class="col-lg-6">
+        <div class="card bg-dark">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-device-hdd"></i> Storage Pools</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Usage</th>
+                                <th>Content</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in node_storage %}
+                            <tr>
+                                <td>
+                                    <strong>{{ s.name }}</strong>
+                                    {% if not s.active %}<span class="badge bg-secondary ms-1">Inactive</span>{% endif %}
+                                    {% if s.shared %}<span class="badge bg-info ms-1">Shared</span>{% endif %}
+                                </td>
+                                <td><code>{{ s.type }}</code></td>
+                                <td style="min-width: 180px;">
+                                    {% if s.total > 0 %}
+                                    {% set pct = ((s.used / s.total) * 100)|round(1) %}
+                                    <div class="d-flex align-items-center">
+                                        <div class="progress bg-secondary flex-grow-1 me-2" style="height: 6px;">
+                                            <div class="progress-bar {% if pct > 80 %}bg-danger{% elif pct > 60 %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ pct }}%;"></div>
+                                        </div>
+                                        <small class="text-nowrap">{{ pct }}%</small>
+                                    </div>
+                                    <small class="text-muted">{{ (s.used / 1073741824)|round(1) }} / {{ (s.total / 1073741824)|round(1) }} GB</small>
+                                    {% else %}
+                                    <span class="text-muted">N/A</span>
+                                    {% endif %}
+                                </td>
+                                <td><small class="text-muted">{{ s.content }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Guests on this host -->
+    <div class="{% if node_storage %}col-lg-6{% else %}col-12{% endif %}">
+        <div class="card bg-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-pc-display"></i> Guests ({{ guests|length }})</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Power</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for guest in guests %}
+                            <tr>
+                                <td>
+                                    <a href="/guests/{{ guest.id }}" class="text-light text-decoration-none">{{ guest.name }}</a>
+                                    {% if guest.reboot_required %}
+                                    <span class="text-warning ms-1" title="Reboot required"><i class="bi bi-exclamation-triangle-fill"></i></span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-{{ 'primary' if guest.guest_type == 'vm' else 'success' }}">{{ guest.guest_type|upper }}</span>
+                                </td>
+                                <td>
+                                    {% if guest.power_state == 'running' %}
+                                    <span class="text-success"><i class="bi bi-circle-fill" style="font-size: 0.5rem;"></i> Running</span>
+                                    {% elif guest.power_state == 'stopped' %}
+                                    <span class="text-danger"><i class="bi bi-circle-fill" style="font-size: 0.5rem;"></i> Stopped</span>
+                                    {% else %}
+                                    <span class="text-muted"><i class="bi bi-circle" style="font-size: 0.5rem;"></i> {{ guest.power_state }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if guest.status == 'updates-available' %}
+                                    <span class="badge bg-warning text-dark">Updates</span>
+                                    {% elif guest.status == 'up-to-date' %}
+                                    <span class="badge bg-success">Up to date</span>
+                                    {% elif guest.status == 'error' %}
+                                    <span class="badge bg-danger">Error</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ guest.status }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-3">
+                                    No guests discovered on this host.
+                                    {% if current_user.can_manage_hosts %}
+                                    <a href="#" onclick="document.querySelector('form[action=\'/hosts/{{ host.id }}/discover\']').submit()">Discover now</a>.
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
