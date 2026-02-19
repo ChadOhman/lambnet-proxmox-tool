@@ -281,7 +281,7 @@
                         {% endif %}
                     </td>
                     <td>
-                        {{ svc.service_name|capitalize }}
+                        <a href="/services/{{ svc.id }}/detail" class="text-light text-decoration-none">{{ svc.service_name|capitalize }}</a>
                         {% if svc.auto_detected %}<span class="badge bg-info">Auto</span>{% endif %}
                     </td>
                     <td>{{ svc.port or '-' }}</td>

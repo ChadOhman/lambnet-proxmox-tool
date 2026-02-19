@@ -1,0 +1,451 @@
+{% extends "base.html" %}
+{% block title %}{{ service.service_name|capitalize }} on {{ guest.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/guests">Guests</a></li>
+        <li class="breadcrumb-item"><a href="/guests/{{ guest.id }}">{{ guest.name }}</a></li>
+        <li class="breadcrumb-item"><a href="/services">Services</a></li>
+        <li class="breadcrumb-item active">{{ service.service_name|capitalize }}</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>
+            {% if service.status == 'running' %}
+            <span class="text-success"><i class="bi bi-circle-fill"></i></span>
+            {% elif service.status in ('stopped', 'failed') %}
+            <span class="text-danger"><i class="bi bi-circle-fill"></i></span>
+            {% else %}
+            <span class="text-muted"><i class="bi bi-circle"></i></span>
+            {% endif %}
+            {{ service.service_name|capitalize }}
+            <small class="text-muted fs-6">on {{ guest.name }}</small>
+        </h2>
+        <span class="text-muted font-monospace">{{ service.unit_name }}</span>
+        {% if service.port %}<span class="ms-2 badge bg-secondary">Port {{ service.port }}</span>{% endif %}
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary btn-sm" id="refreshBtn" onclick="refreshStats()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        {% if service.status != 'running' %}
+        <form method="post" action="/services/{{ service.id }}/start" class="d-inline">
+            <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-play-fill"></i> Start</button>
+        </form>
+        {% endif %}
+        {% if service.status == 'running' %}
+        <form method="post" action="/services/{{ service.id }}/stop" class="d-inline" onsubmit="return confirm('Stop {{ service.service_name }}?')">
+            <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-stop-fill"></i> Stop</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/services/{{ service.id }}/restart" class="d-inline" onsubmit="return confirm('Restart {{ service.service_name }}?')">
+            <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-arrow-clockwise"></i> Restart</button>
+        </form>
+    </div>
+</div>
+
+<!-- Common Stats -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card bg-dark text-center">
+            <div class="card-body py-3">
+                <div class="text-muted small">Status</div>
+                <div class="fs-5" id="stat-status">
+                    {% if service.status == 'running' %}
+                    <span class="text-success">Running</span>
+                    {% elif service.status == 'stopped' %}
+                    <span class="text-danger">Stopped</span>
+                    {% elif service.status == 'failed' %}
+                    <span class="text-danger">Failed</span>
+                    {% else %}
+                    <span class="text-muted">Unknown</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-dark text-center">
+            <div class="card-body py-3">
+                <div class="text-muted small">Memory</div>
+                <div class="fs-5" id="stat-memory">{{ stats.memory_human or 'N/A' }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-dark text-center">
+            <div class="card-body py-3">
+                <div class="text-muted small">CPU Time</div>
+                <div class="fs-5" id="stat-cpu">{{ stats.cpu_time or 'N/A' }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-dark text-center">
+            <div class="card-body py-3">
+                <div class="text-muted small">PID</div>
+                <div class="fs-5" id="stat-pid">{{ stats.pid or 'N/A' }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if stats.error %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i> Error collecting some stats: {{ stats.error }}
+</div>
+{% endif %}
+
+<!-- Service-specific stats -->
+<div id="serviceStats">
+
+{% if stats.type == 'elasticsearch' %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-search"></i> Elasticsearch Cluster</h5></div>
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            <div class="col-md-2">
+                <div class="text-muted small">Cluster Health</div>
+                <span class="badge fs-6
+                    {% if stats.cluster_status == 'green' %}bg-success
+                    {% elif stats.cluster_status == 'yellow' %}bg-warning text-dark
+                    {% elif stats.cluster_status == 'red' %}bg-danger
+                    {% else %}bg-secondary{% endif %}" id="stat-cluster-status">
+                    {{ stats.cluster_status|default('unknown')|upper }}
+                </span>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Nodes</div>
+                <div class="fs-5" id="stat-nodes">{{ stats.node_count|default(0) }}</div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Indices</div>
+                <div class="fs-5" id="stat-indices">{{ stats.index_count|default(0) }}</div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Documents</div>
+                <div class="fs-5" id="stat-docs">{{ '{:,}'.format(stats.doc_count|default(0)) }}</div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Store Size</div>
+                <div class="fs-5" id="stat-store">{{ stats.store_size|default('N/A') }}</div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Active Shards</div>
+                <div class="fs-5">{{ stats.active_shards|default(0) }}</div>
+            </div>
+        </div>
+        {% if stats.jvm_heap_percent is defined %}
+        <div class="mb-2">
+            <div class="text-muted small mb-1">JVM Heap: {{ stats.jvm_heap_used }} / {{ stats.jvm_heap_max }} ({{ stats.jvm_heap_percent }}%)</div>
+            <div class="progress" style="height: 8px;">
+                <div class="progress-bar {% if stats.jvm_heap_percent > 85 %}bg-danger{% elif stats.jvm_heap_percent > 70 %}bg-warning{% else %}bg-success{% endif %}"
+                     style="width: {{ stats.jvm_heap_percent }}%"></div>
+            </div>
+        </div>
+        {% endif %}
+        {% if stats.indices %}
+        <h6 class="text-muted mt-3 mb-2">Indices</h6>
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0">
+                <thead><tr><th>Index</th><th>Health</th><th>Docs</th><th>Size</th></tr></thead>
+                <tbody>
+                {% for idx in stats.indices %}
+                <tr>
+                    <td class="font-monospace">{{ idx.index }}</td>
+                    <td>
+                        <span class="badge {% if idx.health == 'green' %}bg-success{% elif idx.health == 'yellow' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                            {{ idx.health }}
+                        </span>
+                    </td>
+                    <td>{{ idx['docs.count']|default(0) }}</td>
+                    <td>{{ idx['store.size']|default('') }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% elif stats.type == 'redis' %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-database"></i> Redis</h5></div>
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            <div class="col-md-3">
+                <div class="text-muted small">Used Memory</div>
+                <div class="fs-5" id="stat-redis-mem">{{ stats.used_memory|default('N/A') }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Peak Memory</div>
+                <div class="fs-5">{{ stats.used_memory_peak|default('N/A') }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Connected Clients</div>
+                <div class="fs-5" id="stat-redis-clients">{{ stats.connected_clients|default('0') }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Ops/sec</div>
+                <div class="fs-5" id="stat-redis-ops">{{ stats.ops_per_sec|default('0') }}</div>
+            </div>
+        </div>
+        <div class="row g-3 mb-3">
+            <div class="col-md-3">
+                <div class="text-muted small">Hit Ratio</div>
+                <div class="fs-5" id="stat-redis-hitratio">{{ stats.hit_ratio|default('N/A') }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Keyspace Hits</div>
+                <div class="fs-5">{{ '{:,}'.format(stats.keyspace_hits|default(0)) }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Keyspace Misses</div>
+                <div class="fs-5">{{ '{:,}'.format(stats.keyspace_misses|default(0)) }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Total Commands</div>
+                <div class="fs-5">{{ '{:,}'.format(stats.total_commands|default(0)|int) }}</div>
+            </div>
+        </div>
+        {% if stats.keyspace %}
+        <h6 class="text-muted mt-2 mb-2">Keyspace</h6>
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0">
+                <thead><tr><th>Database</th><th>Details</th></tr></thead>
+                <tbody>
+                {% for db_name, details in stats.keyspace.items() %}
+                <tr><td class="font-monospace">{{ db_name }}</td><td>{{ details }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% elif stats.type == 'postgresql' %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-database-fill"></i> PostgreSQL</h5></div>
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            <div class="col-md-3">
+                <div class="text-muted small">Active Queries</div>
+                <div class="fs-5" id="stat-pg-active">{{ stats.active_queries|default('N/A') }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Connections</div>
+                <div class="fs-5" id="stat-pg-conn">{{ stats.total_connections|default('0') }} / {{ stats.max_connections|default('?') }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Cache Hit Ratio</div>
+                <div class="fs-5" id="stat-pg-cache">{{ stats.cache_hit_ratio|default('N/A') }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Transactions</div>
+                <div class="fs-5">{{ '{:,}'.format(stats.total_commits|default(0)|int) }} commits</div>
+            </div>
+        </div>
+        {% if stats.databases %}
+        <h6 class="text-muted mt-2 mb-2">Databases</h6>
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0">
+                <thead><tr><th>Database</th><th>Size</th></tr></thead>
+                <tbody>
+                {% for db_item in stats.databases %}
+                <tr><td class="font-monospace">{{ db_item.name }}</td><td>{{ db_item.size }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% elif stats.type == 'puma' %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-globe"></i> Puma (Mastodon Web)</h5></div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="text-muted small">Health Check</div>
+                <div class="fs-5" id="stat-puma-health">
+                    {% if stats.health_status == 'OK' %}
+                    <span class="text-success">OK</span>
+                    {% else %}
+                    <span class="text-danger">{{ stats.health_status|default('N/A') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small">Started At</div>
+                <div>{{ stats.started_at|default('N/A') }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small">Port</div>
+                <div class="fs-5">{{ service.port or 'N/A' }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% elif stats.type == 'sidekiq' %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-list-task"></i> Sidekiq</h5></div>
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            <div class="col-md-2">
+                <div class="text-muted small">Processed</div>
+                <div class="fs-5" id="stat-sq-processed">{{ '{:,}'.format(stats.processed|default(0)|int) }}</div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Failed</div>
+                <div class="fs-5 {% if stats.failed|default(0)|int > 0 %}text-danger{% endif %}" id="stat-sq-failed">{{ '{:,}'.format(stats.failed|default(0)|int) }}</div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Retry Queue</div>
+                <div class="fs-5" id="stat-sq-retry">{{ stats.retry_size|default('0') }}</div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Dead</div>
+                <div class="fs-5" id="stat-sq-dead">{{ stats.dead_size|default('0') }}</div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Scheduled</div>
+                <div class="fs-5" id="stat-sq-sched">{{ stats.scheduled_size|default('0') }}</div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Instances</div>
+                <div class="fs-5">{{ stats.instances|default([])|length }}</div>
+            </div>
+        </div>
+
+        {% if stats.queues %}
+        <h6 class="text-muted mt-2 mb-2">Queues</h6>
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0">
+                <thead><tr><th>Queue</th><th>Size</th></tr></thead>
+                <tbody>
+                {% for q in stats.queues|sort(attribute='size', reverse=True) %}
+                <tr>
+                    <td class="font-monospace">{{ q.name }}</td>
+                    <td>
+                        {{ q.size }}
+                        {% if q.size > 100 %}<span class="badge bg-warning text-dark ms-1">backlog</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if stats.instances %}
+        <h6 class="text-muted mt-3 mb-2">Instances</h6>
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0">
+                <thead><tr><th>Unit</th><th>Status</th><th>Memory</th><th>PID</th></tr></thead>
+                <tbody>
+                {% for inst in stats.instances %}
+                <tr>
+                    <td class="font-monospace">{{ inst.unit_name }}</td>
+                    <td>
+                        {% if inst.status == 'running' %}
+                        <span class="text-success"><i class="bi bi-circle-fill"></i></span> Running
+                        {% elif inst.status in ('stopped', 'failed') %}
+                        <span class="text-danger"><i class="bi bi-circle-fill"></i></span> {{ inst.status|capitalize }}
+                        {% else %}
+                        <span class="text-muted"><i class="bi bi-circle"></i></span> {{ inst.status }}
+                        {% endif %}
+                    </td>
+                    <td>{{ inst.memory or 'N/A' }}</td>
+                    <td>{{ inst.pid or '-' }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% elif stats.type == 'libretranslate' %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-translate"></i> LibreTranslate</h5></div>
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <div class="text-muted small">Health</div>
+                <div class="fs-5">
+                    {% if stats.health_status == 'OK' %}
+                    <span class="text-success">OK</span>
+                    {% else %}
+                    <span class="text-danger">{{ stats.health_status|default('N/A') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small">Languages</div>
+                <div class="fs-5">{{ stats.languages_count|default('N/A') }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small">Port</div>
+                <div class="fs-5">{{ service.port or 'N/A' }}</div>
+            </div>
+        </div>
+        {% if stats.languages %}
+        <div class="text-muted small">{{ stats.languages|join(', ') }}</div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+</div>
+
+<!-- Logs -->
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-journal-text"></i> Recent Logs</h5></div>
+    <div class="card-body p-0">
+        <pre class="mb-0 p-3" style="background: #1a1a2e; color: #e0e0e0; max-height: 400px; overflow-y: auto; font-size: 0.8rem; white-space: pre-wrap; word-wrap: break-word; border-radius: 0;">{{ logs }}</pre>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function refreshStats() {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Loading...';
+
+    fetch('/services/{{ service.id }}/stats', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(data => {
+            // Update common stats
+            if (data.memory_human) {
+                const el = document.getElementById('stat-memory');
+                if (el) el.textContent = data.memory_human;
+            }
+            if (data.cpu_time) {
+                const el = document.getElementById('stat-cpu');
+                if (el) el.textContent = data.cpu_time;
+            }
+            if (data.pid) {
+                const el = document.getElementById('stat-pid');
+                if (el) el.textContent = data.pid;
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh';
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh';
+        });
+}
+</script>
+{% endblock %}

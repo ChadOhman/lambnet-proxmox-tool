@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from models import db, Guest, GuestService
-from scanner import check_service_statuses, service_action, get_service_logs
+from scanner import check_service_statuses, service_action, get_service_logs, get_service_stats
 
 bp = Blueprint("services", __name__)
 
@@ -116,3 +116,20 @@ def remove(service_id):
     if referrer and f"/guests/{guest_id}" in referrer:
         return redirect(url_for("guests.detail", guest_id=guest_id))
     return redirect(url_for("services.index"))
+
+
+@bp.route("/<int:service_id>/detail")
+def detail(service_id):
+    svc = GuestService.query.get_or_404(service_id)
+    guest = svc.guest
+    stats = get_service_stats(guest, svc)
+    log_text = get_service_logs(guest, svc, lines=30)
+    return render_template("service_detail.html", service=svc, guest=guest, stats=stats, logs=log_text)
+
+
+@bp.route("/<int:service_id>/stats")
+def stats(service_id):
+    svc = GuestService.query.get_or_404(service_id)
+    guest = svc.guest
+    data = get_service_stats(guest, svc)
+    return jsonify(data)

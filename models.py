@@ -365,6 +365,8 @@ class GuestService(db.Model):
         "postgresql": ("PostgreSQL", "postgresql.service", 5432),
         "redis": ("Redis", "redis-server.service", 6379),
         "libretranslate": ("LibreTranslate", "libretranslate.service", 5000),
+        "puma": ("Puma", "mastodon-web.service", 3000),
+        "sidekiq": ("Sidekiq", "mastodon-sidekiq*.service", None),
     }
 
     id = db.Column(db.Integer, primary_key=True)
