@@ -199,6 +199,64 @@
         </div>
     </div>
     <div class="card-body">
+        {% if hardware %}
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-cpu text-primary me-2" style="font-size: 1.5rem;"></i>
+                    <div>
+                        <div class="text-muted small">CPU</div>
+                        <strong>{{ hardware.vcpus }} vCPU{{ 's' if hardware.vcpus != 1 }}</strong>
+                        {% if hardware.sockets > 1 %}
+                        <span class="text-muted small">({{ hardware.sockets }}s &times; {{ hardware.cores }}c)</span>
+                        {% endif %}
+                        {% if hardware.cpu_type %}
+                        <span class="text-muted small">{{ hardware.cpu_type }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-memory text-success me-2" style="font-size: 1.5rem;"></i>
+                    <div>
+                        <div class="text-muted small">Memory</div>
+                        {% set mem_mb = hardware.memory_mb | int %}
+                        {% if mem_mb >= 1024 %}
+                        <strong>{{ "%.1f"|format(mem_mb / 1024) }} GB</strong>
+                        {% else %}
+                        <strong>{{ mem_mb }} MB</strong>
+                        {% endif %}
+                        {% if hardware.balloon is not none and hardware.balloon != hardware.memory_mb %}
+                        <span class="text-muted small">(balloon: {{ hardware.balloon }} MB)</span>
+                        {% endif %}
+                        {% if hardware.swap_mb %}
+                        <span class="text-muted small">+ {{ hardware.swap_mb }} MB swap</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-device-hdd text-warning me-2" style="font-size: 1.5rem;"></i>
+                    <div>
+                        <div class="text-muted small">Disks</div>
+                        {% if hardware.disks %}
+                        {% for disk in hardware.disks %}
+                        <span class="me-2">
+                            <strong>{{ disk.size | default('?') }}</strong>
+                            <span class="text-muted small">{{ disk.key }}{% if disk.get('storage') %} ({{ disk.storage }}){% endif %}</span>
+                        </span>
+                        {% endfor %}
+                        {% else %}
+                        <span class="text-muted">No disks found</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <hr class="border-secondary my-2">
+        {% endif %}
         <div id="perfLoading" class="text-center text-muted py-4">
             <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading performance data...
         </div>

@@ -143,6 +143,7 @@ def detail(guest_id):
     snapshots = []
     backups = []
     backup_storages = []
+    hardware = None
     if guest.proxmox_host and guest.vmid:
         try:
             client = ProxmoxClient(guest.proxmox_host)
@@ -152,6 +153,7 @@ def detail(guest_id):
                 cluster_nodes = [n["node"] for n in client.get_nodes()]
                 snapshots = client.list_snapshots(node, guest.vmid, guest.guest_type)
                 backup_storages = client.list_node_storages(node, content_type="backup")
+                hardware = client.get_guest_config(node, guest.vmid, guest.guest_type)
                 # List backups from the default storage (or all backup-capable storages)
                 default_storage = Setting.get("backup_storage", "")
                 if default_storage:
@@ -176,6 +178,7 @@ def detail(guest_id):
                            repl_jobs=repl_jobs, cluster_nodes=cluster_nodes,
                            snapshots=snapshots, backups=backups,
                            backup_storages=backup_storages,
+                           hardware=hardware,
                            unifi_client=unifi_client,
                            unifi_last_polled=unifi_last_polled,
                            known_services=GuestService.KNOWN_SERVICES)

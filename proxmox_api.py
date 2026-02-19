@@ -481,6 +481,81 @@ class ProxmoxClient:
         return self.api.nodes(node).tasks(upid).log.get(start=start, limit=limit)
 
     # ------------------------------------------------------------------
+    # Guest configuration / hardware info
+    # ------------------------------------------------------------------
+
+    def get_guest_config(self, node, vmid, guest_type):
+        """Get guest hardware config (CPUs, memory, disks). Returns a dict."""
+        try:
+            if guest_type == "vm":
+                config = self.api.nodes(node).qemu(vmid).config.get()
+            else:
+                config = self.api.nodes(node).lxc(vmid).config.get()
+
+            result = {"type": guest_type}
+
+            # CPU
+            cores = config.get("cores", 1)
+            sockets = config.get("sockets", 1) if guest_type == "vm" else 1
+            result["cores"] = cores
+            result["sockets"] = sockets
+            result["vcpus"] = cores * sockets
+            result["cpu_type"] = config.get("cpu", "") if guest_type == "vm" else ""
+
+            # Memory (Proxmox stores in MB)
+            result["memory_mb"] = config.get("memory", 0)
+            result["swap_mb"] = config.get("swap", 0) if guest_type == "ct" else 0
+            result["balloon"] = config.get("balloon", None) if guest_type == "vm" else None
+
+            # Disks
+            disks = []
+            if guest_type == "vm":
+                # VM disks: scsi0, virtio0, ide0, sata0, etc.
+                import re
+                for key, val in config.items():
+                    if re.match(r"^(scsi|virtio|ide|sata|efidisk|tpmstate)\d+$", key) and isinstance(val, str):
+                        disk = {"key": key}
+                        # Parse size from string like "local-lvm:vm-100-disk-0,size=32G"
+                        size_match = re.search(r"size=(\d+[TGMK]?)", val)
+                        if size_match:
+                            disk["size"] = size_match.group(1)
+                        # Parse storage
+                        if ":" in val:
+                            disk["storage"] = val.split(":")[0]
+                        disks.append(disk)
+            else:
+                # CT: rootfs and mpN (mount points)
+                import re
+                rootfs = config.get("rootfs", "")
+                if rootfs:
+                    disk = {"key": "rootfs"}
+                    size_match = re.search(r"size=(\d+[TGMK]?)", rootfs)
+                    if size_match:
+                        disk["size"] = size_match.group(1)
+                    if ":" in rootfs:
+                        disk["storage"] = rootfs.split(":")[0]
+                    disks.append(disk)
+                for key, val in config.items():
+                    if re.match(r"^mp\d+$", key) and isinstance(val, str):
+                        disk = {"key": key}
+                        size_match = re.search(r"size=(\d+[TGMK]?)", val)
+                        if size_match:
+                            disk["size"] = size_match.group(1)
+                        if ":" in val:
+                            disk["storage"] = val.split(":")[0]
+                        # Parse mount point
+                        mp_match = re.search(r"mp=([^,]+)", val)
+                        if mp_match:
+                            disk["mountpoint"] = mp_match.group(1)
+                        disks.append(disk)
+
+            result["disks"] = sorted(disks, key=lambda d: d["key"])
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get config for {guest_type}/{vmid}: {e}")
+            return None
+
+    # ------------------------------------------------------------------
     # RRD performance data
     # ------------------------------------------------------------------
 
