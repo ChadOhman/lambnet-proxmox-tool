@@ -51,16 +51,26 @@ class SSHClient:
     def sudo_wrap(self, command):
         """Wrap a command with sudo if the user is not root.
 
-        If a sudo password is set, pipes it via stdin using -S flag.
-        Otherwise assumes passwordless sudo is configured.
+        If a sudo password is set, uses ``sudo -S`` so the password can be
+        fed safely via stdin (see ``_feed_sudo_password``).  This avoids
+        interpolating the password into a shell string where special
+        characters (like single-quotes) could cause injection.
         """
         if not self.needs_sudo:
             return command
+        escaped_cmd = command.replace("'", "'\\''")
         if self.sudo_password:
-            # Use -S to read password from stdin, wrap command in sh -c
-            escaped_cmd = command.replace("'", "'\\''")
-            return f"echo '{self.sudo_password}' | sudo -S sh -c '{escaped_cmd}'"
-        return f"sudo {command}"
+            return f"sudo -S sh -c '{escaped_cmd}'"
+        return f"sudo sh -c '{escaped_cmd}'"
+
+    def _feed_sudo_password(self, channel_stdin):
+        """Feed the sudo password into an exec_command stdin channel.
+
+        Paramiko stdin channels are binary, so we encode before writing.
+        """
+        if self.sudo_password and self.needs_sudo:
+            channel_stdin.write((self.sudo_password + "\n").encode("utf-8"))
+            channel_stdin.flush()
 
     def connect(self):
         self._client = paramiko.SSHClient()
@@ -91,13 +101,19 @@ class SSHClient:
         self._client.connect(**kwargs)
         return self._client
 
-    def execute(self, command, timeout=120):
-        """Execute a command and return (stdout, stderr, exit_code)."""
+    def execute(self, command, timeout=120, _sudo=False):
+        """Execute a command and return (stdout, stderr, exit_code).
+
+        When ``_sudo`` is True the sudo password (if any) is piped into
+        stdin rather than being embedded in the command string.
+        """
         if self._client is None:
             self.connect()
 
         try:
             stdin, stdout, stderr = self._client.exec_command(command, timeout=timeout)
+            if _sudo:
+                self._feed_sudo_password(stdin)
             exit_code = stdout.channel.recv_exit_status()
             return stdout.read().decode("utf-8", errors="replace"), stderr.read().decode("utf-8", errors="replace"), exit_code
         except Exception as e:
@@ -106,9 +122,11 @@ class SSHClient:
 
     def execute_sudo(self, command, timeout=120):
         """Execute a command with sudo wrapping if needed."""
-        return self.execute(self.sudo_wrap(command), timeout=timeout)
+        wrapped = self.sudo_wrap(command)
+        needs_stdin = bool(self.sudo_password and self.needs_sudo)
+        return self.execute(wrapped, timeout=timeout, _sudo=needs_stdin)
 
-    def execute_streaming(self, command, callback, timeout=600):
+    def execute_streaming(self, command, callback, timeout=600, _sudo=False):
         """Execute a command and call callback(chunk) as output arrives.
 
         Returns (exit_code).  The callback receives raw string chunks
@@ -121,6 +139,8 @@ class SSHClient:
 
         try:
             stdin, stdout, stderr = self._client.exec_command(command, timeout=timeout)
+            if _sudo:
+                self._feed_sudo_password(stdin)
             channel = stdout.channel
             channel.settimeout(0.5)
 
@@ -158,7 +178,9 @@ class SSHClient:
 
     def execute_sudo_streaming(self, command, callback, timeout=600):
         """Execute a command with sudo wrapping, streaming output via callback."""
-        return self.execute_streaming(self.sudo_wrap(command), callback, timeout=timeout)
+        wrapped = self.sudo_wrap(command)
+        needs_stdin = bool(self.sudo_password and self.needs_sudo)
+        return self.execute_streaming(wrapped, callback, timeout=timeout, _sudo=needs_stdin)
 
     def close(self):
         if self._client:

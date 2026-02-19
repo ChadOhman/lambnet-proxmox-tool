@@ -1,3 +1,4 @@
+import re
 import logging
 from datetime import datetime, timezone
 from models import db, Guest, UpdatePackage, ScanResult, GuestService
@@ -5,6 +6,16 @@ from ssh_client import SSHClient
 from proxmox_api import ProxmoxClient
 
 logger = logging.getLogger(__name__)
+
+# Valid systemd unit names: alphanumeric, hyphens, underscores, dots, @, *
+_VALID_UNIT_RE = re.compile(r'^[\w.\-@*]+$')
+
+
+def _safe_unit_name(name):
+    """Validate a systemd unit name to prevent shell injection."""
+    if not name or not _VALID_UNIT_RE.match(name):
+        raise ValueError(f"Invalid systemd unit name: {name!r}")
+    return name
 
 def _has_valid_ip(guest):
     """Check if a guest has a usable IP address (not dhcp/auto placeholders)."""
@@ -203,6 +214,11 @@ def detect_services(guest):
 
 def _upsert_service(guest, service_key, unit_name, default_port, status, now):
     """Create or update a GuestService record."""
+    try:
+        _safe_unit_name(unit_name)
+    except ValueError:
+        logger.warning(f"Skipping service with invalid unit name: {unit_name!r}")
+        return
     existing = GuestService.query.filter_by(guest_id=guest.id, unit_name=unit_name).first()
     if status in ("running", "failed"):
         if existing:
@@ -229,7 +245,7 @@ def check_service_statuses(guest):
     if not guest.services:
         return
 
-    unit_names = [svc.unit_name for svc in guest.services]
+    unit_names = [_safe_unit_name(svc.unit_name) for svc in guest.services]
     cmd = "systemctl is-active " + " ".join(unit_names) + " 2>/dev/null"
     stdout, error = _execute_command(guest, cmd)
 
@@ -260,14 +276,19 @@ def service_action(guest, service, action):
     if action not in ("start", "stop", "restart"):
         return False, "Invalid action"
 
-    cmd = f"systemctl {action} {service.unit_name}"
+    try:
+        unit = _safe_unit_name(service.unit_name)
+    except ValueError as e:
+        return False, str(e)
+
+    cmd = f"systemctl {action} {unit}"
     stdout, error = _execute_command(guest, cmd, timeout=30, sudo=True)
 
     if error:
         return False, error
 
     # Refresh status after action
-    status_out, _ = _execute_command(guest, f"systemctl is-active {service.unit_name} 2>/dev/null")
+    status_out, _ = _execute_command(guest, f"systemctl is-active {unit} 2>/dev/null")
     now = datetime.now(timezone.utc)
     status_str = (status_out or "").strip()
     if status_str == "active":
@@ -286,7 +307,12 @@ def service_action(guest, service, action):
 
 def get_service_logs(guest, service, lines=50):
     """Fetch recent journal logs for a service. Returns log text."""
-    cmd = f"journalctl -u {service.unit_name} -n {lines} --no-pager 2>/dev/null"
+    try:
+        unit = _safe_unit_name(service.unit_name)
+    except ValueError as e:
+        return f"Error: {e}"
+    lines = int(lines)
+    cmd = f"journalctl -u {unit} -n {lines} --no-pager 2>/dev/null"
     stdout, error = _execute_command(guest, cmd, timeout=30)
     if error:
         return f"Error fetching logs: {error}"
@@ -335,7 +361,7 @@ def get_service_stats(guest, service):
     stats = {"type": stype, "error": None}
 
     # Common: get systemd resource usage
-    unit = service.unit_name
+    unit = _safe_unit_name(service.unit_name)
     props_cmd = f"systemctl show {unit} --property=MemoryCurrent,CPUUsageNSec,MainPID,ActiveState,ActiveEnterTimestamp 2>/dev/null"
     props_out, _ = _execute_command(guest, props_cmd, timeout=15)
     props = _parse_systemd_props(props_out)
@@ -612,8 +638,12 @@ def _stats_sidekiq(guest, service):
     sibling_services = GuestService.query.filter_by(guest_id=guest.id, service_name="sidekiq").all()
     instances = []
     for svc in sibling_services:
+        try:
+            svc_unit = _safe_unit_name(svc.unit_name)
+        except ValueError:
+            continue
         props_out, _ = _execute_command(guest,
-            f"systemctl show {svc.unit_name} --property=MemoryCurrent,CPUUsageNSec,ActiveState,MainPID 2>/dev/null",
+            f"systemctl show {svc_unit} --property=MemoryCurrent,CPUUsageNSec,ActiveState,MainPID 2>/dev/null",
             timeout=10)
         p = _parse_systemd_props(props_out)
         mem = p.get("MemoryCurrent", "")

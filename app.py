@@ -359,14 +359,28 @@ def _ensure_default_admin():
         sa_role = Role.query.filter_by(name="super_admin").first()
         if not sa_role:
             return
+        import secrets
+        default_password = secrets.token_urlsafe(16)
         admin = User(
             username="admin",
             display_name="Administrator",
             role_id=sa_role.id,
         )
-        admin.set_password("admin")
+        admin.set_password(default_password)
         db.session.add(admin)
         db.session.commit()
+        logger.warning("=" * 60)
+        logger.warning("  DEFAULT ADMIN ACCOUNT CREATED")
+        logger.warning("  Username: admin")
+        logger.warning("  Password: %s", default_password)
+        logger.warning("  Please change this password immediately!")
+        logger.warning("=" * 60)
+        print("=" * 60)
+        print("  DEFAULT ADMIN ACCOUNT CREATED")
+        print(f"  Username: admin")
+        print(f"  Password: {default_password}")
+        print("  Please change this password immediately!")
+        print("=" * 60)
 
 
 if __name__ == "__main__":
