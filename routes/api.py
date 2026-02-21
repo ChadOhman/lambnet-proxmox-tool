@@ -724,3 +724,35 @@ def dashboard_host_stats():
         agg["hosts_offline"] = len(results) - len(online)
 
     return jsonify({"hosts": results, "aggregate": agg})
+
+
+@bp.route("/guests/<int:guest_id>/unifi-stats")
+@login_required
+def guest_unifi_stats(guest_id):
+    """Return fresh UniFi stats for a guest as JSON (used for live polling)."""
+    guest = Guest.query.get_or_404(guest_id)
+    if not current_user.is_admin and not current_user.can_access_guest(guest):
+        return jsonify({"error": "forbidden"}), 403
+
+    if not guest.mac_address:
+        return jsonify({"error": "no_mac"}), 404
+
+    from models import Setting
+    if Setting.get("unifi_enabled", "false") != "true":
+        return jsonify({"error": "unifi_disabled"}), 404
+
+    try:
+        from routes.unifi import _get_unifi_client
+        client = _get_unifi_client()
+        if not client:
+            return jsonify({"error": "not_configured"}), 404
+
+        stats = client.get_client_by_mac(guest.mac_address)
+        if not stats:
+            return jsonify({"error": "not_found"}), 404
+
+        Setting.set("unifi_last_polled", datetime.now(timezone.utc).isoformat())
+        return jsonify({"stats": stats})
+    except Exception as e:
+        logger.error(f"UniFi stats fetch failed for guest {guest_id}: {e}")
+        return jsonify({"error": "fetch_failed"}), 500

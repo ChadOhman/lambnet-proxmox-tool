@@ -671,16 +671,26 @@
 {% endif %}
 
 {% if unifi_client and current_user.can_manage_guests %}
-<div class="card bg-dark mb-4">
-    <div class="card-header"><h5 class="mb-0"><i class="bi bi-router"></i> UniFi Network</h5></div>
+<div class="card bg-dark mb-4" id="unifi-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-router"></i> UniFi Network</h5>
+        <div class="d-flex align-items-center gap-2">
+            <small class="text-muted" id="unifi-poll-time">
+                {% if unifi_last_polled %}{{ unifi_last_polled[:19] | replace('T', ' ') }} UTC{% endif %}
+            </small>
+            <button class="btn btn-sm btn-outline-secondary" id="unifi-refresh-btn" onclick="refreshUnifiStats()">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+    </div>
     <div class="card-body">
         <table class="table table-dark table-sm mb-3">
-            <tr><td class="text-muted" style="width:40%">IP Address</td><td>{{ unifi_client.ip }}</td></tr>
+            <tr><td class="text-muted" style="width:40%">IP Address</td><td id="u-ip">{{ unifi_client.ip }}</td></tr>
             <tr><td class="text-muted">MAC Address</td><td><code>{{ unifi_client.mac }}</code></td></tr>
-            <tr><td class="text-muted">Network</td><td>{{ unifi_client.network or 'Unknown' }}</td></tr>
+            <tr><td class="text-muted">Network</td><td id="u-network">{{ unifi_client.network or 'Unknown' }}</td></tr>
             <tr>
                 <td class="text-muted">Connection</td>
-                <td>
+                <td id="u-connection">
                     {% if unifi_client.is_wired %}
                     <i class="bi bi-ethernet"></i> Wired
                     {% else %}
@@ -689,24 +699,71 @@
                     {% endif %}
                 </td>
             </tr>
+            {% if not unifi_client.is_wired %}
+            <tr>
+                <td class="text-muted">Signal / RSSI</td>
+                <td id="u-signal">
+                    {% if unifi_client.signal %}{{ unifi_client.signal }} dBm{% if unifi_client.rssi %} &nbsp;·&nbsp; RSSI {{ unifi_client.rssi }}{% endif %}{% else %}-{% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td class="text-muted">Noise</td>
+                <td id="u-noise">{{ unifi_client.noise ~ ' dBm' if unifi_client.noise else '-' }}</td>
+            </tr>
+            <tr>
+                <td class="text-muted">Satisfaction</td>
+                <td id="u-satisfaction">
+                    {% if unifi_client.satisfaction is not none %}
+                    {% set pct = unifi_client.satisfaction %}
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="progress flex-grow-1" style="height:6px;max-width:80px">
+                            <div class="progress-bar {% if pct >= 70 %}bg-success{% elif pct >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
+                                 style="width:{{ pct }}%"></div>
+                        </div>
+                        <span>{{ pct }}%</span>
+                    </div>
+                    {% else %}-{% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td class="text-muted">AP / Channel</td>
+                <td id="u-ap">
+                    {% if unifi_client.ap_mac %}<code>{{ unifi_client.ap_mac }}</code>{% endif %}
+                    {% if unifi_client.channel %}&nbsp;ch {{ unifi_client.channel }}{% endif %}
+                    {% if unifi_client.radio_band %}<span class="text-muted ms-1">({{ unifi_client.radio_band }})</span>{% endif %}
+                    {% if not unifi_client.ap_mac and not unifi_client.channel %}-{% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td class="text-muted">Link Rate</td>
+                <td id="u-rate">
+                    {% if unifi_client.tx_rate or unifi_client.rx_rate %}
+                    <i class="bi bi-arrow-up text-muted"></i> {{ (unifi_client.tx_rate / 1000) | round(0) | int if unifi_client.tx_rate else '?' }} Mbps
+                    &nbsp;·&nbsp;
+                    <i class="bi bi-arrow-down text-muted"></i> {{ (unifi_client.rx_rate / 1000) | round(0) | int if unifi_client.rx_rate else '?' }} Mbps
+                    {% else %}-{% endif %}
+                </td>
+            </tr>
+            {% endif %}
+            <tr>
+                <td class="text-muted">Data Transferred</td>
+                <td id="u-bytes">
+                    {% macro fmt_bytes(b) %}{% if b is none %}-{% elif b >= 1073741824 %}{{ (b / 1073741824) | round(1) }} GB{% elif b >= 1048576 %}{{ (b / 1048576) | round(1) }} MB{% elif b >= 1024 %}{{ (b / 1024) | round(1) }} KB{% else %}{{ b }} B{% endif %}{% endmacro %}
+                    {% if unifi_client.tx_bytes is not none or unifi_client.rx_bytes is not none %}
+                    <i class="bi bi-arrow-up text-muted"></i> {{ fmt_bytes(unifi_client.tx_bytes) }}
+                    &nbsp;·&nbsp;
+                    <i class="bi bi-arrow-down text-muted"></i> {{ fmt_bytes(unifi_client.rx_bytes) }}
+                    {% else %}-{% endif %}
+                </td>
+            </tr>
             <tr>
                 <td class="text-muted">Uptime</td>
-                <td>
+                <td id="u-uptime">
                     {% set ut = unifi_client.uptime | int %}
                     {% if ut > 86400 %}{{ (ut // 86400) }}d {{ (ut % 86400 // 3600) }}h
                     {% elif ut > 3600 %}{{ (ut // 3600) }}h {{ (ut % 3600 // 60) }}m
                     {% elif ut > 0 %}{{ (ut // 60) }}m
                     {% else %}-{% endif %}
-                </td>
-            </tr>
-            <tr>
-                <td class="text-muted">Last Polled</td>
-                <td>
-                    {% if unifi_last_polled %}
-                    {{ unifi_last_polled[:19] | replace('T', ' ') }} UTC
-                    {% else %}
-                    <span class="text-muted">Unknown</span>
-                    {% endif %}
                 </td>
             </tr>
         </table>
@@ -722,6 +779,83 @@
         </div>
     </div>
 </div>
+<script>
+(function () {
+    const isWired = {{ 'true' if unifi_client.is_wired else 'false' }};
+
+    function fmtBytes(b) {
+        if (b === null || b === undefined) return '-';
+        if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+        if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+        if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
+        return b + ' B';
+    }
+
+    function fmtUptime(s) {
+        s = parseInt(s) || 0;
+        if (s > 86400) return Math.floor(s / 86400) + 'd ' + Math.floor((s % 86400) / 3600) + 'h';
+        if (s > 3600) return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+        if (s > 0) return Math.floor(s / 60) + 'm';
+        return '-';
+    }
+
+    function satBar(pct) {
+        const cls = pct >= 70 ? 'bg-success' : pct >= 40 ? 'bg-warning' : 'bg-danger';
+        return `<div class="d-flex align-items-center gap-2">
+            <div class="progress flex-grow-1" style="height:6px;max-width:80px">
+                <div class="progress-bar ${cls}" style="width:${pct}%"></div>
+            </div><span>${pct}%</span></div>`;
+    }
+
+    function set(id, html) {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+    }
+
+    window.refreshUnifiStats = function () {
+        const btn = document.getElementById('unifi-refresh-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+        fetch('/api/guests/{{ guest.id }}/unifi-stats')
+            .then(r => r.json())
+            .then(data => {
+                if (data.error || !data.stats) return;
+                const s = data.stats;
+
+                set('u-ip', s.ip || '-');
+                set('u-network', s.network || 'Unknown');
+                set('u-uptime', fmtUptime(s.uptime));
+                set('u-bytes',
+                    `<i class="bi bi-arrow-up text-muted"></i> ${fmtBytes(s.tx_bytes)} &nbsp;·&nbsp; <i class="bi bi-arrow-down text-muted"></i> ${fmtBytes(s.rx_bytes)}`
+                );
+
+                if (!isWired) {
+                    set('u-signal', s.signal ? `${s.signal} dBm${s.rssi ? ' &nbsp;·&nbsp; RSSI ' + s.rssi : ''}` : '-');
+                    set('u-noise', s.noise ? s.noise + ' dBm' : '-');
+                    set('u-satisfaction', (s.satisfaction !== null && s.satisfaction !== undefined) ? satBar(s.satisfaction) : '-');
+
+                    let ap = '';
+                    if (s.ap_mac) ap += `<code>${s.ap_mac}</code>`;
+                    if (s.channel) ap += ` ch ${s.channel}`;
+                    if (s.radio_band) ap += ` <span class="text-muted">(${s.radio_band})</span>`;
+                    set('u-ap', ap || '-');
+
+                    const txMbps = s.tx_rate ? Math.round(s.tx_rate / 1000) : '?';
+                    const rxMbps = s.rx_rate ? Math.round(s.rx_rate / 1000) : '?';
+                    set('u-rate', `<i class="bi bi-arrow-up text-muted"></i> ${txMbps} Mbps &nbsp;·&nbsp; <i class="bi bi-arrow-down text-muted"></i> ${rxMbps} Mbps`);
+                }
+
+                const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                set('unifi-poll-time', now + ' UTC');
+            })
+            .catch(() => {})
+            .finally(() => { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>'; });
+    };
+
+    setInterval(window.refreshUnifiStats, 15000);
+})();
+</script>
 {% elif guest.mac_address and not unifi_client and current_user.can_manage_guests %}
 <div class="card bg-dark mb-4">
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-router"></i> UniFi Network</h5></div>

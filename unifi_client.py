@@ -94,22 +94,51 @@ class UniFiClient:
             })
         return devices
 
+    @staticmethod
+    def _parse_client(c):
+        radio = c.get("radio", "")
+        radio_band = {
+            "ng": "2.4 GHz", "na": "5 GHz", "ac": "5 GHz (ac)",
+            "ax": "Wi-Fi 6", "6e": "Wi-Fi 6E", "be": "Wi-Fi 7",
+        }.get(radio, radio or None)
+        return {
+            "hostname": c.get("hostname", c.get("name", c.get("oui", "Unknown"))),
+            "ip": c.get("ip", ""),
+            "mac": c.get("mac", ""),
+            "network": c.get("network", ""),
+            "is_wired": c.get("is_wired", False),
+            "signal": c.get("signal", None),
+            "rssi": c.get("rssi", None),
+            "noise": c.get("noise", None),
+            "satisfaction": c.get("satisfaction", None),
+            "uptime": c.get("uptime", 0),
+            "idle_time": c.get("idletime", None),
+            "last_seen": c.get("last_seen", None),
+            "tx_bytes": c.get("tx_bytes", None),
+            "rx_bytes": c.get("rx_bytes", None),
+            "tx_packets": c.get("tx_packets", None),
+            "rx_packets": c.get("rx_packets", None),
+            "tx_rate": c.get("tx_rate", None),
+            "rx_rate": c.get("rx_rate", None),
+            "ap_mac": c.get("ap_mac", None),
+            "channel": c.get("channel", None),
+            "radio": radio,
+            "radio_band": radio_band,
+            "blocked": c.get("blocked", False),
+        }
+
     def get_clients(self):
         raw = self._api_get(f"/api/s/{self.site}/stat/sta")
         if raw is None:
             return []
-        clients = []
-        for c in raw:
-            clients.append({
-                "hostname": c.get("hostname", c.get("name", c.get("oui", "Unknown"))),
-                "ip": c.get("ip", ""),
-                "mac": c.get("mac", ""),
-                "network": c.get("network", ""),
-                "is_wired": c.get("is_wired", False),
-                "signal": c.get("signal", None),
-                "uptime": c.get("uptime", 0),
-            })
-        return clients
+        return [self._parse_client(c) for c in raw]
+
+    def get_client_by_mac(self, mac):
+        """Fetch live stats for a single client by MAC address."""
+        raw = self._api_get(f"/api/s/{self.site}/stat/sta/{mac.lower()}")
+        if not raw:
+            return None
+        return self._parse_client(raw[0])
 
     def reconnect_client(self, mac):
         """Force reconnect a wireless client."""
