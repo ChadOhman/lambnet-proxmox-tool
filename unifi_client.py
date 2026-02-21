@@ -96,34 +96,18 @@ class UniFiClient:
 
     @staticmethod
     def _parse_client(c):
-        radio = c.get("radio", "")
-        radio_band = {
-            "ng": "2.4 GHz", "na": "5 GHz", "ac": "5 GHz (ac)",
-            "ax": "Wi-Fi 6", "6e": "Wi-Fi 6E", "be": "Wi-Fi 7",
-        }.get(radio, radio or None)
         return {
             "hostname": c.get("hostname", c.get("name", c.get("oui", "Unknown"))),
             "ip": c.get("ip", ""),
             "mac": c.get("mac", ""),
             "network": c.get("network", ""),
             "is_wired": c.get("is_wired", False),
-            "signal": c.get("signal", None),
-            "rssi": c.get("rssi", None),
-            "noise": c.get("noise", None),
-            "satisfaction": c.get("satisfaction", None),
             "uptime": c.get("uptime", 0),
-            "idle_time": c.get("idletime", None),
             "last_seen": c.get("last_seen", None),
             "tx_bytes": c.get("tx_bytes", None),
             "rx_bytes": c.get("rx_bytes", None),
-            "tx_packets": c.get("tx_packets", None),
-            "rx_packets": c.get("rx_packets", None),
             "tx_rate": c.get("tx_rate", None),
             "rx_rate": c.get("rx_rate", None),
-            "ap_mac": c.get("ap_mac", None),
-            "channel": c.get("channel", None),
-            "radio": radio,
-            "radio_band": radio_band,
             "blocked": c.get("blocked", False),
         }
 

@@ -689,52 +689,6 @@
             <tr><td class="text-muted">MAC Address</td><td><code>{{ unifi_client.mac }}</code></td></tr>
             <tr><td class="text-muted">Network</td><td id="u-network">{{ unifi_client.network or 'Unknown' }}</td></tr>
             <tr>
-                <td class="text-muted">Connection</td>
-                <td id="u-connection">
-                    {% if unifi_client.is_wired %}
-                    <i class="bi bi-ethernet"></i> Wired
-                    {% else %}
-                    <i class="bi bi-wifi"></i> Wireless
-                    {% if unifi_client.signal %}<span class="text-muted ms-1">({{ unifi_client.signal }} dBm)</span>{% endif %}
-                    {% endif %}
-                </td>
-            </tr>
-            {% if not unifi_client.is_wired %}
-            <tr>
-                <td class="text-muted">Signal / RSSI</td>
-                <td id="u-signal">
-                    {% if unifi_client.signal %}{{ unifi_client.signal }} dBm{% if unifi_client.rssi %} &nbsp;·&nbsp; RSSI {{ unifi_client.rssi }}{% endif %}{% else %}-{% endif %}
-                </td>
-            </tr>
-            <tr>
-                <td class="text-muted">Noise</td>
-                <td id="u-noise">{{ unifi_client.noise ~ ' dBm' if unifi_client.noise else '-' }}</td>
-            </tr>
-            <tr>
-                <td class="text-muted">Satisfaction</td>
-                <td id="u-satisfaction">
-                    {% if unifi_client.satisfaction is not none %}
-                    {% set pct = unifi_client.satisfaction %}
-                    <div class="d-flex align-items-center gap-2">
-                        <div class="progress flex-grow-1" style="height:6px;max-width:80px">
-                            <div class="progress-bar {% if pct >= 70 %}bg-success{% elif pct >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
-                                 style="width:{{ pct }}%"></div>
-                        </div>
-                        <span>{{ pct }}%</span>
-                    </div>
-                    {% else %}-{% endif %}
-                </td>
-            </tr>
-            <tr>
-                <td class="text-muted">AP / Channel</td>
-                <td id="u-ap">
-                    {% if unifi_client.ap_mac %}<code>{{ unifi_client.ap_mac }}</code>{% endif %}
-                    {% if unifi_client.channel %}&nbsp;ch {{ unifi_client.channel }}{% endif %}
-                    {% if unifi_client.radio_band %}<span class="text-muted ms-1">({{ unifi_client.radio_band }})</span>{% endif %}
-                    {% if not unifi_client.ap_mac and not unifi_client.channel %}-{% endif %}
-                </td>
-            </tr>
-            <tr>
                 <td class="text-muted">Link Rate</td>
                 <td id="u-rate">
                     {% if unifi_client.tx_rate or unifi_client.rx_rate %}
@@ -744,7 +698,10 @@
                     {% else %}-{% endif %}
                 </td>
             </tr>
-            {% endif %}
+            <tr>
+                <td class="text-muted">Current Throughput</td>
+                <td id="u-throughput"><span class="text-muted">—</span></td>
+            </tr>
             <tr>
                 <td class="text-muted">Data Transferred</td>
                 <td id="u-bytes">
@@ -768,11 +725,6 @@
             </tr>
         </table>
         <div class="d-flex gap-2">
-            {% if not unifi_client.is_wired %}
-            <form method="post" action="/guests/{{ guest.id }}/unifi/reconnect" class="d-inline" onsubmit="return confirm('Force reconnect {{ guest.name }}?')">
-                <button type="submit" class="btn btn-sm btn-outline-warning"><i class="bi bi-arrow-clockwise"></i> Reconnect</button>
-            </form>
-            {% endif %}
             <form method="post" action="/guests/{{ guest.id }}/unifi/block" class="d-inline" onsubmit="return confirm('Block {{ guest.name }} from the network?')">
                 <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-slash-circle"></i> Block</button>
             </form>
@@ -781,7 +733,7 @@
 </div>
 <script>
 (function () {
-    const isWired = {{ 'true' if unifi_client.is_wired else 'false' }};
+    let prevTx = null, prevRx = null, prevTime = null;
 
     function fmtBytes(b) {
         if (b === null || b === undefined) return '-';
@@ -791,20 +743,19 @@
         return b + ' B';
     }
 
+    function fmtBps(bps) {
+        if (bps >= 1e9) return (bps / 1e9).toFixed(2) + ' Gbps';
+        if (bps >= 1e6) return (bps / 1e6).toFixed(1) + ' Mbps';
+        if (bps >= 1e3) return (bps / 1e3).toFixed(0) + ' Kbps';
+        return bps.toFixed(0) + ' bps';
+    }
+
     function fmtUptime(s) {
         s = parseInt(s) || 0;
         if (s > 86400) return Math.floor(s / 86400) + 'd ' + Math.floor((s % 86400) / 3600) + 'h';
         if (s > 3600) return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
         if (s > 0) return Math.floor(s / 60) + 'm';
         return '-';
-    }
-
-    function satBar(pct) {
-        const cls = pct >= 70 ? 'bg-success' : pct >= 40 ? 'bg-warning' : 'bg-danger';
-        return `<div class="d-flex align-items-center gap-2">
-            <div class="progress flex-grow-1" style="height:6px;max-width:80px">
-                <div class="progress-bar ${cls}" style="width:${pct}%"></div>
-            </div><span>${pct}%</span></div>`;
     }
 
     function set(id, html) {
@@ -817,37 +768,40 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
+        const now = Date.now();
         fetch('/api/guests/{{ guest.id }}/unifi-stats')
             .then(r => r.json())
             .then(data => {
                 if (data.error || !data.stats) return;
                 const s = data.stats;
 
-                set('u-ip', s.ip || '-');
-                set('u-network', s.network || 'Unknown');
-                set('u-uptime', fmtUptime(s.uptime));
+                // Throughput delta
+                if (prevTx !== null && prevRx !== null && prevTime !== null) {
+                    const secs = (now - prevTime) / 1000;
+                    if (secs > 0 && s.tx_bytes !== null && s.rx_bytes !== null) {
+                        const txBps = Math.max(0, (s.tx_bytes - prevTx) * 8 / secs);
+                        const rxBps = Math.max(0, (s.rx_bytes - prevRx) * 8 / secs);
+                        set('u-throughput',
+                            `<i class="bi bi-arrow-up text-muted"></i> ${fmtBps(txBps)} &nbsp;·&nbsp; <i class="bi bi-arrow-down text-muted"></i> ${fmtBps(rxBps)}`
+                        );
+                    }
+                }
+                prevTx = s.tx_bytes;
+                prevRx = s.rx_bytes;
+                prevTime = now;
+
+                const txMbps = s.tx_rate ? Math.round(s.tx_rate / 1000) : '?';
+                const rxMbps = s.rx_rate ? Math.round(s.rx_rate / 1000) : '?';
+                set('u-rate', `<i class="bi bi-arrow-up text-muted"></i> ${txMbps} Mbps &nbsp;·&nbsp; <i class="bi bi-arrow-down text-muted"></i> ${rxMbps} Mbps`);
                 set('u-bytes',
                     `<i class="bi bi-arrow-up text-muted"></i> ${fmtBytes(s.tx_bytes)} &nbsp;·&nbsp; <i class="bi bi-arrow-down text-muted"></i> ${fmtBytes(s.rx_bytes)}`
                 );
+                set('u-ip', s.ip || '-');
+                set('u-network', s.network || 'Unknown');
+                set('u-uptime', fmtUptime(s.uptime));
 
-                if (!isWired) {
-                    set('u-signal', s.signal ? `${s.signal} dBm${s.rssi ? ' &nbsp;·&nbsp; RSSI ' + s.rssi : ''}` : '-');
-                    set('u-noise', s.noise ? s.noise + ' dBm' : '-');
-                    set('u-satisfaction', (s.satisfaction !== null && s.satisfaction !== undefined) ? satBar(s.satisfaction) : '-');
-
-                    let ap = '';
-                    if (s.ap_mac) ap += `<code>${s.ap_mac}</code>`;
-                    if (s.channel) ap += ` ch ${s.channel}`;
-                    if (s.radio_band) ap += ` <span class="text-muted">(${s.radio_band})</span>`;
-                    set('u-ap', ap || '-');
-
-                    const txMbps = s.tx_rate ? Math.round(s.tx_rate / 1000) : '?';
-                    const rxMbps = s.rx_rate ? Math.round(s.rx_rate / 1000) : '?';
-                    set('u-rate', `<i class="bi bi-arrow-up text-muted"></i> ${txMbps} Mbps &nbsp;·&nbsp; <i class="bi bi-arrow-down text-muted"></i> ${rxMbps} Mbps`);
-                }
-
-                const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-                set('unifi-poll-time', now + ' UTC');
+                const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                set('unifi-poll-time', ts + ' UTC');
             })
             .catch(() => {})
             .finally(() => { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>'; });
