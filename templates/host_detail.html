@@ -334,21 +334,25 @@
         <div class="card bg-dark">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-pc-display"></i> Guests ({{ guests|length }})</h5>
+                <small class="text-muted" id="guestStatsUpdated"></small>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0">
+                    <table class="table table-dark table-hover table-sm mb-0" id="guestStatsTable">
                         <thead>
                             <tr>
                                 <th>Name</th>
                                 <th>Type</th>
                                 <th>Power</th>
+                                <th>CPU</th>
+                                <th>Memory</th>
+                                <th>Disk</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for guest in guests %}
-                            <tr>
+                            <tr data-vmid="{{ guest.vmid }}">
                                 <td>
                                     <a href="/guests/{{ guest.id }}" class="text-light text-decoration-none">{{ guest.name }}</a>
                                     {% if guest.reboot_required %}
@@ -367,6 +371,9 @@
                                     <span class="text-muted"><i class="bi bi-circle" style="font-size: 0.5rem;"></i> {{ guest.power_state }}</span>
                                     {% endif %}
                                 </td>
+                                <td class="gs-cpu"><span class="text-muted">—</span></td>
+                                <td class="gs-mem" style="min-width:110px;"><span class="text-muted">—</span></td>
+                                <td class="gs-disk" style="min-width:110px;"><span class="text-muted">—</span></td>
                                 <td>
                                     {% if guest.status == 'updates-available' %}
                                     <span class="badge bg-warning text-dark">Updates</span>
@@ -381,7 +388,7 @@
                             </tr>
                             {% else %}
                             <tr>
-                                <td colspan="4" class="text-center text-muted py-3">
+                                <td colspan="7" class="text-center text-muted py-3">
                                     No guests discovered on this host.
                                     {% if current_user.is_super_admin %}
                                     <a href="#" onclick="document.querySelector('form[action=\'/hosts/{{ host.id }}/discover\']').submit()">Discover now</a>.
@@ -529,6 +536,71 @@
     });
 
     loadData('day');
+})();
+
+// ── Per-guest live resource stats ────────────────────────────────────────────
+(function() {
+    const table = document.getElementById('guestStatsTable');
+    if (!table) return;
+
+    const hostId = {{ host.id }};
+
+    function fmtBytes(b) {
+        if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+        if (b >= 1048576) return (b / 1048576).toFixed(0) + ' MB';
+        return b + ' B';
+    }
+
+    function pctColor(p) {
+        return p > 80 ? 'danger' : (p > 50 ? 'warning' : 'success');
+    }
+
+    function bar(pct) {
+        const w = Math.min(pct, 100);
+        return '<div class="progress bg-secondary mt-1" style="height:3px;min-width:60px;">' +
+               '<div class="progress-bar bg-' + pctColor(pct) + '" style="width:' + w + '%;"></div></div>';
+    }
+
+    function applyStats(stats) {
+        document.getElementById('guestStatsUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+        table.querySelectorAll('tr[data-vmid]').forEach(row => {
+            const vmid = parseInt(row.dataset.vmid, 10);
+            const s = stats[vmid];
+            const cpuTd  = row.querySelector('.gs-cpu');
+            const memTd  = row.querySelector('.gs-mem');
+            const diskTd = row.querySelector('.gs-disk');
+            if (!s || s.status !== 'running') {
+                [cpuTd, memTd, diskTd].forEach(td => { if (td) td.innerHTML = '<span class="text-muted">—</span>'; });
+                return;
+            }
+            if (cpuTd) cpuTd.innerHTML =
+                '<span class="text-' + pctColor(s.cpu_pct) + '">' + s.cpu_pct + '%</span>' + bar(s.cpu_pct);
+            if (memTd) memTd.innerHTML =
+                '<span class="text-' + pctColor(s.mem_pct) + '">' + s.mem_pct + '%</span>' + bar(s.mem_pct) +
+                '<small class="text-muted">' + fmtBytes(s.mem_used) + '&thinsp;/&thinsp;' + fmtBytes(s.mem_total) + '</small>';
+            if (diskTd) {
+                if (s.disk_used > 0) {
+                    diskTd.innerHTML =
+                        '<span class="text-' + pctColor(s.disk_pct) + '">' + s.disk_pct + '%</span>' + bar(s.disk_pct) +
+                        '<small class="text-muted">' + fmtBytes(s.disk_used) + '&thinsp;/&thinsp;' + fmtBytes(s.disk_total) + '</small>';
+                } else if (s.disk_total > 0) {
+                    diskTd.innerHTML = '<small class="text-muted">' + fmtBytes(s.disk_total) + ' alloc</small>';
+                } else {
+                    diskTd.innerHTML = '<span class="text-muted">—</span>';
+                }
+            }
+        });
+    }
+
+    function fetchGuestStats() {
+        fetch('/api/hosts/' + hostId + '/guest-stats', { cache: 'no-store' })
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(data => { if (data.stats) applyStats(data.stats); })
+            .catch(() => {});  // silently fail — DB columns remain visible
+    }
+
+    fetchGuestStats();
+    setInterval(fetchGuestStats, 30000);
 })();
 </script>
 {% endblock %}

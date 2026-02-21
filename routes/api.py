@@ -789,6 +789,51 @@ def dashboard_guest_stats():
     return jsonify({"guests": results})
 
 
+@bp.route("/hosts/<int:host_id>/guest-stats")
+@login_required
+def host_guest_stats(host_id):
+    """Return live CPU/memory/disk keyed by VMID for all guests on one PVE host."""
+    from proxmox_api import ProxmoxClient
+
+    host = ProxmoxHost.query.get_or_404(host_id)
+
+    if not current_user.can_view_hosts and not current_user.can_manage_hosts:
+        return jsonify({"error": "Permission denied"}), 403
+
+    if host.is_pbs:
+        return jsonify({"error": "Not a PVE host"}), 400
+
+    try:
+        client = ProxmoxClient(host)
+        node_name = client.get_local_node_name()
+        raw = client.get_node_guests(node_name) if node_name else client.get_all_guests()
+    except Exception as e:
+        logger.error(f"Host guest stats error for host {host_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+    stats = {}
+    for g in raw:
+        vmid = g.get("vmid")
+        if vmid is None:
+            continue
+        mem_used = g.get("mem", 0)
+        mem_total = g.get("maxmem", 0) or 1
+        disk_used = g.get("disk", 0)
+        disk_total = g.get("maxdisk", 0) or 1
+        stats[vmid] = {
+            "status": g.get("status", ""),
+            "cpu_pct": round(g.get("cpu", 0) * 100, 1),
+            "mem_used": mem_used,
+            "mem_total": mem_total,
+            "mem_pct": round(mem_used / mem_total * 100, 1),
+            "disk_used": disk_used,
+            "disk_total": disk_total,
+            "disk_pct": round(disk_used / disk_total * 100, 1) if disk_used > 0 else 0,
+        }
+
+    return jsonify({"stats": stats})
+
+
 @bp.route("/guests/<int:guest_id>/unifi-stats")
 @login_required
 def guest_unifi_stats(guest_id):
