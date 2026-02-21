@@ -678,15 +678,19 @@ def dashboard_host_stats():
 
     results = []
     for host in hosts:
-        entry = {"id": host.id, "name": host.name, "online": False}
+        entry = {"id": host.id, "name": host.name, "online": False, "is_pbs": host.is_pbs}
         try:
-            client = ProxmoxClient(host)
-            node_name = client.get_local_node_name()
-            if not node_name:
-                results.append(entry)
-                continue
+            if host.is_pbs:
+                from pbs_client import PBSClient
+                status = PBSClient(host).get_node_status()
+            else:
+                client = ProxmoxClient(host)
+                node_name = client.get_local_node_name()
+                if not node_name:
+                    results.append(entry)
+                    continue
+                status = client.get_node_status(node_name)
 
-            status = client.get_node_status(node_name)
             if not status:
                 results.append(entry)
                 continue
@@ -747,6 +751,8 @@ def dashboard_guest_stats():
 
     results = []
     for host in hosts:
+        if host.is_pbs:
+            continue  # PBS has no VMs/CTs to report
         try:
             client = ProxmoxClient(host)
             raw_guests = client.get_all_guests()

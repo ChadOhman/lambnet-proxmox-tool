@@ -444,15 +444,16 @@
         tbody.innerHTML = '';
         data.hosts.forEach(h => {
             const tr = document.createElement('tr');
+            const pbsBadge = h.is_pbs ? ' <span class="badge bg-warning text-dark">PBS</span>' : '';
             if (!h.online) {
-                tr.innerHTML = '<td><a href="/hosts/' + h.id + '" class="text-light text-decoration-none">' + h.name + '</a> <span class="badge bg-danger">Offline</span></td>' +
+                tr.innerHTML = '<td><a href="/hosts/' + h.id + '" class="text-light text-decoration-none">' + h.name + '</a>' + pbsBadge + ' <span class="badge bg-danger">Offline</span></td>' +
                                '<td colspan="5" class="text-muted">Unreachable</td>';
             } else {
                 const memPct = h.memory_total ? ((h.memory_used / h.memory_total) * 100).toFixed(1) : 0;
                 const rootPct = h.rootfs_total ? ((h.rootfs_used / h.rootfs_total) * 100).toFixed(1) : 0;
                 const load = h.loadavg ? h.loadavg.join(', ') : '-';
                 tr.innerHTML =
-                    '<td><a href="/hosts/' + h.id + '" class="text-light text-decoration-none">' + h.name + '</a></td>' +
+                    '<td><a href="/hosts/' + h.id + '" class="text-light text-decoration-none">' + h.name + '</a>' + pbsBadge + '</td>' +
                     '<td><span class="text-' + pctColor(h.cpu_usage) + '">' + h.cpu_usage + '%</span><br>' + progressBar(h.cpu_usage, true) + '</td>' +
                     '<td><span class="text-' + pctColor(memPct) + '">' + memPct + '%</span><br>' + progressBar(memPct, true) +
                     '<small class="text-muted">' + formatBytes(h.memory_used) + '/' + formatBytes(h.memory_total) + '</small></td>' +
