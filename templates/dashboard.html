@@ -163,11 +163,12 @@
     </div>
 </div>
 
-<!-- Host Performance (async-loaded) -->
+<!-- Host Performance (async-loaded, auto-refreshes every 30s) -->
 {% if current_user.can_view_hosts or current_user.can_manage_hosts %}
 <div class="card bg-dark mb-4" id="hostPerfCard">
-    <div class="card-header">
+    <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-graph-up"></i> Host Performance</h5>
+        <small class="text-muted" id="hostPerfUpdated"></small>
     </div>
     <div class="card-body">
         <div id="hostPerfLoading" class="text-center text-muted py-3">
@@ -191,6 +192,37 @@
                         </tr>
                     </thead>
                     <tbody id="hostPerfBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Guest Resources (async-loaded, auto-refreshes every 30s) -->
+<div class="card bg-dark mb-4" id="guestStatsCard">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-server"></i> Guest Resources <span class="badge bg-secondary ms-1" id="guestStatsRunningCount" style="display:none;"></span></h5>
+        <small class="text-muted" id="guestStatsUpdated"></small>
+    </div>
+    <div class="card-body">
+        <div id="guestStatsLoading" class="text-center text-muted py-3">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading guest statistics...
+        </div>
+        <div id="guestStatsError" class="text-center text-muted py-3 d-none"></div>
+        <div id="guestStatsContent" class="d-none">
+            <div class="table-responsive">
+                <table class="table table-dark table-sm table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Guest</th>
+                            <th>Type</th>
+                            <th style="min-width:110px;">CPU</th>
+                            <th style="min-width:140px;">Memory</th>
+                            <th style="min-width:110px;">Disk</th>
+                            <th>Uptime</th>
+                        </tr>
+                    </thead>
+                    <tbody id="guestStatsBody"></tbody>
                 </table>
             </div>
         </div>
@@ -320,9 +352,6 @@
 {% block scripts %}
 <script>
 (function() {
-    const card = document.getElementById('hostPerfCard');
-    if (!card) return;
-
     function formatBytes(bytes) {
         if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' GB';
         if (bytes >= 1048576) return (bytes / 1048576).toFixed(0) + ' MB';
@@ -346,92 +375,181 @@
     function progressBar(pct, small) {
         const h = small ? '4px' : '6px';
         return '<div class="progress bg-secondary" style="height:' + h + ';min-width:60px;">' +
-               '<div class="progress-bar bg-' + pctColor(pct) + '" style="width:' + pct + '%;"></div></div>';
+               '<div class="progress-bar bg-' + pctColor(pct) + '" style="width:' + Math.min(pct, 100) + '%;"></div></div>';
     }
 
-    fetch('/api/dashboard/host-stats', { cache: 'no-store' })
-        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(data => {
-            document.getElementById('hostPerfLoading').classList.add('d-none');
+    function nowStr() {
+        return new Date().toLocaleTimeString();
+    }
 
-            if (data.error) {
-                document.getElementById('hostPerfError').textContent = data.error;
-                document.getElementById('hostPerfError').classList.remove('d-none');
-                return;
-            }
-            if (!data.hosts || data.hosts.length === 0) {
-                document.getElementById('hostPerfError').textContent = 'No hosts configured.';
-                document.getElementById('hostPerfError').classList.remove('d-none');
-                return;
-            }
+    // ── Host Performance ─────────────────────────────────────────────────────
+    const hostCard = document.getElementById('hostPerfCard');
 
-            document.getElementById('hostPerfContent').classList.remove('d-none');
+    function renderHostStats(data) {
+        document.getElementById('hostPerfLoading').classList.add('d-none');
 
-            // Aggregates
-            const agg = data.aggregate || {};
-            if (agg.total_memory) {
-                const memPct = ((agg.total_memory_used / agg.total_memory) * 100).toFixed(1);
-                const rootPct = agg.total_rootfs ? ((agg.total_rootfs_used / agg.total_rootfs) * 100).toFixed(1) : 0;
-                const swapPct = agg.total_swap ? ((agg.total_swap_used / agg.total_swap) * 100).toFixed(1) : 0;
-                document.getElementById('hostAggregates').innerHTML =
-                    '<div class="col-md-3"><div class="d-flex align-items-center gap-2">' +
-                    '<i class="bi bi-cpu text-primary"></i><div class="flex-grow-1">' +
-                    '<div class="d-flex justify-content-between"><small class="text-muted">Avg CPU</small>' +
-                    '<small class="text-' + pctColor(agg.avg_cpu) + '">' + agg.avg_cpu + '%</small></div>' +
-                    progressBar(agg.avg_cpu, true) +
-                    '<small class="text-muted">' + agg.total_cpu_threads + ' threads across ' + agg.hosts_online + ' host' + (agg.hosts_online !== 1 ? 's' : '') + '</small>' +
-                    '</div></div></div>' +
-                    '<div class="col-md-3"><div class="d-flex align-items-center gap-2">' +
-                    '<i class="bi bi-memory text-success"></i><div class="flex-grow-1">' +
-                    '<div class="d-flex justify-content-between"><small class="text-muted">Total Memory</small>' +
-                    '<small class="text-' + pctColor(memPct) + '">' + memPct + '%</small></div>' +
-                    progressBar(memPct, true) +
-                    '<small class="text-muted">' + formatBytes(agg.total_memory_used) + ' / ' + formatBytes(agg.total_memory) + '</small>' +
-                    '</div></div></div>' +
-                    '<div class="col-md-3"><div class="d-flex align-items-center gap-2">' +
-                    '<i class="bi bi-hdd text-warning"></i><div class="flex-grow-1">' +
-                    '<div class="d-flex justify-content-between"><small class="text-muted">Total Root FS</small>' +
-                    '<small class="text-' + pctColor(rootPct) + '">' + rootPct + '%</small></div>' +
-                    progressBar(rootPct, true) +
-                    '<small class="text-muted">' + formatBytes(agg.total_rootfs_used) + ' / ' + formatBytes(agg.total_rootfs) + '</small>' +
-                    '</div></div></div>' +
-                    '<div class="col-md-3"><div class="d-flex align-items-center gap-2">' +
-                    '<i class="bi bi-arrow-left-right text-info"></i><div class="flex-grow-1">' +
-                    '<div class="d-flex justify-content-between"><small class="text-muted">Total Swap</small>' +
-                    '<small class="text-' + pctColor(swapPct) + '">' + swapPct + '%</small></div>' +
-                    progressBar(swapPct, true) +
-                    '<small class="text-muted">' + formatBytes(agg.total_swap_used) + ' / ' + formatBytes(agg.total_swap) + '</small>' +
-                    '</div></div></div>';
-            }
-
-            // Per-host table rows
-            const tbody = document.getElementById('hostPerfBody');
-            data.hosts.forEach(h => {
-                const tr = document.createElement('tr');
-                if (!h.online) {
-                    tr.innerHTML = '<td><a href="/hosts/' + h.id + '" class="text-light text-decoration-none">' + h.name + '</a> <span class="badge bg-danger">Offline</span></td>' +
-                                   '<td colspan="5" class="text-muted">Unreachable</td>';
-                } else {
-                    const memPct = h.memory_total ? ((h.memory_used / h.memory_total) * 100).toFixed(1) : 0;
-                    const rootPct = h.rootfs_total ? ((h.rootfs_used / h.rootfs_total) * 100).toFixed(1) : 0;
-                    const load = h.loadavg ? h.loadavg.join(', ') : '-';
-                    tr.innerHTML =
-                        '<td><a href="/hosts/' + h.id + '" class="text-light text-decoration-none">' + h.name + '</a></td>' +
-                        '<td><span class="text-' + pctColor(h.cpu_usage) + '">' + h.cpu_usage + '%</span><br>' + progressBar(h.cpu_usage, true) + '</td>' +
-                        '<td><span class="text-' + pctColor(memPct) + '">' + memPct + '%</span><br>' + progressBar(memPct, true) +
-                        '<small class="text-muted">' + formatBytes(h.memory_used) + '/' + formatBytes(h.memory_total) + '</small></td>' +
-                        '<td><span class="text-' + pctColor(rootPct) + '">' + rootPct + '%</span><br>' + progressBar(rootPct, true) + '</td>' +
-                        '<td><small>' + load + '</small></td>' +
-                        '<td><small>' + formatUptime(h.uptime) + '</small></td>';
-                }
-                tbody.appendChild(tr);
-            });
-        })
-        .catch(err => {
-            document.getElementById('hostPerfLoading').classList.add('d-none');
-            document.getElementById('hostPerfError').textContent = 'Failed to load host statistics.';
+        if (data.error) {
+            document.getElementById('hostPerfError').textContent = data.error;
             document.getElementById('hostPerfError').classList.remove('d-none');
+            document.getElementById('hostPerfContent').classList.add('d-none');
+            return;
+        }
+        if (!data.hosts || data.hosts.length === 0) {
+            document.getElementById('hostPerfError').textContent = 'No hosts configured.';
+            document.getElementById('hostPerfError').classList.remove('d-none');
+            document.getElementById('hostPerfContent').classList.add('d-none');
+            return;
+        }
+
+        document.getElementById('hostPerfContent').classList.remove('d-none');
+        document.getElementById('hostPerfUpdated').textContent = 'Updated ' + nowStr();
+
+        const agg = data.aggregate || {};
+        if (agg.total_memory) {
+            const memPct = ((agg.total_memory_used / agg.total_memory) * 100).toFixed(1);
+            const rootPct = agg.total_rootfs ? ((agg.total_rootfs_used / agg.total_rootfs) * 100).toFixed(1) : 0;
+            const swapPct = agg.total_swap ? ((agg.total_swap_used / agg.total_swap) * 100).toFixed(1) : 0;
+            document.getElementById('hostAggregates').innerHTML =
+                '<div class="col-md-3"><div class="d-flex align-items-center gap-2">' +
+                '<i class="bi bi-cpu text-primary"></i><div class="flex-grow-1">' +
+                '<div class="d-flex justify-content-between"><small class="text-muted">Avg CPU</small>' +
+                '<small class="text-' + pctColor(agg.avg_cpu) + '">' + agg.avg_cpu + '%</small></div>' +
+                progressBar(agg.avg_cpu, true) +
+                '<small class="text-muted">' + agg.total_cpu_threads + ' threads across ' + agg.hosts_online + ' host' + (agg.hosts_online !== 1 ? 's' : '') + '</small>' +
+                '</div></div></div>' +
+                '<div class="col-md-3"><div class="d-flex align-items-center gap-2">' +
+                '<i class="bi bi-memory text-success"></i><div class="flex-grow-1">' +
+                '<div class="d-flex justify-content-between"><small class="text-muted">Total Memory</small>' +
+                '<small class="text-' + pctColor(memPct) + '">' + memPct + '%</small></div>' +
+                progressBar(memPct, true) +
+                '<small class="text-muted">' + formatBytes(agg.total_memory_used) + ' / ' + formatBytes(agg.total_memory) + '</small>' +
+                '</div></div></div>' +
+                '<div class="col-md-3"><div class="d-flex align-items-center gap-2">' +
+                '<i class="bi bi-hdd text-warning"></i><div class="flex-grow-1">' +
+                '<div class="d-flex justify-content-between"><small class="text-muted">Total Root FS</small>' +
+                '<small class="text-' + pctColor(rootPct) + '">' + rootPct + '%</small></div>' +
+                progressBar(rootPct, true) +
+                '<small class="text-muted">' + formatBytes(agg.total_rootfs_used) + ' / ' + formatBytes(agg.total_rootfs) + '</small>' +
+                '</div></div></div>' +
+                '<div class="col-md-3"><div class="d-flex align-items-center gap-2">' +
+                '<i class="bi bi-arrow-left-right text-info"></i><div class="flex-grow-1">' +
+                '<div class="d-flex justify-content-between"><small class="text-muted">Total Swap</small>' +
+                '<small class="text-' + pctColor(swapPct) + '">' + swapPct + '%</small></div>' +
+                progressBar(swapPct, true) +
+                '<small class="text-muted">' + formatBytes(agg.total_swap_used) + ' / ' + formatBytes(agg.total_swap) + '</small>' +
+                '</div></div></div>';
+        }
+
+        const tbody = document.getElementById('hostPerfBody');
+        tbody.innerHTML = '';
+        data.hosts.forEach(h => {
+            const tr = document.createElement('tr');
+            if (!h.online) {
+                tr.innerHTML = '<td><a href="/hosts/' + h.id + '" class="text-light text-decoration-none">' + h.name + '</a> <span class="badge bg-danger">Offline</span></td>' +
+                               '<td colspan="5" class="text-muted">Unreachable</td>';
+            } else {
+                const memPct = h.memory_total ? ((h.memory_used / h.memory_total) * 100).toFixed(1) : 0;
+                const rootPct = h.rootfs_total ? ((h.rootfs_used / h.rootfs_total) * 100).toFixed(1) : 0;
+                const load = h.loadavg ? h.loadavg.join(', ') : '-';
+                tr.innerHTML =
+                    '<td><a href="/hosts/' + h.id + '" class="text-light text-decoration-none">' + h.name + '</a></td>' +
+                    '<td><span class="text-' + pctColor(h.cpu_usage) + '">' + h.cpu_usage + '%</span><br>' + progressBar(h.cpu_usage, true) + '</td>' +
+                    '<td><span class="text-' + pctColor(memPct) + '">' + memPct + '%</span><br>' + progressBar(memPct, true) +
+                    '<small class="text-muted">' + formatBytes(h.memory_used) + '/' + formatBytes(h.memory_total) + '</small></td>' +
+                    '<td><span class="text-' + pctColor(rootPct) + '">' + rootPct + '%</span><br>' + progressBar(rootPct, true) + '</td>' +
+                    '<td><small>' + load + '</small></td>' +
+                    '<td><small>' + formatUptime(h.uptime) + '</small></td>';
+            }
+            tbody.appendChild(tr);
         });
+    }
+
+    function fetchHostStats() {
+        fetch('/api/dashboard/host-stats', { cache: 'no-store' })
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(renderHostStats)
+            .catch(() => {
+                document.getElementById('hostPerfLoading').classList.add('d-none');
+                document.getElementById('hostPerfError').textContent = 'Failed to load host statistics.';
+                document.getElementById('hostPerfError').classList.remove('d-none');
+            });
+    }
+
+    if (hostCard) {
+        fetchHostStats();
+        setInterval(fetchHostStats, 30000);
+    }
+
+    // ── Guest Resources ──────────────────────────────────────────────────────
+    const guestCard = document.getElementById('guestStatsCard');
+
+    function renderGuestStats(data) {
+        document.getElementById('guestStatsLoading').classList.add('d-none');
+
+        if (data.error) {
+            document.getElementById('guestStatsError').textContent = data.error;
+            document.getElementById('guestStatsError').classList.remove('d-none');
+            document.getElementById('guestStatsContent').classList.add('d-none');
+            return;
+        }
+
+        const guests = data.guests || [];
+        document.getElementById('guestStatsContent').classList.remove('d-none');
+        document.getElementById('guestStatsUpdated').textContent = 'Updated ' + nowStr();
+
+        const badge = document.getElementById('guestStatsRunningCount');
+        badge.textContent = guests.length + ' running';
+        badge.style.display = '';
+
+        const tbody = document.getElementById('guestStatsBody');
+        tbody.innerHTML = '';
+
+        if (guests.length === 0) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = '<td colspan="6" class="text-center text-muted py-3">No running guests found.</td>';
+            tbody.appendChild(tr);
+            return;
+        }
+
+        guests.forEach(g => {
+            const tr = document.createElement('tr');
+            const nameCell = g.guest_id
+                ? '<a href="/guests/' + g.guest_id + '" class="text-light text-decoration-none">' + g.name + '</a>'
+                : g.name;
+            const typeBadge = g.type === 'vm'
+                ? '<span class="badge bg-primary">VM</span>'
+                : '<span class="badge bg-success">CT</span>';
+            const memUsed = formatBytes(g.mem_used) + ' / ' + formatBytes(g.mem_total);
+            const diskUsed = formatBytes(g.disk_used) + ' / ' + formatBytes(g.disk_total);
+
+            tr.innerHTML =
+                '<td>' + nameCell + '<br><small class="text-muted">' + g.node + '</small></td>' +
+                '<td>' + typeBadge + '</td>' +
+                '<td><span class="text-' + pctColor(g.cpu_pct) + '">' + g.cpu_pct + '%</span><br>' + progressBar(g.cpu_pct, true) + '</td>' +
+                '<td><span class="text-' + pctColor(g.mem_pct) + '">' + g.mem_pct + '%</span><br>' + progressBar(g.mem_pct, true) +
+                '<small class="text-muted">' + memUsed + '</small></td>' +
+                '<td><span class="text-' + pctColor(g.disk_pct) + '">' + g.disk_pct + '%</span><br>' + progressBar(g.disk_pct, true) +
+                '<small class="text-muted">' + diskUsed + '</small></td>' +
+                '<td><small>' + (g.uptime ? formatUptime(g.uptime) : '-') + '</small></td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    function fetchGuestStats() {
+        fetch('/api/dashboard/guest-stats', { cache: 'no-store' })
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(renderGuestStats)
+            .catch(() => {
+                document.getElementById('guestStatsLoading').classList.add('d-none');
+                document.getElementById('guestStatsError').textContent = 'Failed to load guest statistics.';
+                document.getElementById('guestStatsError').classList.remove('d-none');
+            });
+    }
+
+    if (guestCard) {
+        fetchGuestStats();
+        setInterval(fetchGuestStats, 30000);
+    }
 })();
 </script>
 {% endblock %}

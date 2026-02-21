@@ -726,6 +726,69 @@ def dashboard_host_stats():
     return jsonify({"hosts": results, "aggregate": agg})
 
 
+@bp.route("/dashboard/guest-stats")
+@login_required
+def dashboard_guest_stats():
+    """Return live CPU/memory/disk usage for all running guests across all Proxmox hosts."""
+    from proxmox_api import ProxmoxClient
+
+    if not current_user.can_view_hosts and not current_user.can_manage_hosts:
+        return jsonify({"error": "Permission denied"}), 403
+
+    hosts = ProxmoxHost.query.all()
+    if not hosts:
+        return jsonify({"guests": []})
+
+    # Build lookup: (host_id, vmid) -> db guest (for links)
+    db_lookup = {}
+    for g in Guest.query.filter_by(enabled=True).all():
+        if g.proxmox_host_id and g.vmid:
+            db_lookup[(g.proxmox_host_id, g.vmid)] = g
+
+    results = []
+    for host in hosts:
+        try:
+            client = ProxmoxClient(host)
+            raw_guests = client.get_all_guests()
+        except Exception as e:
+            logger.error(f"Dashboard guest stats error for {host.name}: {e}")
+            continue
+
+        for g in raw_guests:
+            if g.get("status") != "running":
+                continue
+
+            vmid = g.get("vmid")
+            mem_used = g.get("mem", 0)
+            mem_total = g.get("maxmem", 0) or 1
+            disk_used = g.get("disk", 0)
+            disk_total = g.get("maxdisk", 0) or 1
+            cpu_pct = round(g.get("cpu", 0) * 100, 1)
+            mem_pct = round(mem_used / mem_total * 100, 1)
+            disk_pct = round(disk_used / disk_total * 100, 1)
+
+            db_guest = db_lookup.get((host.id, vmid))
+            results.append({
+                "vmid": vmid,
+                "name": g.get("name", f"VMID {vmid}"),
+                "type": g.get("type", "vm"),
+                "node": g.get("node", ""),
+                "host_name": host.name,
+                "cpu_pct": cpu_pct,
+                "mem_used": mem_used,
+                "mem_total": mem_total,
+                "mem_pct": mem_pct,
+                "disk_used": disk_used,
+                "disk_total": disk_total,
+                "disk_pct": disk_pct,
+                "uptime": g.get("uptime", 0),
+                "guest_id": db_guest.id if db_guest else None,
+            })
+
+    results.sort(key=lambda x: x["cpu_pct"], reverse=True)
+    return jsonify({"guests": results})
+
+
 @bp.route("/guests/<int:guest_id>/unifi-stats")
 @login_required
 def guest_unifi_stats(guest_id):
