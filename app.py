@@ -194,6 +194,13 @@ def _migrate_schema():
             db.session.execute(text("ALTER TABLE credentials ADD COLUMN encrypted_sudo_password TEXT"))
             db.session.commit()
 
+    if "proxmox_hosts" in table_names:
+        host_columns = [c["name"] for c in inspector.get_columns("proxmox_hosts")]
+        if "host_type" not in host_columns:
+            logger.info("Adding host_type column to proxmox_hosts table...")
+            db.session.execute(text("ALTER TABLE proxmox_hosts ADD COLUMN host_type VARCHAR(16) DEFAULT 'pve'"))
+            db.session.commit()
+
 
 def _migrate_roles():
     """Migrate from old boolean permission columns to role-based model."""

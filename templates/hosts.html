@@ -23,13 +23,20 @@
     <div class="col-md-6 col-lg-4">
         <div class="card bg-dark">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><a href="/hosts/{{ host.id }}" class="text-light text-decoration-none">{{ host.name }}</a></h5>
+                <h5 class="mb-0">
+                    <a href="/hosts/{{ host.id }}" class="text-light text-decoration-none">{{ host.name }}</a>
+                    {% if host.is_pbs %}
+                    <span class="badge bg-warning text-dark ms-2" title="Proxmox Backup Server">PBS</span>
+                    {% else %}
+                    <span class="badge bg-primary ms-2" title="Proxmox VE">PVE</span>
+                    {% endif %}
+                </h5>
                 <div class="dropdown">
                     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
                         <i class="bi bi-three-dots-vertical"></i>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-dark">
-                        {% if current_user.is_super_admin %}
+                        {% if current_user.is_super_admin and not host.is_pbs %}
                         <li>
                             <form method="post" action="/hosts/{{ host.id }}/discover">
                                 <button type="submit" class="dropdown-item">
@@ -60,7 +67,11 @@
                 <p class="mb-1"><strong>Hostname:</strong> {{ host.hostname }}:{{ host.port }}</p>
                 <p class="mb-1"><strong>Auth:</strong> {{ host.auth_type }}</p>
                 <p class="mb-1"><strong>SSL Verify:</strong> {{ 'Yes' if host.verify_ssl else 'No' }}</p>
+                {% if host.is_pbs %}
+                <p class="mb-0 text-muted"><i class="bi bi-database"></i> Backup Server — no guest management</p>
+                {% else %}
                 <p class="mb-0"><strong>Guests:</strong> {{ host.guests|selectattr('enabled')|list|length }}</p>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -91,6 +102,13 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
+                        <label class="form-label">Host Type</label>
+                        <select class="form-select" name="host_type" id="hostType" onchange="onHostTypeChange()">
+                            <option value="pve">Proxmox VE (hypervisor)</option>
+                            <option value="pbs">Proxmox Backup Server</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Display Name</label>
                         <input type="text" class="form-control" name="name" required placeholder="e.g. pve-node-01">
                     </div>
@@ -100,7 +118,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Port</label>
-                        <input type="number" class="form-control" name="port" value="8006">
+                        <input type="number" class="form-control" name="port" id="hostPort" value="8006">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Authentication Type</label>
@@ -111,7 +129,8 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Username</label>
-                        <input type="text" class="form-control" name="username" value="root@pam" placeholder="e.g. root@pam">
+                        <input type="text" class="form-control" name="username" id="hostUsername" value="root@pam" placeholder="e.g. root@pam">
+                        <div class="form-text text-muted" id="hostUsernameHint">For PBS API tokens, use the format <code>root@pbs</code>.</div>
                     </div>
                     <div class="mb-3" id="tokenFields">
                         <label class="form-label">API Token ID</label>
@@ -145,5 +164,28 @@ function toggleHostAuth() {
     document.getElementById('tokenFields').classList.toggle('d-none', authType !== 'token');
     document.getElementById('passwordField').classList.toggle('d-none', authType !== 'password');
 }
+
+function onHostTypeChange() {
+    const isPBS = document.getElementById('hostType').value === 'pbs';
+    const portEl = document.getElementById('hostPort');
+    const userEl = document.getElementById('hostUsername');
+    const hintEl = document.getElementById('hostUsernameHint');
+
+    // Only update port/user if they still hold their default values
+    const isPVEPort = portEl.value === '8006';
+    const isPBSPort = portEl.value === '8007';
+    if (isPBS && isPVEPort) portEl.value = '8007';
+    else if (!isPBS && isPBSPort) portEl.value = '8006';
+
+    const isPVEUser = userEl.value === 'root@pam';
+    const isPBSUser = userEl.value === 'root@pbs';
+    if (isPBS && isPVEUser) userEl.value = 'root@pbs';
+    else if (!isPBS && isPBSUser) userEl.value = 'root@pam';
+
+    hintEl.classList.toggle('d-none', !isPBS);
+}
+
+// Hide hint initially (PVE selected by default)
+document.getElementById('hostUsernameHint').classList.add('d-none');
 </script>
 {% endblock %}

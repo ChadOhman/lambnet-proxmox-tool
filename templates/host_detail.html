@@ -18,17 +18,24 @@
             <span class="text-danger"><i class="bi bi-circle-fill"></i></span>
             {% endif %}
             {{ host.name }}
+            {% if host.is_pbs %}
+            <span class="badge bg-warning text-dark ms-2">PBS</span>
+            {% else %}
+            <span class="badge bg-primary ms-2">PVE</span>
+            {% endif %}
         </h2>
         <span class="text-muted">{{ host.hostname }}:{{ host.port }}</span>
         {% if node_name %}
         <span class="badge bg-secondary ms-2">Node: {{ node_name }}</span>
         {% endif %}
-        {% if node_status and node_status.pveversion %}
+        {% if node_status and node_status.pbsversion %}
+        <span class="badge bg-info ms-1">PBS {{ node_status.pbsversion }}</span>
+        {% elif node_status and node_status.pveversion %}
         <span class="badge bg-info ms-1">{{ node_status.pveversion }}</span>
         {% endif %}
     </div>
     <div>
-        {% if current_user.is_super_admin %}
+        {% if current_user.is_super_admin and not host.is_pbs %}
         <form method="post" action="/hosts/{{ host.id }}/discover" class="d-inline">
             <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i> Discover Guests</button>
         </form>
@@ -146,8 +153,8 @@
 </div>
 {% endif %}
 
-<!-- Performance Charts -->
-{% if node_status %}
+<!-- Performance Charts (PVE only — PBS does not expose RRD data via the same API) -->
+{% if node_status and not host.is_pbs %}
 <div class="card bg-dark mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-graph-up"></i> Performance</h5>
@@ -186,8 +193,91 @@
 </div>
 {% endif %}
 
+{% if host.is_pbs %}
+<!-- PBS: Datastores -->
+{% if datastores %}
+<div class="row g-3 mb-4">
+    {% for ds in datastores %}
+    {% set pct = ((ds.used / ds.total) * 100)|round(1) if ds.total > 0 else 0 %}
+    <div class="col-md-6 col-xl-4">
+        <div class="card bg-dark h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="bi bi-database"></i> {{ ds.name }}</h6>
+                <small class="text-muted">{{ ds.group_count }} group{{ 's' if ds.group_count != 1 }}</small>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <small class="text-muted">Disk Usage</small>
+                    <small class="text-{{ 'danger' if pct > 80 else ('warning' if pct > 60 else 'success') }}">{{ pct }}%</small>
+                </div>
+                <div class="progress bg-secondary mb-2" style="height: 6px;">
+                    <div class="progress-bar bg-{{ 'danger' if pct > 80 else ('warning' if pct > 60 else 'success') }}" style="width: {{ pct }}%;"></div>
+                </div>
+                <small class="text-muted d-block mb-3">
+                    {{ (ds.used / 1073741824)|round(1) }} GB used / {{ (ds.total / 1073741824)|round(1) }} GB total
+                    &middot; {{ (ds.avail / 1073741824)|round(1) }} GB free
+                </small>
+                <div class="d-flex gap-3 mb-3">
+                    {% if ds.vm_count > 0 %}
+                    <span class="badge bg-primary">{{ ds.vm_count }} VM{{ 's' if ds.vm_count != 1 }}</span>
+                    {% endif %}
+                    {% if ds.ct_count > 0 %}
+                    <span class="badge bg-success">{{ ds.ct_count }} CT{{ 's' if ds.ct_count != 1 }}</span>
+                    {% endif %}
+                    {% if ds.host_count > 0 %}
+                    <span class="badge bg-secondary">{{ ds.host_count }} Host{{ 's' if ds.host_count != 1 }}</span>
+                    {% endif %}
+                </div>
+                {% if ds.groups %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Type</th>
+                                <th>Snapshots</th>
+                                <th>Last Backup</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for g in ds.groups %}
+                            <tr>
+                                <td><code>{{ g['backup-id'] }}</code></td>
+                                <td>
+                                    {% set bt = g['backup-type'] %}
+                                    <span class="badge bg-{{ 'primary' if bt == 'vm' else ('success' if bt == 'ct' else 'secondary') }}">{{ bt|upper }}</span>
+                                </td>
+                                <td>{{ g.get('backup-count', '—') }}</td>
+                                <td>
+                                    {% if g.get('last-backup') %}
+                                    <small>{{ g['last-backup']|timestamp_to_datetime }}</small>
+                                    {% else %}
+                                    <small class="text-muted">—</small>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card bg-dark mb-4">
+    <div class="card-body text-center text-muted py-4">
+        <i class="bi bi-database" style="font-size: 2rem;"></i>
+        <p class="mt-2 mb-0">No datastores found or could not be loaded.</p>
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<!-- PVE: Storage Pools + Guests -->
 <div class="row g-4">
-    <!-- Storage Pools -->
     {% if node_storage %}
     <div class="col-lg-6">
         <div class="card bg-dark">
@@ -306,6 +396,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

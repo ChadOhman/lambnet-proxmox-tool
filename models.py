@@ -254,12 +254,17 @@ class ProxmoxHost(db.Model):
     api_token_id = db.Column(db.String(128))
     api_token_secret = db.Column(db.Text)  # encrypted
     verify_ssl = db.Column(db.Boolean, default=False)
+    host_type = db.Column(db.String(16), default="pve")  # "pve" or "pbs"
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     guests = db.relationship("Guest", backref="proxmox_host", lazy=True, cascade="all, delete-orphan")
 
+    @property
+    def is_pbs(self):
+        return self.host_type == "pbs"
+
     def __repr__(self):
-        return f"<ProxmoxHost {self.name} ({self.hostname})>"
+        return f"<ProxmoxHost {self.name} ({self.hostname}) [{self.host_type}]>"
 
 
 class Credential(db.Model):

@@ -41,10 +41,33 @@ def detail(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
 
     node_status = None
-    node_storage = []
     node_name = None
     error = None
 
+    if host.is_pbs:
+        from pbs_client import PBSClient
+        datastores = []
+        try:
+            client = PBSClient(host)
+            node_status = client.get_node_status()
+            node_name = client.get_node_name()
+            datastores = client.get_all_datastores_with_status()
+        except Exception as e:
+            error = str(e)
+
+        return render_template(
+            "host_detail.html",
+            host=host,
+            node_name=node_name,
+            node_status=node_status,
+            node_storage=[],
+            guests=[],
+            datastores=datastores,
+            error=error,
+        )
+
+    # PVE host
+    node_storage = []
     try:
         client = ProxmoxClient(host)
         node_name = client.get_local_node_name()
@@ -67,6 +90,7 @@ def detail(host_id):
         node_status=node_status,
         node_storage=node_storage,
         guests=guests,
+        datastores=[],
         error=error,
     )
 
@@ -75,9 +99,14 @@ def detail(host_id):
 def add():
     name = request.form.get("name", "").strip()
     hostname = request.form.get("hostname", "").strip()
-    port = int(request.form.get("port", 8006))
+    host_type = request.form.get("host_type", "pve")
+    if host_type not in ("pve", "pbs"):
+        host_type = "pve"
+    default_port = 8007 if host_type == "pbs" else 8006
+    port = int(request.form.get("port", default_port))
     auth_type = request.form.get("auth_type", "token")
-    username = request.form.get("username", "root@pam").strip()
+    default_user = "root@pbs" if host_type == "pbs" else "root@pam"
+    username = request.form.get("username", default_user).strip()
     verify_ssl = "verify_ssl" in request.form
 
     if not name or not hostname:
@@ -88,6 +117,7 @@ def add():
         name=name,
         hostname=hostname,
         port=port,
+        host_type=host_type,
         auth_type=auth_type,
         username=username,
         verify_ssl=verify_ssl,
@@ -109,7 +139,13 @@ def add():
 @bp.route("/<int:host_id>/test", methods=["POST"])
 def test_connection(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
-    client = ProxmoxClient(host)
+
+    if host.is_pbs:
+        from pbs_client import PBSClient
+        client = PBSClient(host)
+    else:
+        client = ProxmoxClient(host)
+
     ok, message = client.test_connection()
 
     if ok:
@@ -123,6 +159,11 @@ def test_connection(host_id):
 @bp.route("/<int:host_id>/discover", methods=["POST"])
 def discover(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
+
+    if host.is_pbs:
+        flash(f"'{host.name}' is a Proxmox Backup Server — guest discovery is not applicable.", "warning")
+        return redirect(url_for("hosts.index"))
+
     client = ProxmoxClient(host)
 
     try:
@@ -258,6 +299,8 @@ def discover_all():
         return redirect(url_for("hosts.index"))
 
     for host in hosts:
+        if host.is_pbs:
+            continue  # PBS hosts have no VMs/CTs to discover
         try:
             client = ProxmoxClient(host)
             node_name = client.get_local_node_name()
