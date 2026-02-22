@@ -66,7 +66,30 @@ def _get_latest_release():
 def index():
     settings = _get_settings_dict()
     latest_release = _get_latest_release()
-    return render_template("settings.html", settings=settings, update_available=False, update_version=None, latest_release=latest_release)
+
+    # Collect backup-capable storages from all non-PBS Proxmox hosts for the dropdown
+    backup_storages = []
+    seen = set()
+    try:
+        from models import ProxmoxHost
+        from proxmox_api import ProxmoxClient
+        for host in ProxmoxHost.query.filter_by(is_pbs=False).all():
+            try:
+                client = ProxmoxClient(host)
+                nodes = client.api.nodes.get()
+                if nodes:
+                    storages = client.list_node_storages(nodes[0]['node'], content_type="backup")
+                    for st in storages:
+                        sid = st.get('storage', '')
+                        if sid and sid not in seen:
+                            seen.add(sid)
+                            backup_storages.append(st)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return render_template("settings.html", settings=settings, update_available=False, update_version=None, latest_release=latest_release, backup_storages=backup_storages)
 
 
 @bp.route("/email", methods=["POST"])

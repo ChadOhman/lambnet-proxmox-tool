@@ -14,7 +14,12 @@
                 <form method="post" action="/settings/email">
                     <div class="mb-3">
                         <label class="form-label">Gmail Address</label>
+                        {% if safety_mode %}
+                        <input type="hidden" name="gmail_address" value="{{ settings.gmail_address or '' }}">
+                        <input type="email" class="form-control text-muted" value="hidden" disabled>
+                        {% else %}
                         <input type="email" class="form-control" name="gmail_address" value="{{ settings.gmail_address or '' }}" placeholder="yourname@gmail.com">
+                        {% endif %}
                         <div class="form-text">The Gmail account to send notifications from.</div>
                     </div>
                     <div class="mb-3">
@@ -26,7 +31,12 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Notification Recipients</label>
+                        {% if safety_mode %}
+                        <input type="hidden" name="email_recipients" value="{{ settings.email_recipients or '' }}">
+                        <input type="text" class="form-control text-muted" value="hidden" disabled>
+                        {% else %}
                         <input type="text" class="form-control" name="email_recipients" value="{{ settings.email_recipients or '' }}" placeholder="admin@example.com, ops@example.com">
+                        {% endif %}
                         <div class="form-text">Comma-separated list of email addresses.</div>
                     </div>
                     <div class="form-check mb-3">
@@ -61,12 +71,22 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Controller URL</label>
+                        {% if safety_mode %}
+                        <input type="hidden" name="unifi_base_url" value="{{ settings.unifi_base_url or '' }}">
+                        <input type="text" class="form-control text-muted" value="hidden" disabled>
+                        {% else %}
                         <input type="text" class="form-control" name="unifi_base_url" value="{{ settings.unifi_base_url or '' }}" placeholder="https://10.0.4.1">
+                        {% endif %}
                     </div>
                     <div class="row mb-3">
                         <div class="col-6">
                             <label class="form-label">Username</label>
+                            {% if safety_mode %}
+                            <input type="hidden" name="unifi_username" value="{{ settings.unifi_username or '' }}">
+                            <input type="text" class="form-control text-muted" value="hidden" disabled>
+                            {% else %}
                             <input type="text" class="form-control" name="unifi_username" value="{{ settings.unifi_username or '' }}" placeholder="admin">
+                            {% endif %}
                         </div>
                         <div class="col-6">
                             <label class="form-label">Password</label>
@@ -80,7 +100,12 @@
                         </div>
                         <div class="col-6">
                             <label class="form-label">Subnet Filter</label>
+                            {% if safety_mode %}
+                            <input type="hidden" name="unifi_filter_subnet" value="{{ settings.unifi_filter_subnet or '' }}">
+                            <input type="text" class="form-control font-monospace text-muted" value="hidden" disabled>
+                            {% else %}
                             <input type="text" class="form-control font-monospace" name="unifi_filter_subnet" value="{{ settings.unifi_filter_subnet or '' }}" placeholder="10.0.4.0/24 (blank=all)">
+                            {% endif %}
                         </div>
                     </div>
                     <div class="form-check mb-3">
@@ -151,7 +176,18 @@
                 <form method="post" action="/settings/backups">
                     <div class="mb-3">
                         <label class="form-label">Default Backup Storage</label>
+                        {% if backup_storages %}
+                        <select class="form-select font-monospace" name="backup_storage">
+                            <option value="">-- None (use per-guest storage) --</option>
+                            {% for st in backup_storages %}
+                            <option value="{{ st.storage }}" {{ 'selected' if settings.backup_storage == st.storage }}>
+                                {{ st.storage }} ({{ st.type }}){% if st.avail %} — {{ (st.avail / 1073741824) | round(1) }} GB free{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
                         <input type="text" class="form-control" name="backup_storage" value="{{ settings.backup_storage or '' }}" placeholder="e.g. local, nfs-backup, pbs">
+                        {% endif %}
                         <div class="form-text">
                             Proxmox storage ID for vzdump backups. Must support backup content type.
                         </div>
