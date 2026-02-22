@@ -504,53 +504,52 @@ def _stats_redis(guest, service):
     stats = {}
     port = service.port or 6379
 
-    # Auto-detect the Redis password from Mastodon's .env.production so that
-    # redis-cli works even when requirepass is set.  We export REDISCLI_AUTH
-    # so the password never appears in the process list via -a flag.
-    # The || true ensures a non-zero exit from redis-cli doesn't cause
-    # _execute_command (in auto mode) to discard stdout and fall through to
-    # the QEMU guest agent (which doesn't exist for LXC containers).
-    _auth_prefix = (
-        "_RP=$(grep -oP '(?<=^REDIS_PASSWORD=)\\S+' "
-        "/home/mastodon/live/.env.production "
-        "/var/www/mastodon/.env.production 2>/dev/null | head -1);"
-        " export REDISCLI_AUTH=$_RP;"
+    # Single SSH call: detect password, then run redis-cli info all.
+    #
+    # Password detection order:
+    #   1. requirepass in Redis server config files
+    #   2. REDIS_PASSWORD in Mastodon .env.production (multiple common paths)
+    #
+    # REDISCLI_AUTH env var is used so the password never appears in the
+    # process list via -a.  || true forces exit 0 so _execute_command in
+    # auto connection mode (LXC containers) returns stdout rather than
+    # discarding it and falling through to the QEMU guest agent.
+    redis_script = (
+        "_RP=\"\";"
+        " for _F in /etc/redis/redis.conf /etc/redis/redis-server.conf /etc/redis.conf; do"
+        "   _RP=$(grep -i \"^requirepass\" \"$_F\" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '\"');"
+        "   [ -n \"$_RP\" ] && break;"
+        " done;"
+        " [ -z \"$_RP\" ] && _RP=$(grep \"^REDIS_PASSWORD=\""
+        " /home/mastodon/live/.env.production"
+        " /var/www/mastodon/.env.production"
+        " /opt/mastodon/.env.production"
+        " 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
+        f" REDISCLI_AUTH=\"$_RP\" redis-cli -p {port} info all 2>/dev/null || true"
     )
 
-    def _redis_cmd(section):
-        return f"{_auth_prefix} redis-cli -p {port} info {section} 2>/dev/null || true"
-
-    # Memory section
-    out, _ = _execute_command(guest, _redis_cmd("memory"), timeout=10)
+    out, _ = _execute_command(guest, redis_script, timeout=30, sudo=True)
     info = _parse_redis_info(out)
+
     if info:
+        # Memory
         stats["used_memory"] = info.get("used_memory_human", "")
         stats["used_memory_peak"] = info.get("used_memory_peak_human", "")
         stats["used_memory_bytes"] = info.get("used_memory", "0")
         stats["maxmemory"] = info.get("maxmemory_human", "0B")
-
-    # Clients section
-    out, _ = _execute_command(guest, _redis_cmd("clients"), timeout=10)
-    info = _parse_redis_info(out)
-    if info:
+        # Clients
         stats["connected_clients"] = info.get("connected_clients", "0")
-
-    # Stats section
-    out, _ = _execute_command(guest, _redis_cmd("stats"), timeout=10)
-    info = _parse_redis_info(out)
-    if info:
+        # Stats
         stats["ops_per_sec"] = info.get("instantaneous_ops_per_sec", "0")
-        hits = int(info.get("keyspace_hits", 0))
-        misses = int(info.get("keyspace_misses", 0))
+        hits = int(info.get("keyspace_hits", 0) or 0)
+        misses = int(info.get("keyspace_misses", 0) or 0)
         total = hits + misses
         stats["keyspace_hits"] = hits
         stats["keyspace_misses"] = misses
         stats["hit_ratio"] = f"{(hits / total * 100):.1f}%" if total > 0 else "N/A"
         stats["total_commands"] = info.get("total_commands_processed", "0")
 
-    # Keyspace section
-    out, _ = _execute_command(guest, _redis_cmd("keyspace"), timeout=10)
-    info = _parse_redis_info(out)
+    # Keyspace (always set, may be empty)
     keyspace = {}
     for key, val in info.items():
         if key.startswith("db"):
