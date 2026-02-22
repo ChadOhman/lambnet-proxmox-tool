@@ -683,47 +683,54 @@ def _stats_sidekiq(guest, service):
 
     # All Redis queries in ONE SSH call to avoid per-call connection overhead and
     # auth failures causing slow agent fallthrough for each individual command.
-    # Password detection mirrors _stats_redis (config file then Mastodon env).
+    # Sidekiq commonly connects to a REMOTE Redis server (not localhost), so we
+    # parse REDIS_URL from .env.production to get the correct host, port, and DB.
     env_paths = (
-        " /home/mastodon/live/.env.production"
+        "/home/mastodon/live/.env.production"
         " /var/www/mastodon/.env.production"
         " /opt/mastodon/.env.production"
     )
     redis_script = (
-        # Password detection
-        "_RP=\"\";"
+        # Read REDIS_URL from Mastodon env (present on the Sidekiq server)
+        f"_RURL=$(grep \"^REDIS_URL=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
+        # Password: local redis.conf first, then REDIS_PASSWORD env, then embedded in REDIS_URL
+        " _RP=\"\";"
         " for _F in /etc/redis/redis.conf /etc/redis/redis-server.conf /etc/redis.conf; do"
         "   _RP=$(grep -i \"^requirepass\" \"$_F\" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '\"');"
         "   [ -n \"$_RP\" ] && break;"
         " done;"
-        f" [ -z \"$_RP\" ] && _RP=$(grep \"^REDIS_PASSWORD=\" {env_paths}"
-        " 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
+        f" [ -z \"$_RP\" ] && _RP=$(grep \"^REDIS_PASSWORD=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
+        " [ -z \"$_RP\" ] && _RP=$(echo \"$_RURL\" | sed -n 's|.*://[^:]*:\\([^@]*\\)@.*|\\1|p');"
         " export REDISCLI_AUTH=\"$_RP\";"
-        # Port detection (from REDIS_URL or default 6379)
-        f" _RURL=$(grep \"^REDIS_URL=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
-        " _PORT=$(echo \"$_RURL\" | grep -oP '(?<=:)\\d+(?=/)' | head -1);"
+        # Host from REDIS_URL (strip scheme, credentials, port, path)
+        " _HOST=$(echo \"$_RURL\" | sed 's|redis://||; s|.*@||; s|:.*||; s|/.*||');"
+        " [ -z \"$_HOST\" ] && _HOST=127.0.0.1;"
+        # Port from REDIS_URL
+        " _PORT=$(echo \"$_RURL\" | sed -n 's|.*:\\([0-9][0-9]*\\)/.*|\\1|p');"
         " [ -z \"$_PORT\" ] && _PORT=6379;"
-        # DB detection (REDIS_DB env var, or path component of REDIS_URL, default 0)
+        # DB from REDIS_DB env or REDIS_URL path component
         f" _DB=$(grep \"^REDIS_DB=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
-        " [ -z \"$_DB\" ] && _DB=$(echo \"$_RURL\" | grep -oP '(?<=/)[0-9]+$' | head -1);"
+        " [ -z \"$_DB\" ] && _DB=$(echo \"$_RURL\" | sed -n 's|.*/\\([0-9][0-9]*\\)$|\\1|p');"
         " [ -z \"$_DB\" ] && _DB=0;"
+        # Convenience alias
+        " _RC=\"redis-cli -h $_HOST -p $_PORT -n $_DB\";"
         # Queue names + lengths
-        " echo '---queues---';"
-        " QUEUES=$(redis-cli -p \"$_PORT\" -n \"$_DB\" smembers queues 2>/dev/null || true);"
+        " echo ---queues---;"
+        " QUEUES=$($_RC smembers queues 2>/dev/null || true);"
         " for Q in $QUEUES; do"
-        "   LEN=$(redis-cli -p \"$_PORT\" -n \"$_DB\" llen \"queue:$Q\" 2>/dev/null || true);"
+        "   LEN=$($_RC llen \"queue:$Q\" 2>/dev/null || true);"
         "   echo \"$Q=$LEN\";"
         " done;"
         # Scalar stats
-        " echo '---stats---';"
-        " echo \"processed=$(redis-cli -p \"$_PORT\" -n \"$_DB\" get stat:processed 2>/dev/null || true)\";"
-        " echo \"failed=$(redis-cli -p \"$_PORT\" -n \"$_DB\" get stat:failed 2>/dev/null || true)\";"
-        " echo \"retry=$(redis-cli -p \"$_PORT\" -n \"$_DB\" zcard retry 2>/dev/null || true)\";"
-        " echo \"dead=$(redis-cli -p \"$_PORT\" -n \"$_DB\" zcard dead 2>/dev/null || true)\";"
-        " echo \"scheduled=$(redis-cli -p \"$_PORT\" -n \"$_DB\" zcard schedule 2>/dev/null || true)\""
+        " echo ---stats---;"
+        " echo \"processed=$($_RC get stat:processed 2>/dev/null || true)\";"
+        " echo \"failed=$($_RC get stat:failed 2>/dev/null || true)\";"
+        " echo \"retry=$($_RC zcard retry 2>/dev/null || true)\";"
+        " echo \"dead=$($_RC zcard dead 2>/dev/null || true)\";"
+        " echo \"scheduled=$($_RC zcard schedule 2>/dev/null || true)\""
     )
 
-    out, _ = _execute_command(guest, redis_script, timeout=30, sudo=True)
+    out, _ = _execute_command(guest, redis_script, timeout=30)
 
     queues = []
     kv = {}
