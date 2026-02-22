@@ -316,6 +316,26 @@ def get_service_logs(guest, service, lines=50):
     stdout, error = _execute_command(guest, cmd, timeout=30)
     if error:
         return f"Error fetching logs: {error}"
+
+    # postgresql.service is a meta/target unit on Debian/Ubuntu; its journal has
+    # very few entries.  Fall back to the real cluster unit for useful log output.
+    if service.service_name == "postgresql" and (
+        not stdout or "No entries" in stdout or not stdout.strip()
+    ):
+        cluster_out, _ = _execute_command(
+            guest,
+            "systemctl list-units 'postgresql@*.service' --no-legend --plain 2>/dev/null",
+            timeout=10,
+        )
+        if cluster_out:
+            first_line = cluster_out.strip().split("\n")[0].strip()
+            cluster_unit = first_line.split()[0] if first_line else ""
+            if cluster_unit and _VALID_UNIT_RE.match(cluster_unit):
+                cmd2 = f"journalctl -u {cluster_unit} -n {lines} --no-pager 2>/dev/null"
+                stdout2, _ = _execute_command(guest, cmd2, timeout=30)
+                if stdout2 and stdout2.strip():
+                    return stdout2
+
     return stdout or "No log output"
 
 
@@ -386,7 +406,8 @@ def get_service_stats(guest, service):
         except ValueError:
             pass
 
-    stats["pid"] = props.get("MainPID", "")
+    main_pid = props.get("MainPID", "")
+    stats["pid"] = main_pid if main_pid and main_pid != "0" else ""
     stats["active_state"] = props.get("ActiveState", "")
     active_enter = props.get("ActiveEnterTimestamp", "")
     if active_enter and active_enter not in ("n/a", ""):
@@ -397,7 +418,7 @@ def get_service_stats(guest, service):
         if stype == "elasticsearch":
             stats.update(_stats_elasticsearch(guest, service))
         elif stype == "redis":
-            stats.update(_stats_redis(guest))
+            stats.update(_stats_redis(guest, service))
         elif stype == "postgresql":
             stats.update(_stats_postgresql(guest))
         elif stype == "puma":
@@ -478,12 +499,29 @@ def _stats_elasticsearch(guest, service):
     return stats
 
 
-def _stats_redis(guest):
+def _stats_redis(guest, service):
     """Collect Redis stats."""
     stats = {}
+    port = service.port or 6379
+
+    # Auto-detect the Redis password from Mastodon's .env.production so that
+    # redis-cli works even when requirepass is set.  We export REDISCLI_AUTH
+    # so the password never appears in the process list via -a flag.
+    # The || true ensures a non-zero exit from redis-cli doesn't cause
+    # _execute_command (in auto mode) to discard stdout and fall through to
+    # the QEMU guest agent (which doesn't exist for LXC containers).
+    _auth_prefix = (
+        "_RP=$(grep -oP '(?<=^REDIS_PASSWORD=)\\S+' "
+        "/home/mastodon/live/.env.production "
+        "/var/www/mastodon/.env.production 2>/dev/null | head -1);"
+        " export REDISCLI_AUTH=$_RP;"
+    )
+
+    def _redis_cmd(section):
+        return f"{_auth_prefix} redis-cli -p {port} info {section} 2>/dev/null || true"
 
     # Memory section
-    out, _ = _execute_command(guest, "redis-cli info memory 2>/dev/null", timeout=10)
+    out, _ = _execute_command(guest, _redis_cmd("memory"), timeout=10)
     info = _parse_redis_info(out)
     if info:
         stats["used_memory"] = info.get("used_memory_human", "")
@@ -492,13 +530,13 @@ def _stats_redis(guest):
         stats["maxmemory"] = info.get("maxmemory_human", "0B")
 
     # Clients section
-    out, _ = _execute_command(guest, "redis-cli info clients 2>/dev/null", timeout=10)
+    out, _ = _execute_command(guest, _redis_cmd("clients"), timeout=10)
     info = _parse_redis_info(out)
     if info:
         stats["connected_clients"] = info.get("connected_clients", "0")
 
     # Stats section
-    out, _ = _execute_command(guest, "redis-cli info stats 2>/dev/null", timeout=10)
+    out, _ = _execute_command(guest, _redis_cmd("stats"), timeout=10)
     info = _parse_redis_info(out)
     if info:
         stats["ops_per_sec"] = info.get("instantaneous_ops_per_sec", "0")
@@ -511,7 +549,7 @@ def _stats_redis(guest):
         stats["total_commands"] = info.get("total_commands_processed", "0")
 
     # Keyspace section
-    out, _ = _execute_command(guest, "redis-cli info keyspace 2>/dev/null", timeout=10)
+    out, _ = _execute_command(guest, _redis_cmd("keyspace"), timeout=10)
     info = _parse_redis_info(out)
     keyspace = {}
     for key, val in info.items():
@@ -579,6 +617,50 @@ def _stats_postgresql(guest):
         if len(parts) == 2:
             stats["total_commits"] = parts[0].strip()
             stats["total_rollbacks"] = parts[1].strip()
+
+    # postgresql.service is a meta/target unit on Debian/Ubuntu with no MainPID.
+    # Discover the real cluster unit (e.g. postgresql@16-main.service) to get
+    # accurate memory, CPU, and PID stats.
+    cluster_out, _ = _execute_command(
+        guest,
+        "systemctl list-units 'postgresql@*.service' --no-legend --plain 2>/dev/null",
+        timeout=10,
+    )
+    if cluster_out:
+        first_line = cluster_out.strip().split("\n")[0].strip()
+        cluster_unit = first_line.split()[0] if first_line else ""
+        if cluster_unit and _VALID_UNIT_RE.match(cluster_unit):
+            cprops_out, _ = _execute_command(
+                guest,
+                f"systemctl show {cluster_unit} --property=MemoryCurrent,CPUUsageNSec,MainPID 2>/dev/null",
+                timeout=10,
+            )
+            cprops = _parse_systemd_props(cprops_out)
+
+            mem = cprops.get("MemoryCurrent", "")
+            if mem and mem not in ("[not set]", "infinity", ""):
+                try:
+                    stats["memory_bytes"] = int(mem)
+                    stats["memory_human"] = _human_bytes(int(mem))
+                except ValueError:
+                    pass
+
+            cpu_ns = cprops.get("CPUUsageNSec", "")
+            if cpu_ns and cpu_ns not in ("[not set]", ""):
+                try:
+                    secs = int(cpu_ns) / 1_000_000_000
+                    if secs >= 3600:
+                        stats["cpu_time"] = f"{secs / 3600:.1f}h"
+                    elif secs >= 60:
+                        stats["cpu_time"] = f"{secs / 60:.1f}m"
+                    else:
+                        stats["cpu_time"] = f"{secs:.1f}s"
+                except ValueError:
+                    pass
+
+            main_pid = cprops.get("MainPID", "")
+            if main_pid and main_pid != "0":
+                stats["pid"] = main_pid
 
     return stats
 
