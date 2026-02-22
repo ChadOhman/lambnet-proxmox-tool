@@ -59,9 +59,34 @@
                     </div>
                     <div class="mb-3 {{ 'd-none' if settings.protection_type != 'backup' }}" id="backupStorageRow">
                         <label class="form-label">Backup Storage</label>
+                        {% if backup_storages %}
+                        <select class="form-select font-monospace" name="mastodon_backup_storage">
+                            <option value="">-- Select Storage --</option>
+                            {% for st in backup_storages %}
+                            <option value="{{ st.storage }}" {{ 'selected' if settings.backup_storage == st.storage }}>
+                                {{ st.storage }} ({{ st.type }}){% if st.avail %} — {{ (st.avail / 1073741824) | round(1) }} GB free{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
                         <input type="text" class="form-control font-monospace" name="mastodon_backup_storage"
                                value="{{ settings.backup_storage }}" placeholder="e.g. pbs-ovh">
-                        <div class="form-text">The storage ID configured on the Proxmox host to send backups to (e.g. a PBS storage name).</div>
+                        {% endif %}
+                        <div class="form-text">Storage to send vzdump backups to. Configure the Mastodon app guest first to auto-populate available storages.</div>
+                    </div>
+                    <div class="mb-3 {{ 'd-none' if settings.protection_type != 'backup' }}" id="backupModeRow">
+                        <label class="form-label">Backup Mode</label>
+                        <select class="form-select" name="mastodon_backup_mode">
+                            <option value="snapshot" {{ 'selected' if settings.backup_mode != 'suspend' and settings.backup_mode != 'stop' }}>
+                                Snapshot — live backup, no downtime (requires QEMU guest agent for VMs)
+                            </option>
+                            <option value="suspend" {{ 'selected' if settings.backup_mode == 'suspend' }}>
+                                Suspend — brief pause during backup
+                            </option>
+                            <option value="stop" {{ 'selected' if settings.backup_mode == 'stop' }}>
+                                Stop — shut down for backup (safest, causes downtime)
+                            </option>
+                        </select>
                     </div>
 
                     <hr class="border-secondary">
@@ -294,6 +319,7 @@
 function toggleBackupStorage() {
     const isBkp = document.getElementById('protBackup').checked;
     document.getElementById('backupStorageRow').classList.toggle('d-none', !isBkp);
+    document.getElementById('backupModeRow').classList.toggle('d-none', !isBkp);
 }
 </script>
 {% endblock %}

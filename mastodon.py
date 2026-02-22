@@ -84,9 +84,10 @@ def snapshot_guest(guest):
     return client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
 
 
-def backup_guest(guest, storage):
+def backup_guest(guest, storage, mode="snapshot"):
     """Create a vzdump backup of a guest before upgrade. Polls until the task completes.
 
+    mode: "snapshot" (live, no downtime), "suspend" (brief pause), "stop" (shut down).
     Returns (success, message).
     """
     if not guest.proxmox_host:
@@ -100,7 +101,7 @@ def backup_guest(guest, storage):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     notes = f"pre-mastodon-{timestamp}"
 
-    ok, upid = client.create_backup(node, guest.vmid, storage, notes=notes)
+    ok, upid = client.create_backup(node, guest.vmid, storage, mode=mode, notes=notes)
     if not ok:
         return False, f"Failed to start backup: {upid}"
 
@@ -138,6 +139,7 @@ def _get_mastodon_config():
         "latest_version": Setting.get("mastodon_latest_version", ""),
         "protection_type": Setting.get("mastodon_protection_type", "snapshot"),
         "backup_storage": Setting.get("mastodon_backup_storage", ""),
+        "backup_mode": Setting.get("mastodon_backup_mode", "snapshot"),
     }
 
 
@@ -205,15 +207,16 @@ def run_mastodon_upgrade():
     backup_storage = config.get("backup_storage", "")
 
     if protection_type == "backup" and backup_storage:
-        log(f"=== Step 1: Creating vzdump backups to storage '{backup_storage}' ===")
+        backup_mode = config.get("backup_mode", "snapshot")
+        log(f"=== Step 1: Creating vzdump backups to storage '{backup_storage}' (mode: {backup_mode}) ===")
         log("(This may take several minutes — please be patient)")
 
-        ok, msg = backup_guest(mastodon_guest, backup_storage)
+        ok, msg = backup_guest(mastodon_guest, backup_storage, mode=backup_mode)
         log(f"Backup {mastodon_guest.name}: {msg}")
         if not ok:
             return False, "\n".join(log_lines)
 
-        ok, msg = backup_guest(db_guest, backup_storage)
+        ok, msg = backup_guest(db_guest, backup_storage, mode=backup_mode)
         log(f"Backup {db_guest.name}: {msg}")
         if not ok:
             return False, "\n".join(log_lines)

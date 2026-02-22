@@ -38,6 +38,7 @@ def _get_mastodon_settings():
         "last_upgrade_log": Setting.get("mastodon_last_upgrade_log", ""),
         "protection_type": Setting.get("mastodon_protection_type", "snapshot"),
         "backup_storage": Setting.get("mastodon_backup_storage", ""),
+        "backup_mode": Setting.get("mastodon_backup_mode", "snapshot"),
     }
 
 
@@ -45,7 +46,23 @@ def _get_mastodon_settings():
 def index():
     settings = _get_mastodon_settings()
     guests = Guest.query.filter_by(enabled=True).order_by(Guest.name).all()
-    return render_template("mastodon.html", settings=settings, guests=guests)
+
+    # Fetch backup-capable storages from the Mastodon guest's Proxmox host
+    backup_storages = []
+    guest_id = settings.get("guest_id", "")
+    if guest_id:
+        mastodon_guest = Guest.query.get(int(guest_id))
+        if mastodon_guest and mastodon_guest.proxmox_host and not mastodon_guest.proxmox_host.is_pbs:
+            try:
+                from proxmox_api import ProxmoxClient
+                client = ProxmoxClient(mastodon_guest.proxmox_host)
+                node = client.find_guest_node(mastodon_guest.vmid)
+                if node:
+                    backup_storages = client.list_node_storages(node, content_type="backup")
+            except Exception as e:
+                logger.warning(f"Could not fetch backup storages: {e}")
+
+    return render_template("mastodon.html", settings=settings, guests=guests, backup_storages=backup_storages)
 
 
 @bp.route("/save", methods=["POST"])
@@ -64,6 +81,8 @@ def save():
     protection_type = request.form.get("mastodon_protection_type", "snapshot")
     Setting.set("mastodon_protection_type", protection_type if protection_type in ("snapshot", "backup") else "snapshot")
     Setting.set("mastodon_backup_storage", request.form.get("mastodon_backup_storage", "").strip())
+    backup_mode = request.form.get("mastodon_backup_mode", "snapshot")
+    Setting.set("mastodon_backup_mode", backup_mode if backup_mode in ("snapshot", "suspend", "stop") else "snapshot")
 
     flash("Mastodon settings saved.", "success")
     return redirect(url_for("mastodon.index"))
