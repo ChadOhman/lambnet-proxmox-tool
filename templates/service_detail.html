@@ -324,6 +324,14 @@
             </div>
         </div>
 
+        {% if stats._debug %}
+        <div class="text-muted small mb-3">
+            <i class="bi bi-info-circle"></i> Redis:
+            <code>{{ stats._debug.host|default('?') }}:{{ stats._debug.port|default('?') }}/{{ stats._debug.db|default('?') }}</code>
+            {% if stats._debug.auth_set == 'yes' %}<span class="badge bg-secondary ms-1">auth</span>{% endif %}
+        </div>
+        {% endif %}
+
         {% if stats.queues %}
         <h6 class="text-muted mt-2 mb-2">Queues</h6>
         <div class="table-responsive">

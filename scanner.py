@@ -702,11 +702,13 @@ def _stats_sidekiq(guest, service):
         f" [ -z \"$_RP\" ] && _RP=$(grep \"^REDIS_PASSWORD=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
         " [ -z \"$_RP\" ] && _RP=$(echo \"$_RURL\" | sed -n 's|.*://[^:]*:\\([^@]*\\)@.*|\\1|p');"
         " export REDISCLI_AUTH=\"$_RP\";"
-        # Host from REDIS_URL (strip scheme, credentials, port, path)
+        # Host: REDIS_URL first, then REDIS_HOST individual env var, then default
         " _HOST=$(echo \"$_RURL\" | sed 's|redis://||; s|.*@||; s|:.*||; s|/.*||');"
+        f" [ -z \"$_HOST\" ] && _HOST=$(grep \"^REDIS_HOST=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
         " [ -z \"$_HOST\" ] && _HOST=127.0.0.1;"
-        # Port from REDIS_URL
+        # Port: REDIS_URL first, then REDIS_PORT individual env var, then default
         " _PORT=$(echo \"$_RURL\" | sed -n 's|.*:\\([0-9][0-9]*\\)/.*|\\1|p');"
+        f" [ -z \"$_PORT\" ] && _PORT=$(grep \"^REDIS_PORT=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
         " [ -z \"$_PORT\" ] && _PORT=6379;"
         # DB from REDIS_DB env or REDIS_URL path component
         f" _DB=$(grep \"^REDIS_DB=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
@@ -727,13 +729,20 @@ def _stats_sidekiq(guest, service):
         " echo \"failed=$($_RC get stat:failed 2>/dev/null || true)\";"
         " echo \"retry=$($_RC zcard retry 2>/dev/null || true)\";"
         " echo \"dead=$($_RC zcard dead 2>/dev/null || true)\";"
-        " echo \"scheduled=$($_RC zcard schedule 2>/dev/null || true)\""
+        " echo \"scheduled=$($_RC zcard schedule 2>/dev/null || true)\";"
+        # Debug section: show resolved connection parameters
+        " echo ---debug---;"
+        " echo \"host=$_HOST\";"
+        " echo \"port=$_PORT\";"
+        " echo \"db=$_DB\";"
+        " echo \"auth_set=$([ -n \"$_RP\" ] && echo yes || echo no)\""
     )
 
     out, _ = _execute_command(guest, redis_script, timeout=30)
 
     queues = []
     kv = {}
+    debug_kv = {}
     section = None
     for line in (out or "").split("\n"):
         line = line.strip()
@@ -741,6 +750,8 @@ def _stats_sidekiq(guest, service):
             section = "queues"
         elif line == "---stats---":
             section = "stats"
+        elif line == "---debug---":
+            section = "debug"
         elif section == "queues" and "=" in line:
             name, _, size_str = line.partition("=")
             size_str = size_str.strip()
@@ -751,8 +762,12 @@ def _stats_sidekiq(guest, service):
         elif section == "stats" and "=" in line:
             key, _, val = line.partition("=")
             kv[key.strip()] = val.strip()
+        elif section == "debug" and "=" in line:
+            key, _, val = line.partition("=")
+            debug_kv[key.strip()] = val.strip()
 
     stats["queues"] = queues
+    stats["_debug"] = debug_kv  # connection params for troubleshooting (host/port/db/auth_set)
     stats["processed"] = kv.get("processed", "0") if kv.get("processed", "") not in ("(nil)", "", None) else "0"
     stats["failed"] = kv.get("failed", "0") if kv.get("failed", "") not in ("(nil)", "", None) else "0"
     stats["retry_size"] = kv.get("retry", "0") if (kv.get("retry", "") or "").isdigit() else "0"
