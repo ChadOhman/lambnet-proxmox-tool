@@ -17,7 +17,11 @@
       "Bash(gh pr view:*)",
       "Bash(gh pr diff:*)",
       "Bash(gh api:*)",
-      "Bash(gh pr merge:*)"
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr create:*)",
+      "Bash(pip install:*)",
+      "Bash(ruff check:*)",
+      "Bash(gh repo clone:*)"
     ],
     "additionalDirectories": [
       "\\tmp"
