@@ -1,0 +1,127 @@
+{% macro live_jobs_panel(poll_url) %}
+<div class="card bg-dark mb-4" id="liveJobsCard">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+            <i class="bi bi-activity"></i> Live Jobs
+            <span id="liveJobsBadge" class="badge bg-primary ms-2" style="display:none;"></span>
+        </h5>
+        <small class="text-muted" id="liveJobsUpdated"></small>
+    </div>
+    <div class="card-body p-0">
+        <div class="text-center text-muted py-3" id="liveJobsEmpty">
+            <small>No active jobs.</small>
+        </div>
+        <div id="liveJobsTable" style="display:none;">
+            <table class="table table-dark table-sm table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Guest</th>
+                        <th>Job</th>
+                        <th>Started</th>
+                        <th>Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="liveJobsRows"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const POLL_URL = {{ poll_url | tojson }};
+    const rowsEl  = document.getElementById('liveJobsRows');
+    const tableEl = document.getElementById('liveJobsTable');
+    const emptyEl = document.getElementById('liveJobsEmpty');
+    const badgeEl = document.getElementById('liveJobsBadge');
+    const updEl   = document.getElementById('liveJobsUpdated');
+
+    // Track per-job cancel state so buttons survive re-renders
+    const cancelling = new Set();
+
+    function fmtTime(iso) {
+        return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    async function doCancel(cancelUrl, btn) {
+        if (cancelling.has(cancelUrl)) return;
+        cancelling.add(cancelUrl);
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+        try {
+            await fetch(cancelUrl, { method: 'POST' });
+        } catch (_) {}
+        // Leave button disabled — row will vanish on next poll when job stops
+    }
+
+    function buildRow(job) {
+        const tr = document.createElement('tr');
+
+        const statusHtml = job.running
+            ? '<span class="badge bg-info">Running</span>'
+            : job.cancelled
+                ? '<span class="badge bg-warning text-dark">Cancelled</span>'
+                : job.success
+                    ? '<span class="badge bg-success">Done</span>'
+                    : '<span class="badge bg-danger">Failed</span>';
+
+        const isCancelling = cancelling.has(job.cancel_url);
+        const cancelHtml = job.running
+            ? `<button class="btn btn-danger btn-sm ms-1 cancel-btn"
+                       data-cancel-url="${job.cancel_url}"
+                       ${isCancelling ? 'disabled' : ''}>
+                   ${isCancelling
+                       ? '<i class="bi bi-hourglass-split"></i>'
+                       : '<i class="bi bi-x-circle"></i> Cancel'}
+               </button>`
+            : '';
+
+        tr.innerHTML = `
+            <td><a href="/guests/${job.guest_id}" class="text-light text-decoration-none">${job.guest_name}</a></td>
+            <td><small>${job.label}</small></td>
+            <td><small class="text-muted">${fmtTime(job.started_at)}</small></td>
+            <td>${statusHtml}</td>
+            <td class="text-end text-nowrap">
+                <a href="${job.progress_url}" class="btn btn-outline-secondary btn-sm" target="_blank">
+                    <i class="bi bi-terminal"></i> Logs
+                </a>
+                ${cancelHtml}
+            </td>`;
+
+        const cancelBtn = tr.querySelector('.cancel-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => doCancel(job.cancel_url, cancelBtn));
+        }
+        return tr;
+    }
+
+    async function poll() {
+        try {
+            const resp = await fetch(POLL_URL, { cache: 'no-store' });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const data = await resp.json();
+            const jobs = data.jobs || [];
+
+            rowsEl.innerHTML = '';
+            if (jobs.length) {
+                jobs.forEach(j => rowsEl.appendChild(buildRow(j)));
+                tableEl.style.display = '';
+                emptyEl.style.display = 'none';
+                badgeEl.textContent = jobs.length;
+                badgeEl.style.display = '';
+            } else {
+                tableEl.style.display = 'none';
+                emptyEl.style.display = '';
+                badgeEl.style.display = 'none';
+                cancelling.clear();
+            }
+            updEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
+        } catch (_) {}
+        setTimeout(poll, 2000);
+    }
+
+    poll();
+})();
+</script>
+{% endmacro %}

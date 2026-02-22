@@ -508,6 +508,62 @@ def task_cancel(guest_id, job_type):
 
 
 # ---------------------------------------------------------------------------
+# Live jobs feed
+# ---------------------------------------------------------------------------
+
+@bp.route("/live-jobs")
+@login_required
+def live_jobs():
+    """Return all currently-running jobs the current user can see."""
+    host_id = request.args.get("host_id", type=int)
+
+    accessible_ids = {g.id for g in current_user.accessible_guests()}
+
+    # Build guest_id -> proxmox_host_id mapping (needed to filter UpdateJobs by host)
+    host_map = {}
+    if accessible_ids:
+        rows = db.session.query(Guest.id, Guest.proxmox_host_id).filter(
+            Guest.id.in_(list(accessible_ids))
+        ).all()
+        host_map = {r.id: r.proxmox_host_id for r in rows}
+
+    jobs = []
+
+    with _jobs_lock:
+        update_snapshot = list(_update_jobs.values())
+    for job in update_snapshot:
+        if not job.running:
+            continue
+        if job.guest_id not in accessible_ids:
+            continue
+        if host_id and host_map.get(job.guest_id) != host_id:
+            continue
+        d = job.to_dict()
+        d["type"] = "update"
+        d["label"] = "Applying Updates"
+        d["progress_url"] = url_for("api.update_progress", guest_id=job.guest_id)
+        d["cancel_url"] = url_for("api.update_cancel", guest_id=job.guest_id)
+        jobs.append(d)
+
+    with _proxmox_jobs_lock:
+        proxmox_snapshot = list(_proxmox_jobs.values())
+    for job in proxmox_snapshot:
+        if not job.running:
+            continue
+        if job.guest_id not in accessible_ids:
+            continue
+        if host_id and (not job.host_model or job.host_model.id != host_id):
+            continue
+        d = job.to_dict()
+        d["type"] = "proxmox"
+        d["progress_url"] = url_for("api.task_progress", guest_id=job.guest_id, job_type=job.job_type)
+        d["cancel_url"] = url_for("api.task_cancel", guest_id=job.guest_id, job_type=job.job_type)
+        jobs.append(d)
+
+    return jsonify({"jobs": jobs})
+
+
+# ---------------------------------------------------------------------------
 # RRD performance data
 # ---------------------------------------------------------------------------
 

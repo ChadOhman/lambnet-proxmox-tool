@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_live_jobs_panel.html" import live_jobs_panel %}
 {% block title %}{{ host.name }} - Proxmox Administration Tool{% endblock %}
 
 {% block content %}
@@ -404,6 +405,8 @@
     </div>
 </div>
 {% endif %}
+
+{{ live_jobs_panel('/api/live-jobs?host_id=' ~ host.id) }}
 
 {% if current_user.can_view_audit_log %}
 <div class="card bg-dark mb-4">
