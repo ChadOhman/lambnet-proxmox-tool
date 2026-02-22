@@ -1,5 +1,4 @@
 """Tests for security helpers and the local-bypass migration notice."""
-import pytest
 from models import db, Setting
 
 

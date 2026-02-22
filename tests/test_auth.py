@@ -1,5 +1,4 @@
 """Tests for auth routes and CSRF origin middleware."""
-import pytest
 
 
 class TestLogin:

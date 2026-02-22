@@ -1,6 +1,6 @@
 import pytest
 from app import create_app
-from models import db as _db, User, Setting
+from models import db as _db, User
 
 _TEST_ADMIN_PASSWORD = "TestPass123!"
 
