@@ -64,7 +64,7 @@
                 </div>
             </div>
             <div class="card-body">
-                <p class="mb-1"><strong>Hostname:</strong> {{ host.hostname }}:{{ host.port }}</p>
+                <p class="mb-1"><strong>Hostname:</strong> {% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i> hidden</span>{% else %}{{ host.hostname }}:{{ host.port }}{% endif %}</p>
                 <p class="mb-1"><strong>Auth:</strong> {{ host.auth_type }}</p>
                 <p class="mb-1"><strong>SSL Verify:</strong> {{ 'Yes' if host.verify_ssl else 'No' }}</p>
                 {% if host.is_pbs %}

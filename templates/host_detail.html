@@ -24,7 +24,7 @@
             <span class="badge bg-primary ms-2">PVE</span>
             {% endif %}
         </h2>
-        <span class="text-muted">{{ host.hostname }}:{{ host.port }}</span>
+        <span class="text-muted">{% if safety_mode %}<i class="bi bi-eye-slash"></i> hidden{% else %}{{ host.hostname }}:{{ host.port }}{% endif %}</span>
         {% if node_name %}
         <span class="badge bg-secondary ms-2">Node: {{ node_name }}</span>
         {% endif %}
