@@ -1,7 +1,7 @@
 import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
-from models import db, Guest, GuestService, ProxmoxHost, Credential, Tag, Setting
+from models import db, Guest, GuestService, ProxmoxHost, Credential, Tag, Setting, UpdatePackage
 from proxmox_api import ProxmoxClient
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,18 @@ def _get_unifi_mac_map():
         return {}
 
 
+_VALID_FILTERS = {"updates", "security", "reboot", "never_scanned", "error", "up_to_date"}
+
+_FILTER_LABELS = {
+    "updates": "Pending Updates",
+    "security": "Security Updates",
+    "reboot": "Reboots Required",
+    "never_scanned": "Never Scanned",
+    "error": "Scan Errors",
+    "up_to_date": "Up to Date",
+}
+
+
 @bp.route("/")
 @login_required
 def index():
@@ -46,6 +58,11 @@ def index():
     else:
         tag_filter = ""
 
+    # Status filter from dashboard cards — not persisted to session
+    status_filter = request.args.get("filter", None)
+    if status_filter not in _VALID_FILTERS:
+        status_filter = None
+
     if current_user.is_admin:
         query = Guest.query
     else:
@@ -63,6 +80,25 @@ def index():
     elif tag_filter:
         query = query.filter(Guest.tags.any(Tag.name == tag_filter))
 
+    # Apply status filter
+    if status_filter == "updates":
+        query = query.filter(Guest.status == "updates-available")
+    elif status_filter == "security":
+        query = query.filter(
+            Guest.updates.any(db.and_(
+                UpdatePackage.status == "pending",
+                UpdatePackage.severity == "critical",
+            ))
+        )
+    elif status_filter == "reboot":
+        query = query.filter(Guest.reboot_required == True)  # noqa: E712
+    elif status_filter == "never_scanned":
+        query = query.filter(Guest.last_scan.is_(None))
+    elif status_filter == "error":
+        query = query.filter(Guest.status == "error")
+    elif status_filter == "up_to_date":
+        query = query.filter(Guest.status == "up-to-date")
+
     guests = query.order_by(Guest.name).all()
 
     hosts = ProxmoxHost.query.all()
@@ -72,9 +108,18 @@ def index():
     # Fetch UniFi clients for MAC-based IP enrichment
     unifi_map = _get_unifi_mac_map()
 
-    return render_template("guests.html", guests=guests, hosts=hosts, credentials=credentials,
-                           tags=tags, current_tag=tag_filter, user_tag_names=user_tag_names,
-                           unifi_map=unifi_map)
+    return render_template(
+        "guests.html",
+        guests=guests,
+        hosts=hosts,
+        credentials=credentials,
+        tags=tags,
+        current_tag=tag_filter,
+        user_tag_names=user_tag_names,
+        unifi_map=unifi_map,
+        current_filter=status_filter,
+        filter_label=_FILTER_LABELS.get(status_filter),
+    )
 
 
 @bp.route("/add", methods=["POST"])

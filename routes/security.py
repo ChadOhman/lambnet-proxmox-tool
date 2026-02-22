@@ -45,6 +45,7 @@ def _get_access_settings():
         "cf_access_auto_provision": Setting.get("cf_access_auto_provision", "true"),
         "cf_access_bypass_local_auth": Setting.get("cf_access_bypass_local_auth", "false"),
         "local_bypass_enabled": Setting.get("local_bypass_enabled", "false"),
+        "local_bypass_explicitly_set": Setting.query.filter_by(key="local_bypass_enabled").first() is not None,
         "trusted_subnets": Setting.get("trusted_subnets", "10.0.0.0/8"),
         "require_snapshot_before_action": Setting.get("require_snapshot_before_action", "false"),
     }
@@ -349,6 +350,13 @@ def save_local_bypass():
     Setting.set("trusted_subnets", subnets)
 
     flash("Local network access settings saved.", "success")
+    return redirect(url_for("security.index"))
+
+
+@bp.route("/access/dismiss-bypass-notice", methods=["POST"])
+def dismiss_bypass_notice():
+    """Explicitly record that the user has acknowledged the default change."""
+    Setting.set("local_bypass_enabled", "false")
     return redirect(url_for("security.index"))
 
 

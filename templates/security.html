@@ -414,6 +414,19 @@
                         </h5>
                     </div>
                     <div class="card-body">
+                        {% if not settings.local_bypass_explicitly_set %}
+                        <div class="alert alert-warning d-flex align-items-start gap-2 mb-3" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+                            <div class="flex-grow-1">
+                                <strong>Default changed:</strong> Local network bypass now defaults to
+                                <strong>disabled</strong>. Previously it defaulted to enabled. If you rely on
+                                LAN bypass, enable it below and save. Otherwise, dismiss this notice.
+                            </div>
+                            <form method="post" action="/security/access/dismiss-bypass-notice" class="flex-shrink-0">
+                                <button type="submit" class="btn-close" aria-label="Dismiss"></button>
+                            </form>
+                        </div>
+                        {% endif %}
                         <form method="post" action="/security/access/local-bypass">
                             <div class="alert alert-info py-2 mb-3">
                                 <small>

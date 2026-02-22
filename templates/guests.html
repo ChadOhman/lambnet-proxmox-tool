@@ -3,7 +3,15 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-pc-display"></i> Managed Guests</h2>
+    <h2>
+        <i class="bi bi-pc-display"></i> Managed Guests
+        {% if current_filter %}
+        <span class="badge bg-secondary ms-2 fs-6 fw-normal align-middle">
+            {{ filter_label }}
+            <a href="/guests" class="text-white ms-1" title="Clear filter" aria-label="Clear filter">&times;</a>
+        </span>
+        {% endif %}
+    </h2>
     <div class="d-flex align-items-center gap-2">
         <div class="dropdown">
             <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">

@@ -9,9 +9,12 @@ from models import db, User, Role, DEFAULT_ROLES
 logger = logging.getLogger(__name__)
 
 
-def create_app():
+def create_app(test_config=None):
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.from_object(Config)
+
+    if test_config:
+        app.config.update(test_config)
 
     # Ensure data directory exists
     os.makedirs(DATA_DIR, exist_ok=True)

@@ -1,3 +1,6 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.bandit]
 exclude_dirs = [".venv", "__pycache__"]
 skips = [

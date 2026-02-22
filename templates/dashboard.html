@@ -113,7 +113,7 @@
         </a>
     </div>
     <div class="col-6 col-md-4 col-lg-2">
-        <a href="/guests" class="card bg-dark h-100 stat-card text-decoration-none">
+        <a href="/guests?filter=never_scanned" class="card bg-dark h-100 stat-card text-decoration-none">
             <div class="card-body text-center py-3">
                 <div class="fs-3 fw-bold {% if stats.guests_never_scanned > 0 %}text-warning{% else %}text-success{% endif %}">
                     {% if stats.guests_never_scanned > 0 %}{{ stats.guests_never_scanned }}{% else %}<i class="bi bi-check-lg"></i>{% endif %}
@@ -130,7 +130,7 @@
 <!-- Update Summary -->
 <div class="row g-3 mb-4">
     <div class="col-6 col-md-3">
-        <a href="/guests" class="card bg-dark h-100 stat-card text-decoration-none">
+        <a href="/guests?filter=updates" class="card bg-dark h-100 stat-card text-decoration-none">
             <div class="card-body text-center py-3">
                 <div class="fs-3 fw-bold text-warning">{{ stats.total_updates }}</div>
                 <div class="small text-muted">Pending Updates</div>
@@ -138,7 +138,7 @@
         </a>
     </div>
     <div class="col-6 col-md-3">
-        <a href="/guests" class="card bg-dark h-100 stat-card text-decoration-none">
+        <a href="/guests?filter=security" class="card bg-dark h-100 stat-card text-decoration-none">
             <div class="card-body text-center py-3">
                 <div class="fs-3 fw-bold {% if stats.security_updates > 0 %}text-danger{% else %}text-muted{% endif %}">{{ stats.security_updates }}</div>
                 <div class="small text-muted">Security Updates</div>
@@ -146,7 +146,7 @@
         </a>
     </div>
     <div class="col-6 col-md-3">
-        <a href="/guests" class="card bg-dark h-100 stat-card text-decoration-none">
+        <a href="/guests?filter=reboot" class="card bg-dark h-100 stat-card text-decoration-none">
             <div class="card-body text-center py-3">
                 <div class="fs-3 fw-bold {% if stats.reboot_required > 0 %}text-warning{% else %}text-muted{% endif %}">{{ stats.reboot_required }}</div>
                 <div class="small text-muted">Reboots Required</div>
@@ -154,7 +154,7 @@
         </a>
     </div>
     <div class="col-6 col-md-3">
-        <a href="/guests" class="card bg-dark h-100 stat-card text-decoration-none">
+        <a href="/guests?filter=up_to_date" class="card bg-dark h-100 stat-card text-decoration-none">
             <div class="card-body text-center py-3">
                 <div class="fs-3 fw-bold text-success">{{ stats.guests_up_to_date }}</div>
                 <div class="small text-muted">Up to Date</div>
