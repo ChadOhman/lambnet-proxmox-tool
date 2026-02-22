@@ -24,7 +24,11 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Gmail App Password</label>
+                        {% if safety_mode %}
+                        <input type="password" class="form-control text-muted" placeholder="hidden" disabled>
+                        {% else %}
                         <input type="password" class="form-control" name="gmail_app_password" placeholder="{{ '********' if settings.gmail_app_password else 'Generate at myaccount.google.com' }}">
+                        {% endif %}
                         <div class="form-text">
                             Create an App Password in your Google Account settings under Security > 2-Step Verification > App passwords.
                         </div>
