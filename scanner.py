@@ -1,4 +1,5 @@
 import re
+import base64
 import logging
 from datetime import datetime, timezone
 from models import db, Guest, UpdatePackage, ScanResult, GuestService
@@ -9,6 +10,110 @@ logger = logging.getLogger(__name__)
 
 # Valid systemd unit names: alphanumeric, hyphens, underscores, dots, @, *
 _VALID_UNIT_RE = re.compile(r'^[\w.\-@*]+$')
+
+# Pure-Python3 Redis client script for Sidekiq stats.
+# Uses only stdlib socket + urllib — no redis-cli required.
+# \\r\\n in this bytes literal → \r\n in the inner Python source → CR+LF at runtime.
+_SIDEKIQ_REDIS_SCRIPT = b"""\
+import socket, urllib.parse as up
+
+def rc(s, *args):
+    p = ["*{}\\r\\n".format(len(args))]
+    for a in args:
+        a = str(a)
+        p.append("${}\\r\\n{}\\r\\n".format(len(a.encode()), a))
+    s.sendall("".join(p).encode())
+
+def rr(s, bf):
+    while b"\\r\\n" not in bf[0]:
+        d = s.recv(65536)
+        if not d: break
+        bf[0] += d
+    if not bf[0]: return None
+    i = bf[0].index(b"\\r\\n")
+    ln = bf[0][:i].decode("utf-8", "replace")
+    bf[0] = bf[0][i+2:]
+    t, rest = ln[0], ln[1:]
+    if t == "+": return rest
+    if t == "-": return None
+    if t == ":": return int(rest) if rest.lstrip("-").isdigit() else 0
+    if t == "$":
+        n = int(rest)
+        if n < 0: return None
+        while len(bf[0]) < n + 2:
+            d = s.recv(65536)
+            if not d: break
+            bf[0] += d
+        v = bf[0][:n].decode("utf-8", "replace")
+        bf[0] = bf[0][n+2:]
+        return v
+    if t == "*":
+        n = int(rest)
+        return [rr(s, bf) for _ in range(max(n, 0))]
+    return None
+
+env = {}
+for f in ["/home/mastodon/live/.env.production", "/var/www/mastodon/.env.production", "/opt/mastodon/.env.production"]:
+    try:
+        for line in open(f):
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip().strip(chr(34)+chr(39))
+        break
+    except: pass
+
+url = env.get("REDIS_URL", "")
+if url:
+    u = up.urlparse(url)
+    host = u.hostname or "127.0.0.1"
+    port = u.port or 6379
+    pw = u.password or env.get("REDIS_PASSWORD", "")
+    db = int((u.path or "/0").lstrip("/") or "0")
+else:
+    host = env.get("REDIS_HOST", "127.0.0.1")
+    port = int(env.get("REDIS_PORT", "6379") or "6379")
+    pw = env.get("REDIS_PASSWORD", "")
+    db = int(env.get("REDIS_DB", "0") or "0")
+
+try:
+    s = socket.socket()
+    s.settimeout(5)
+    s.connect((host, port))
+    bf = [b""]
+    if pw:
+        rc(s, "AUTH", pw)
+        rr(s, bf)
+    rc(s, "SELECT", str(db))
+    rr(s, bf)
+    print("---queues---")
+    rc(s, "SMEMBERS", "queues")
+    qs = rr(s, bf) or []
+    for q in qs:
+        rc(s, "LLEN", "queue:"+q)
+        print("{}={}".format(q, rr(s, bf) or 0))
+    print("---stats---")
+    for k, c in [("processed", ("GET", "stat:processed")), ("failed", ("GET", "stat:failed")),
+                 ("retry", ("ZCARD", "retry")), ("dead", ("ZCARD", "dead")),
+                 ("scheduled", ("ZCARD", "schedule"))]:
+        rc(s, *c)
+        print("{}={}".format(k, rr(s, bf) or 0))
+    s.close()
+    print("---debug---")
+    print("host={}".format(host))
+    print("port={}".format(port))
+    print("db={}".format(db))
+    print("auth_set={}".format("yes" if pw else "no"))
+    print("redis_cli=python3-ok")
+except Exception as e:
+    print("---debug---")
+    print("host={}".format(host))
+    print("port={}".format(port))
+    print("db={}".format(db))
+    print("auth_set={}".format("yes" if pw else "no"))
+    print("redis_cli=python3-err")
+    print("errmsg={}".format(str(e)[:120]))
+"""
 
 
 def _safe_unit_name(name):
@@ -681,63 +786,11 @@ def _stats_sidekiq(guest, service):
     """Collect Sidekiq stats — per-instance systemd info plus aggregate queue stats from Redis."""
     stats = {}
 
-    # All Redis queries in ONE SSH call to avoid per-call connection overhead and
-    # auth failures causing slow agent fallthrough for each individual command.
-    # Sidekiq commonly connects to a REMOTE Redis server (not localhost), so we
-    # parse REDIS_URL from .env.production to get the correct host, port, and DB.
-    env_paths = (
-        "/home/mastodon/live/.env.production"
-        " /var/www/mastodon/.env.production"
-        " /opt/mastodon/.env.production"
-    )
-    redis_script = (
-        # Read REDIS_URL from Mastodon env (present on the Sidekiq server)
-        f"_RURL=$(grep \"^REDIS_URL=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
-        # Password: local redis.conf first, then REDIS_PASSWORD env, then embedded in REDIS_URL
-        " _RP=\"\";"
-        " for _F in /etc/redis/redis.conf /etc/redis/redis-server.conf /etc/redis.conf; do"
-        "   _RP=$(grep -i \"^requirepass\" \"$_F\" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '\"');"
-        "   [ -n \"$_RP\" ] && break;"
-        " done;"
-        f" [ -z \"$_RP\" ] && _RP=$(grep \"^REDIS_PASSWORD=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
-        " [ -z \"$_RP\" ] && _RP=$(echo \"$_RURL\" | sed -n 's|.*://[^:]*:\\([^@]*\\)@.*|\\1|p');"
-        " export REDISCLI_AUTH=\"$_RP\";"
-        # Host: REDIS_URL first, then REDIS_HOST individual env var, then default
-        " _HOST=$(echo \"$_RURL\" | sed 's|redis://||; s|.*@||; s|:.*||; s|/.*||');"
-        f" [ -z \"$_HOST\" ] && _HOST=$(grep \"^REDIS_HOST=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
-        " [ -z \"$_HOST\" ] && _HOST=127.0.0.1;"
-        # Port: REDIS_URL first, then REDIS_PORT individual env var, then default
-        " _PORT=$(echo \"$_RURL\" | sed -n 's|.*:\\([0-9][0-9]*\\)/.*|\\1|p');"
-        f" [ -z \"$_PORT\" ] && _PORT=$(grep \"^REDIS_PORT=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
-        " [ -z \"$_PORT\" ] && _PORT=6379;"
-        # DB from REDIS_DB env or REDIS_URL path component
-        f" _DB=$(grep \"^REDIS_DB=\" {env_paths} 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
-        " [ -z \"$_DB\" ] && _DB=$(echo \"$_RURL\" | sed -n 's|.*/\\([0-9][0-9]*\\)$|\\1|p');"
-        " [ -z \"$_DB\" ] && _DB=0;"
-        # Convenience alias
-        " _RC=\"redis-cli -h $_HOST -p $_PORT -n $_DB\";"
-        # Queue names + lengths
-        " echo ---queues---;"
-        " QUEUES=$($_RC smembers queues 2>/dev/null || true);"
-        " for Q in $QUEUES; do"
-        "   LEN=$($_RC llen \"queue:$Q\" 2>/dev/null || true);"
-        "   echo \"$Q=$LEN\";"
-        " done;"
-        # Scalar stats
-        " echo ---stats---;"
-        " echo \"processed=$($_RC get stat:processed 2>/dev/null || true)\";"
-        " echo \"failed=$($_RC get stat:failed 2>/dev/null || true)\";"
-        " echo \"retry=$($_RC zcard retry 2>/dev/null || true)\";"
-        " echo \"dead=$($_RC zcard dead 2>/dev/null || true)\";"
-        " echo \"scheduled=$($_RC zcard schedule 2>/dev/null || true)\";"
-        # Debug section: show resolved connection parameters + cli availability
-        " echo ---debug---;"
-        " echo \"host=$_HOST\";"
-        " echo \"port=$_PORT\";"
-        " echo \"db=$_DB\";"
-        " echo \"auth_set=$([ -n \"$_RP\" ] && echo yes || echo no)\";"
-        " echo \"redis_cli=$(which redis-cli 2>/dev/null || echo missing)\""
-    )
+    # Use a pure-Python3 Redis client (no redis-cli needed) — Sidekiq servers
+    # connect to Redis via the Ruby gem so redis-cli is often absent.
+    # The script is base64-encoded to avoid any shell quoting issues.
+    _py_b64 = base64.b64encode(_SIDEKIQ_REDIS_SCRIPT).decode()
+    redis_script = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null || true"
 
     out, _ = _execute_command(guest, redis_script, timeout=30)
 

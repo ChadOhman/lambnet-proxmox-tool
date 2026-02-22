@@ -329,10 +329,14 @@
             <i class="bi bi-info-circle"></i> Redis:
             <code>{{ stats._debug.host|default('?') }}:{{ stats._debug.port|default('?') }}/{{ stats._debug.db|default('?') }}</code>
             {% if stats._debug.auth_set == 'yes' %}<span class="badge bg-secondary ms-1">auth</span>{% endif %}
-            {% if stats._debug.redis_cli and stats._debug.redis_cli != 'missing' %}
-            <span class="badge bg-success ms-1">redis-cli ok</span>
+            {% if stats._debug.redis_cli == 'python3-ok' %}
+            <span class="badge bg-success ms-1">connected</span>
+            {% elif stats._debug.redis_cli and stats._debug.redis_cli.startswith('python3-err') %}
+            <span class="badge bg-danger ms-1" title="{{ stats._debug.errmsg|default('') }}">connection error</span>
             {% elif stats._debug.redis_cli == 'missing' %}
             <span class="badge bg-danger ms-1">redis-cli missing</span>
+            {% elif stats._debug.redis_cli %}
+            <span class="badge bg-success ms-1">redis-cli ok</span>
             {% endif %}
         </div>
         {% endif %}
