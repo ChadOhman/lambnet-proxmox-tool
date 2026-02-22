@@ -13,11 +13,17 @@ main {
 }
 
 .stat-card {
-    transition: transform 0.15s ease-in-out;
+    transition: transform 0.15s ease-in-out, border-color 0.15s ease-in-out;
 }
 
 .stat-card:hover {
     transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+a.stat-card {
+    color: inherit;
+    cursor: pointer;
 }
 
 .stat-card .stat-number {
