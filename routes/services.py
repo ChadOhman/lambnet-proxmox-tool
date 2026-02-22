@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from models import db, Guest, GuestService
-from scanner import check_service_statuses, service_action, get_service_logs, get_service_stats
+from scanner import check_service_statuses, service_action, get_service_logs, get_service_stats, sidekiq_clear_dead
 from audit import log_action
 
 bp = Blueprint("services", __name__)
@@ -143,6 +143,19 @@ def detail(service_id):
     stats = get_service_stats(guest, svc)
     log_text = get_service_logs(guest, svc, lines=30)
     return render_template("service_detail.html", service=svc, guest=guest, stats=stats, logs=log_text)
+
+
+@bp.route("/<int:service_id>/sidekiq/clear-dead", methods=["POST"])
+def sidekiq_clear_dead_queue(service_id):
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "sidekiq":
+        return jsonify({"ok": False, "message": "Not a Sidekiq service"}), 400
+    guest = svc.guest
+    ok, msg = sidekiq_clear_dead(guest, svc)
+    if ok:
+        log_action("sidekiq_clear_dead", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"service": svc.service_name})
+    return jsonify({"ok": ok, "message": msg})
 
 
 @bp.route("/<int:service_id>/stats")

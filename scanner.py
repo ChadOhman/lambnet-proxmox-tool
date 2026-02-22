@@ -116,6 +116,109 @@ except Exception as e:
 """
 
 
+# Pure-Python3 Redis script to clear the Sidekiq dead queue.
+# Shares the same connection discovery logic as _SIDEKIQ_REDIS_SCRIPT.
+_SIDEKIQ_CLEAR_DEAD_SCRIPT = b"""\
+import socket, urllib.parse as up
+
+def rc(s, *args):
+    p = ["*{}\\r\\n".format(len(args))]
+    for a in args:
+        a = str(a)
+        p.append("${}\\r\\n{}\\r\\n".format(len(a.encode()), a))
+    s.sendall("".join(p).encode())
+
+def rr(s, bf):
+    while b"\\r\\n" not in bf[0]:
+        d = s.recv(65536)
+        if not d: break
+        bf[0] += d
+    if not bf[0]: return None
+    i = bf[0].index(b"\\r\\n")
+    ln = bf[0][:i].decode("utf-8", "replace")
+    bf[0] = bf[0][i+2:]
+    t, rest = ln[0], ln[1:]
+    if t == "+": return rest
+    if t == "-": return None
+    if t == ":": return int(rest) if rest.lstrip("-").isdigit() else 0
+    if t == "$":
+        n = int(rest)
+        if n < 0: return None
+        while len(bf[0]) < n + 2:
+            d = s.recv(65536)
+            if not d: break
+            bf[0] += d
+        v = bf[0][:n].decode("utf-8", "replace")
+        bf[0] = bf[0][n+2:]
+        return v
+    if t == "*":
+        n = int(rest)
+        return [rr(s, bf) for _ in range(max(n, 0))]
+    return None
+
+env = {}
+for f in ["/home/mastodon/live/.env.production", "/var/www/mastodon/.env.production", "/opt/mastodon/.env.production"]:
+    try:
+        for line in open(f):
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip().strip(chr(34)+chr(39))
+        break
+    except: pass
+
+url = env.get("REDIS_URL", "")
+if url:
+    u = up.urlparse(url)
+    host = u.hostname or "127.0.0.1"
+    port = u.port or 6379
+    pw = u.password or env.get("REDIS_PASSWORD", "")
+    db = int((u.path or "/0").lstrip("/") or "0")
+else:
+    host = env.get("REDIS_HOST", "127.0.0.1")
+    port = int(env.get("REDIS_PORT", "6379") or "6379")
+    pw = env.get("REDIS_PASSWORD", "")
+    db = int(env.get("REDIS_DB", "0") or "0")
+
+try:
+    s = socket.socket()
+    s.settimeout(5)
+    s.connect((host, port))
+    bf = [b""]
+    if pw:
+        rc(s, "AUTH", pw)
+        rr(s, bf)
+    rc(s, "SELECT", str(db))
+    rr(s, bf)
+    rc(s, "DEL", "dead")
+    n = rr(s, bf)
+    s.close()
+    print("ok={}".format(n or 0))
+except Exception as e:
+    print("error={}".format(str(e)[:120]))
+"""
+
+
+def sidekiq_clear_dead(guest, service):
+    """Clear the Sidekiq dead queue by deleting the 'dead' sorted set from Redis.
+
+    Returns (ok: bool, message: str).
+    """
+    _py_b64 = base64.b64encode(_SIDEKIQ_CLEAR_DEAD_SCRIPT).decode()
+    cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null || true"
+    out, err = _execute_command(guest, cmd, timeout=30)
+    if err and not out:
+        return False, err
+    for line in (out or "").split("\n"):
+        line = line.strip()
+        if line.startswith("ok="):
+            count = line.split("=", 1)[1]
+            return True, f"Cleared {count} job(s) from the dead queue"
+        if line.startswith("error="):
+            return False, line.split("=", 1)[1]
+    return False, "No response from Redis"
+
+
 def _safe_unit_name(name):
     """Validate a systemd unit name to prevent shell injection."""
     if not name or not _VALID_UNIT_RE.match(name):

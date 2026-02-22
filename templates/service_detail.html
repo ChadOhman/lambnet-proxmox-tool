@@ -313,6 +313,11 @@
             <div class="col-md-2">
                 <div class="text-muted small">Dead</div>
                 <div class="fs-5" id="stat-sq-dead">{{ stats.dead_size|default('0') }}</div>
+                <button id="clearDeadBtn" class="btn btn-outline-danger btn-sm mt-1"
+                        onclick="clearDeadQueue()"
+                        {% if stats.dead_size|default(0)|int == 0 %}disabled{% endif %}>
+                    <i class="bi bi-trash"></i> Clear
+                </button>
             </div>
             <div class="col-md-2">
                 <div class="text-muted small">Scheduled</div>
@@ -467,6 +472,32 @@ function refreshStats() {
         .catch(err => {
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh';
+        });
+}
+
+function clearDeadQueue() {
+    if (!confirm('Clear all jobs from the Dead queue? This cannot be undone.')) return;
+    const btn = document.getElementById('clearDeadBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    fetch('/services/{{ service.id }}/sidekiq/clear-dead', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                const deadEl = document.getElementById('stat-sq-dead');
+                if (deadEl) deadEl.textContent = '0';
+                btn.innerHTML = '<i class="bi bi-trash"></i> Clear';
+            } else {
+                alert('Error: ' + data.message);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-trash"></i> Clear';
+            }
+        })
+        .catch(e => {
+            alert('Request failed: ' + e);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-trash"></i> Clear';
         });
 }
 
