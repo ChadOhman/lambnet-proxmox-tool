@@ -147,7 +147,7 @@ def create_app():
         # Prefer Origin; fallback to Referer for older browser/form behavior.
         source = request.headers.get("Origin") or request.headers.get("Referer")
         if not source:
-            abort(403, description="Missing CSRF origin headers")
+            return  # No origin header -- non-browser client; allow
 
         src = urlparse(source)
         req = urlparse(request.host_url)
