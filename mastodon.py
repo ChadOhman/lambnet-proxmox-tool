@@ -10,6 +10,7 @@ swap for migrations, and service restarts.
 import json
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from urllib.request import urlopen, Request
 
@@ -83,6 +84,44 @@ def snapshot_guest(guest):
     return client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
 
 
+def backup_guest(guest, storage):
+    """Create a vzdump backup of a guest before upgrade. Polls until the task completes.
+
+    Returns (success, message).
+    """
+    if not guest.proxmox_host:
+        return False, f"Guest '{guest.name}' has no Proxmox host configured"
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = client.find_guest_node(guest.vmid)
+    if not node:
+        return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    notes = f"pre-mastodon-{timestamp}"
+
+    ok, upid = client.create_backup(node, guest.vmid, storage, notes=notes)
+    if not ok:
+        return False, f"Failed to start backup: {upid}"
+
+    # Poll until the vzdump task completes (can take several minutes for large guests)
+    timeout = 1800  # 30 minutes
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(5)
+        try:
+            status = client.get_task_status(node, upid)
+            if status.get("status") == "stopped":
+                exit_status = status.get("exitstatus", "")
+                if exit_status == "OK":
+                    return True, f"Backup of '{guest.name}' to '{storage}' completed"
+                return False, f"Backup task failed: {exit_status}"
+        except Exception as e:
+            logger.debug(f"Error polling backup task for {guest.name}: {e}")
+
+    return False, f"Backup of '{guest.name}' timed out after {timeout // 60} minutes"
+
+
 def _get_mastodon_config():
     """Read all Mastodon-related settings."""
     return {
@@ -97,6 +136,8 @@ def _get_mastodon_config():
         "auto_upgrade": Setting.get("mastodon_auto_upgrade", "false") == "true",
         "current_version": Setting.get("mastodon_current_version", ""),
         "latest_version": Setting.get("mastodon_latest_version", ""),
+        "protection_type": Setting.get("mastodon_protection_type", "snapshot"),
+        "backup_storage": Setting.get("mastodon_backup_storage", ""),
     }
 
 
@@ -159,18 +200,35 @@ def run_mastodon_upgrade():
     except ValueError as e:
         return False, str(e)
 
-    # --- Step 1: Snapshots ---
-    log("=== Step 1: Creating Proxmox snapshots ===")
+    # --- Step 1: Protection (snapshot or backup) ---
+    protection_type = config.get("protection_type", "snapshot")
+    backup_storage = config.get("backup_storage", "")
 
-    ok, msg = snapshot_guest(mastodon_guest)
-    log(f"Snapshot {mastodon_guest.name}: {msg}")
-    if not ok:
-        return False, "\n".join(log_lines)
+    if protection_type == "backup" and backup_storage:
+        log(f"=== Step 1: Creating vzdump backups to storage '{backup_storage}' ===")
+        log("(This may take several minutes — please be patient)")
 
-    ok, msg = snapshot_guest(db_guest)
-    log(f"Snapshot {db_guest.name}: {msg}")
-    if not ok:
-        return False, "\n".join(log_lines)
+        ok, msg = backup_guest(mastodon_guest, backup_storage)
+        log(f"Backup {mastodon_guest.name}: {msg}")
+        if not ok:
+            return False, "\n".join(log_lines)
+
+        ok, msg = backup_guest(db_guest, backup_storage)
+        log(f"Backup {db_guest.name}: {msg}")
+        if not ok:
+            return False, "\n".join(log_lines)
+    else:
+        log("=== Step 1: Creating Proxmox snapshots ===")
+
+        ok, msg = snapshot_guest(mastodon_guest)
+        log(f"Snapshot {mastodon_guest.name}: {msg}")
+        if not ok:
+            return False, "\n".join(log_lines)
+
+        ok, msg = snapshot_guest(db_guest)
+        log(f"Snapshot {db_guest.name}: {msg}")
+        if not ok:
+            return False, "\n".join(log_lines)
 
     # --- Step 2: SSH upgrade sequence ---
     log("=== Step 2: Connecting to Mastodon guest via SSH ===")

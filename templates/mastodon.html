@@ -35,7 +35,33 @@
                             </option>
                             {% endfor %}
                         </select>
-                        <div class="form-text">The VM/CT running PostgreSQL. Will be snapshotted before upgrade.</div>
+                        <div class="form-text">The VM/CT running PostgreSQL.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Pre-Upgrade Protection</label>
+                        <div class="form-check">
+                            <input type="radio" class="form-check-input" name="mastodon_protection_type"
+                                   id="protSnap" value="snapshot" onchange="toggleBackupStorage()"
+                                   {{ 'checked' if settings.protection_type != 'backup' }}>
+                            <label class="form-check-label" for="protSnap">
+                                Snapshot <small class="text-muted">— fast, local, instant rollback</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input type="radio" class="form-check-input" name="mastodon_protection_type"
+                                   id="protBackup" value="backup" onchange="toggleBackupStorage()"
+                                   {{ 'checked' if settings.protection_type == 'backup' }}>
+                            <label class="form-check-label" for="protBackup">
+                                Backup <small class="text-muted">— vzdump to storage (slower, off-site if using PBS)</small>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mb-3 {{ 'd-none' if settings.protection_type != 'backup' }}" id="backupStorageRow">
+                        <label class="form-label">Backup Storage</label>
+                        <input type="text" class="form-control font-monospace" name="mastodon_backup_storage"
+                               value="{{ settings.backup_storage }}" placeholder="e.g. pbs-ovh">
+                        <div class="form-text">The storage ID configured on the Proxmox host to send backups to (e.g. a PBS storage name).</div>
                     </div>
 
                     <hr class="border-secondary">
@@ -198,7 +224,7 @@
                     </form>
                     {% if settings.guest_id and settings.db_guest_id %}
                     <form method="post" action="/mastodon/upgrade"
-                          onsubmit="return confirm('This will:\n1. Snapshot both VMs/CTs\n2. Run the full Mastodon upgrade\n3. Restart all services\n\nContinue?')">
+                          onsubmit="return confirm('This will:\n1. {% if settings.protection_type == 'backup' %}Backup{% else %}Snapshot{% endif %} both VMs/CTs\n2. Run the full Mastodon upgrade\n3. Restart all services\n\nContinue?')">
                         <button type="submit" class="btn btn-warning">
                             <i class="bi bi-rocket-takeoff"></i> Upgrade Now
                         </button>
@@ -242,7 +268,7 @@
             </div>
             <div class="card-body">
                 <ol class="small mb-0">
-                    <li>Snapshot Mastodon app + PostgreSQL guests</li>
+                    <li>{% if settings.protection_type == 'backup' %}Backup (vzdump) Mastodon app + PostgreSQL guests to <code>{{ settings.backup_storage or '(storage not set)' }}</code>{% else %}Snapshot Mastodon app + PostgreSQL guests{% endif %}</li>
                     <li><code>git stash</code> (save local changes)</li>
                     <li>Swap <code>.env.production</code> to direct DB</li>
                     <li><code>git pull</code> (fetch latest glitch-soc)</li>
@@ -261,4 +287,13 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleBackupStorage() {
+    const isBkp = document.getElementById('protBackup').checked;
+    document.getElementById('backupStorageRow').classList.toggle('d-none', !isBkp);
+}
+</script>
 {% endblock %}

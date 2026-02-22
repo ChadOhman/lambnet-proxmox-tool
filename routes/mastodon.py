@@ -36,6 +36,8 @@ def _get_mastodon_settings():
         "last_upgrade_at": Setting.get("mastodon_last_upgrade_at", ""),
         "last_upgrade_status": Setting.get("mastodon_last_upgrade_status", ""),
         "last_upgrade_log": Setting.get("mastodon_last_upgrade_log", ""),
+        "protection_type": Setting.get("mastodon_protection_type", "snapshot"),
+        "backup_storage": Setting.get("mastodon_backup_storage", ""),
     }
 
 
@@ -59,6 +61,9 @@ def save():
     Setting.set("mastodon_direct_db_port", request.form.get("mastodon_direct_db_port", "5432").strip())
     Setting.set("mastodon_auto_upgrade", "true" if "mastodon_auto_upgrade" in request.form else "false")
     Setting.set("mastodon_current_version", request.form.get("mastodon_current_version", "").strip())
+    protection_type = request.form.get("mastodon_protection_type", "snapshot")
+    Setting.set("mastodon_protection_type", protection_type if protection_type in ("snapshot", "backup") else "snapshot")
+    Setting.set("mastodon_backup_storage", request.form.get("mastodon_backup_storage", "").strip())
 
     flash("Mastodon settings saved.", "success")
     return redirect(url_for("mastodon.index"))
