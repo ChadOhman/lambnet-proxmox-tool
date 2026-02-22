@@ -9,6 +9,7 @@
     <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script>window.USER_TIMEZONE = {{ user_timezone | tojson }};</script>
 </head>
 <body>
     <nav class="navbar navbar-expand-xl navbar-dark bg-dark border-bottom border-secondary">
@@ -103,6 +104,7 @@
                             <i class="bi bi-person-circle"></i> {{ current_user.display_name or current_user.username }}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
+                            <li><a class="dropdown-item {% if request.endpoint == 'auth.profile' %}active{% endif %}" href="{{ url_for('auth.profile') }}"><i class="bi bi-person-circle"></i> Profile</a></li>
                             <li><a class="dropdown-item" href="/change-password"><i class="bi bi-shield-lock"></i> Change Password</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li>
@@ -146,6 +148,28 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    (function() {
+        const tz = window.USER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
+        function localizeTimestamps() {
+            document.querySelectorAll('[data-utc]').forEach(function(el) {
+                const dt = new Date(el.dataset.utc);
+                if (!isNaN(dt)) {
+                    el.textContent = dt.toLocaleString([], {
+                        timeZone: tz,
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit'
+                    });
+                }
+            });
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', localizeTimestamps);
+        } else {
+            localizeTimestamps();
+        }
+    })();
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

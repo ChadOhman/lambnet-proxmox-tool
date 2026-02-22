@@ -62,7 +62,7 @@
                         <td>{{ svc.port or '-' }}</td>
                         <td>
                             {% if svc.last_checked %}
-                            {{ svc.last_checked.strftime('%m/%d %H:%M') }}
+                            {{ svc.last_checked | local_dt }}
                             {% else %}
                             <span class="text-muted">Never</span>
                             {% endif %}

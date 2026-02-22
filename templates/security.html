@@ -549,7 +549,7 @@
                         <tbody>
                             {% for entry in audit_pagination.items %}
                             <tr>
-                                <td><small class="text-muted">{{ entry.timestamp.strftime('%Y-%m-%d %H:%M') }}</small></td>
+                                <td><small class="text-muted">{{ entry.timestamp | local_dt('%Y-%m-%d %H:%M') }}</small></td>
                                 <td><small>{{ entry.user.username.split('@')[0] if '@' in entry.user.username else entry.user.username }}</small></td>
                                 <td><small>{{ entry.action | replace('_', ' ') | title }}</small></td>
                                 <td>

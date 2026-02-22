@@ -431,7 +431,7 @@
                 <tbody>
                     {% for entry in recent_logs %}
                     <tr>
-                        <td><small class="text-muted">{{ entry.timestamp.strftime('%m/%d %H:%M') }}</small></td>
+                        <td><small class="text-muted">{{ entry.timestamp | local_dt }}</small></td>
                         <td><small>{{ entry.user.username.split('@')[0] if '@' in entry.user.username else entry.user.username }}</small></td>
                         <td><small>{{ entry.action | replace('_', ' ') | title }}</small></td>
                         <td><small class="text-muted">{% if entry.details %}{{ entry.details | tojson }}{% endif %}</small></td>

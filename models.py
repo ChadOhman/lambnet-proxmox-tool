@@ -110,6 +110,7 @@ class User(UserMixin, db.Model):
     role_id = db.Column(db.Integer, db.ForeignKey("roles.id"), nullable=False)
     created_via = db.Column(db.String(32), default="local")  # local, cloudflare, local_bypass
     is_active_user = db.Column(db.Boolean, default=True)
+    timezone = db.Column(db.String(64), nullable=True)  # IANA tz name, e.g. "America/Chicago"; None = browser auto-detect
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Tags this user has access to

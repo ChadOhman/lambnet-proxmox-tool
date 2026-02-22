@@ -102,7 +102,7 @@
                             {% endif %}
                         </td>
                     </tr>
-                    <tr><td class="text-muted">Last Scan</td><td>{{ guest.last_scan.strftime('%Y-%m-%d %H:%M:%S') if guest.last_scan else 'Never' }}</td></tr>
+                    <tr><td class="text-muted">Last Scan</td><td>{{ guest.last_scan | local_dt('%Y-%m-%d %H:%M') if guest.last_scan else 'Never' }}</td></tr>
                     <tr>
                         <td class="text-muted">Tags</td>
                         <td>
@@ -364,7 +364,7 @@
                     <td>{{ svc.port or '-' }}</td>
                     <td>
                         {% if svc.last_checked %}
-                        {{ svc.last_checked.strftime('%m/%d %H:%M') }}
+                        {{ svc.last_checked | local_dt }}
                         {% else %}
                         <span class="text-muted">Never</span>
                         {% endif %}
@@ -853,7 +853,7 @@
                         <td>
                             <span class="badge badge-{{ pkg.severity }}">{{ pkg.severity }}</span>
                         </td>
-                        <td>{{ pkg.discovered_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>{{ pkg.discovered_at | local_dt('%Y-%m-%d %H:%M') }}</td>
                     </tr>
                     {% else %}
                     <tr>
@@ -889,7 +889,7 @@
                 <tbody>
                     {% for entry in recent_logs %}
                     <tr>
-                        <td><small class="text-muted">{{ entry.timestamp.strftime('%m/%d %H:%M') }}</small></td>
+                        <td><small class="text-muted">{{ entry.timestamp | local_dt }}</small></td>
                         <td><small>{{ entry.user.username.split('@')[0] if '@' in entry.user.username else entry.user.username }}</small></td>
                         <td><small>{{ entry.action | replace('_', ' ') | title }}</small></td>
                         <td><small class="text-muted">{% if entry.details %}{{ entry.details | tojson }}{% endif %}</small></td>

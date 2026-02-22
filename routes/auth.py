@@ -65,3 +65,15 @@ def change_password():
             return redirect(url_for("dashboard.index"))
 
     return render_template("change_password.html")
+
+
+@bp.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    if request.method == "POST":
+        tz = request.form.get("timezone", "").strip()
+        current_user.timezone = tz or None
+        db.session.commit()
+        flash("Profile saved.", "success")
+        return redirect(url_for("auth.profile"))
+    return render_template("profile.html")

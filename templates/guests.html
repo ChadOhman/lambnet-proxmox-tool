@@ -133,7 +133,7 @@
                         </td>
                         <td>
                             {% if guest.last_scan %}
-                            {{ guest.last_scan.strftime('%m/%d %H:%M') }}
+                            {{ guest.last_scan | local_dt }}
                             {% else %}
                             <span class="text-muted">Never</span>
                             {% endif %}

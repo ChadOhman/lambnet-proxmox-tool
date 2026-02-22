@@ -277,7 +277,7 @@
                                 </td>
                                 <td>
                                     {% if guest.last_scan %}
-                                    {{ guest.last_scan.strftime('%Y-%m-%d %H:%M') }}
+                                    {{ guest.last_scan | local_dt('%Y-%m-%d %H:%M') }}
                                     {% else %}
                                     <span class="text-muted">Never</span>
                                     {% endif %}
@@ -322,7 +322,7 @@
                     <div class="list-group-item bg-dark border-secondary">
                         <div class="d-flex justify-content-between">
                             <strong>{{ scan.guest.name }}</strong>
-                            <small class="text-muted">{{ scan.scanned_at.strftime('%m/%d %H:%M') }}</small>
+                            <small class="text-muted">{{ scan.scanned_at | local_dt }}</small>
                         </div>
                         <small>
                             {% if scan.status == 'error' %}

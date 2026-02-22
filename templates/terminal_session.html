@@ -13,7 +13,13 @@
     <div>
         <h4 class="mb-0">
             <i class="bi bi-terminal"></i> {{ guest.name }}
-            <small class="text-muted">({{ resolved_ip or 'no IP' }})</small>
+            <small class="text-muted">
+                {% if safety_mode %}
+                    <i class="bi bi-eye-slash"></i> hidden
+                {% else %}
+                    ({{ resolved_ip or 'no IP' }})
+                {% endif %}
+            </small>
         </h4>
     </div>
     <div>
@@ -116,7 +122,7 @@
         ws = new WebSocket(wsUrl);
 
         ws.onopen = function() {
-            term.writeln('\x1b[33mConnecting to {{ guest.name }} ({{ resolved_ip or "..." }})...\x1b[0m');
+            term.writeln('\x1b[33mConnecting to {{ guest.name }}{% if not safety_mode %} ({{ resolved_ip or "..." }}){% endif %}...\x1b[0m');
             // Send initial terminal size
             ws.send(JSON.stringify({type: 'resize', cols: term.cols, rows: term.rows}));
         };

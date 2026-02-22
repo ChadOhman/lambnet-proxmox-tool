@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Profile - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <h2 class="mb-4"><i class="bi bi-person-circle"></i> Profile</h2>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endwith %}
+
+        <div class="card bg-dark mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Timezone</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    <div class="mb-3">
+                        <label class="form-label">Display Timezone</label>
+                        <select class="form-select" name="timezone">
+                            <option value="" {{ 'selected' if not current_user.timezone }}>Auto-detect (browser default)</option>
+                            <optgroup label="Americas">
+                                <option value="America/New_York" {{ 'selected' if current_user.timezone == 'America/New_York' }}>Eastern Time (US &amp; Canada)</option>
+                                <option value="America/Chicago" {{ 'selected' if current_user.timezone == 'America/Chicago' }}>Central Time (US &amp; Canada)</option>
+                                <option value="America/Denver" {{ 'selected' if current_user.timezone == 'America/Denver' }}>Mountain Time (US &amp; Canada)</option>
+                                <option value="America/Los_Angeles" {{ 'selected' if current_user.timezone == 'America/Los_Angeles' }}>Pacific Time (US &amp; Canada)</option>
+                                <option value="America/Anchorage" {{ 'selected' if current_user.timezone == 'America/Anchorage' }}>Alaska</option>
+                                <option value="Pacific/Honolulu" {{ 'selected' if current_user.timezone == 'Pacific/Honolulu' }}>Hawaii</option>
+                                <option value="America/Toronto" {{ 'selected' if current_user.timezone == 'America/Toronto' }}>Toronto</option>
+                                <option value="America/Vancouver" {{ 'selected' if current_user.timezone == 'America/Vancouver' }}>Vancouver</option>
+                                <option value="America/Winnipeg" {{ 'selected' if current_user.timezone == 'America/Winnipeg' }}>Winnipeg</option>
+                                <option value="America/Halifax" {{ 'selected' if current_user.timezone == 'America/Halifax' }}>Halifax</option>
+                                <option value="America/St_Johns" {{ 'selected' if current_user.timezone == 'America/St_Johns' }}>Newfoundland</option>
+                                <option value="America/Sao_Paulo" {{ 'selected' if current_user.timezone == 'America/Sao_Paulo' }}>São Paulo</option>
+                                <option value="America/Argentina/Buenos_Aires" {{ 'selected' if current_user.timezone == 'America/Argentina/Buenos_Aires' }}>Buenos Aires</option>
+                                <option value="America/Mexico_City" {{ 'selected' if current_user.timezone == 'America/Mexico_City' }}>Mexico City</option>
+                            </optgroup>
+                            <optgroup label="Europe">
+                                <option value="UTC" {{ 'selected' if current_user.timezone == 'UTC' }}>UTC</option>
+                                <option value="Europe/London" {{ 'selected' if current_user.timezone == 'Europe/London' }}>London</option>
+                                <option value="Europe/Paris" {{ 'selected' if current_user.timezone == 'Europe/Paris' }}>Paris / Berlin / Rome</option>
+                                <option value="Europe/Helsinki" {{ 'selected' if current_user.timezone == 'Europe/Helsinki' }}>Helsinki / Kyiv</option>
+                                <option value="Europe/Moscow" {{ 'selected' if current_user.timezone == 'Europe/Moscow' }}>Moscow</option>
+                                <option value="Europe/Istanbul" {{ 'selected' if current_user.timezone == 'Europe/Istanbul' }}>Istanbul</option>
+                            </optgroup>
+                            <optgroup label="Asia / Pacific">
+                                <option value="Asia/Dubai" {{ 'selected' if current_user.timezone == 'Asia/Dubai' }}>Dubai</option>
+                                <option value="Asia/Kolkata" {{ 'selected' if current_user.timezone == 'Asia/Kolkata' }}>India</option>
+                                <option value="Asia/Dhaka" {{ 'selected' if current_user.timezone == 'Asia/Dhaka' }}>Dhaka</option>
+                                <option value="Asia/Bangkok" {{ 'selected' if current_user.timezone == 'Asia/Bangkok' }}>Bangkok / Jakarta</option>
+                                <option value="Asia/Shanghai" {{ 'selected' if current_user.timezone == 'Asia/Shanghai' }}>China / Singapore / Perth</option>
+                                <option value="Asia/Tokyo" {{ 'selected' if current_user.timezone == 'Asia/Tokyo' }}>Tokyo / Seoul</option>
+                                <option value="Australia/Sydney" {{ 'selected' if current_user.timezone == 'Australia/Sydney' }}>Sydney</option>
+                                <option value="Australia/Adelaide" {{ 'selected' if current_user.timezone == 'Australia/Adelaide' }}>Adelaide</option>
+                                <option value="Pacific/Auckland" {{ 'selected' if current_user.timezone == 'Pacific/Auckland' }}>Auckland</option>
+                            </optgroup>
+                            <optgroup label="Africa">
+                                <option value="Africa/Cairo" {{ 'selected' if current_user.timezone == 'Africa/Cairo' }}>Cairo</option>
+                                <option value="Africa/Johannesburg" {{ 'selected' if current_user.timezone == 'Africa/Johannesburg' }}>Johannesburg</option>
+                                <option value="Africa/Lagos" {{ 'selected' if current_user.timezone == 'Africa/Lagos' }}>Lagos / Nairobi</option>
+                            </optgroup>
+                        </select>
+                        <div class="form-text">All timestamps will display in this timezone. "Auto-detect" uses your browser's local timezone.</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save Profile</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card bg-dark">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-shield-lock"></i> Password</h5>
+            </div>
+            <div class="card-body">
+                <a href="{{ url_for('auth.change_password') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-key"></i> Change Password
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

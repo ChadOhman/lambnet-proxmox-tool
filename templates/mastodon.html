@@ -18,7 +18,7 @@
                             <option value="">-- Select Guest --</option>
                             {% for guest in guests %}
                             <option value="{{ guest.id }}" {{ 'selected' if settings.guest_id == guest.id|string }}>
-                                {{ guest.name }} ({{ guest.ip_address or 'no IP' }})
+                                {{ guest.name }}{% if not safety_mode %} ({{ guest.ip_address or 'no IP' }}){% endif %}
                             </option>
                             {% endfor %}
                         </select>
@@ -31,7 +31,7 @@
                             <option value="">-- None --</option>
                             {% for guest in guests %}
                             <option value="{{ guest.id }}" {{ 'selected' if settings.guest_id_2 == guest.id|string }}>
-                                {{ guest.name }} ({{ guest.ip_address or 'no IP' }})
+                                {{ guest.name }}{% if not safety_mode %} ({{ guest.ip_address or 'no IP' }}){% endif %}
                             </option>
                             {% endfor %}
                         </select>
@@ -44,7 +44,7 @@
                             <option value="">-- Select Guest --</option>
                             {% for guest in guests %}
                             <option value="{{ guest.id }}" {{ 'selected' if settings.db_guest_id == guest.id|string }}>
-                                {{ guest.name }} ({{ guest.ip_address or 'no IP' }})
+                                {{ guest.name }}{% if not safety_mode %} ({{ guest.ip_address or 'no IP' }}){% endif %}
                             </option>
                             {% endfor %}
                         </select>

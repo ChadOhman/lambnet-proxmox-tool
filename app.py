@@ -125,6 +125,7 @@ def create_app(test_config=None):
 
     # Custom Jinja filters
     from datetime import datetime, timezone as tz
+    from markupsafe import Markup
 
     @app.template_filter("timestamp_to_datetime")
     def timestamp_to_datetime(epoch):
@@ -133,6 +134,19 @@ def create_app(test_config=None):
             return datetime.fromtimestamp(int(epoch), tz=tz.utc).strftime("%Y-%m-%d %H:%M")
         except (ValueError, TypeError, OSError):
             return ""
+
+    @app.template_filter("local_dt")
+    def local_dt_filter(dt, fmt="%m/%d %H:%M"):
+        """Render a datetime as a <span data-utc="ISO"> element for client-side localization.
+        The fallback text is the UTC value so the page is readable before JS runs.
+        """
+        if dt is None:
+            return Markup("")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=tz.utc)
+        iso = dt.isoformat()
+        display = dt.strftime(fmt)
+        return Markup(f'<span data-utc="{iso}">{display}</span>')
 
     # Security headers
     @app.before_request
@@ -169,12 +183,15 @@ def create_app(test_config=None):
         return response
 
     @app.context_processor
-    def inject_safety_mode():
+    def inject_globals():
         from flask import session
         from flask_login import current_user
         if current_user.is_authenticated:
-            return {"safety_mode": session.get("safety_mode", False)}
-        return {"safety_mode": False}
+            return {
+                "safety_mode": session.get("safety_mode", False),
+                "user_timezone": current_user.timezone,
+            }
+        return {"safety_mode": False, "user_timezone": None}
 
     @app.route("/toggle-safety-mode", methods=["POST"])
     def toggle_safety_mode():
@@ -223,6 +240,10 @@ def _migrate_schema():
         if "created_via" not in user_columns:
             logger.info("Adding created_via column to users table...")
             db.session.execute(text("ALTER TABLE users ADD COLUMN created_via VARCHAR(32) DEFAULT 'local'"))
+            db.session.commit()
+        if "timezone" not in user_columns:
+            logger.info("Adding timezone column to users table...")
+            db.session.execute(text("ALTER TABLE users ADD COLUMN timezone VARCHAR(64)"))
             db.session.commit()
 
     if "roles" in table_names:
