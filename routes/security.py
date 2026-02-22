@@ -5,6 +5,23 @@ from models import db, User, Role, Tag, Setting
 bp = Blueprint("security", __name__)
 
 
+def _safe_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int_list(values):
+    parsed = []
+    for v in values:
+        iv = _safe_int(v)
+        if iv is None:
+            return None
+        parsed.append(iv)
+    return parsed
+
+
 @bp.before_request
 @login_required
 def _require_access():
@@ -27,7 +44,7 @@ def _get_access_settings():
         "cf_access_audience": Setting.get("cf_access_audience", ""),
         "cf_access_auto_provision": Setting.get("cf_access_auto_provision", "true"),
         "cf_access_bypass_local_auth": Setting.get("cf_access_bypass_local_auth", "false"),
-        "local_bypass_enabled": Setting.get("local_bypass_enabled", "true"),
+        "local_bypass_enabled": Setting.get("local_bypass_enabled", "false"),
         "trusted_subnets": Setting.get("trusted_subnets", "10.0.0.0/8"),
         "require_snapshot_before_action": Setting.get("require_snapshot_before_action", "false"),
     }
@@ -65,7 +82,12 @@ def add_user():
         return redirect(url_for("security.index"))
 
     # Resolve role
-    target_role = Role.query.get(int(role_id)) if role_id else None
+    parsed_role_id = _safe_int(role_id) if role_id else None
+    if role_id and parsed_role_id is None:
+        flash("Invalid role selection.", "error")
+        return redirect(url_for("security.index"))
+
+    target_role = Role.query.get(parsed_role_id) if parsed_role_id else None
     if not target_role:
         target_role = Role.query.filter_by(name="viewer").first()
 
@@ -82,7 +104,11 @@ def add_user():
     user.set_password(password)
 
     if tag_ids:
-        tags = Tag.query.filter(Tag.id.in_([int(t) for t in tag_ids])).all()
+        parsed_tag_ids = _safe_int_list(tag_ids)
+        if parsed_tag_ids is None:
+            flash("Invalid tag selection.", "error")
+            return redirect(url_for("security.index"))
+        tags = Tag.query.filter(Tag.id.in_(parsed_tag_ids)).all()
         user.allowed_tags = tags
 
     db.session.add(user)
@@ -106,7 +132,11 @@ def edit_user(user_id):
     # Role change (only if not editing self)
     new_role_id = request.form.get("role_id", "")
     if new_role_id and user.id != current_user.id:
-        target_role = Role.query.get(int(new_role_id))
+        parsed_new_role_id = _safe_int(new_role_id)
+        if parsed_new_role_id is None:
+            flash("Invalid role selection.", "error")
+            return redirect(url_for("security.index"))
+        target_role = Role.query.get(parsed_new_role_id)
         if target_role:
             if target_role.level >= current_user.role_level and not current_user.is_super_admin:
                 flash("You cannot assign a role equal to or higher than your own.", "error")
@@ -114,7 +144,14 @@ def edit_user(user_id):
             user.role_id = target_role.id
 
     tag_ids = request.form.getlist("tag_ids")
-    tags = Tag.query.filter(Tag.id.in_([int(t) for t in tag_ids])).all() if tag_ids else []
+    if tag_ids:
+        parsed_tag_ids = _safe_int_list(tag_ids)
+        if parsed_tag_ids is None:
+            flash("Invalid tag selection.", "error")
+            return redirect(url_for("security.index"))
+        tags = Tag.query.filter(Tag.id.in_(parsed_tag_ids)).all()
+    else:
+        tags = []
     user.allowed_tags = tags
 
     new_password = request.form.get("new_password", "").strip()

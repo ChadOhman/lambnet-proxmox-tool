@@ -1,5 +1,6 @@
 import os
 import logging
+from urllib.parse import urlparse
 from flask import Flask
 from flask_login import LoginManager
 from config import Config, BASE_DIR, DATA_DIR
@@ -130,6 +131,29 @@ def create_app():
             return ""
 
     # Security headers
+    @app.before_request
+    def _csrf_origin_check():
+        """Basic CSRF defense for state-changing browser requests.
+
+        Accept only same-origin requests for unsafe HTTP methods.
+        """
+        from flask import request, abort
+
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return
+        if request.path.startswith("/static/"):
+            return
+
+        # Prefer Origin; fallback to Referer for older browser/form behavior.
+        source = request.headers.get("Origin") or request.headers.get("Referer")
+        if not source:
+            return  # No origin header -- non-browser client; allow
+
+        src = urlparse(source)
+        req = urlparse(request.host_url)
+        if (src.scheme, src.netloc) != (req.scheme, req.netloc):
+            abort(403, description="Cross-site request blocked")
+
     @app.after_request
     def _security_headers(response):
         response.headers["X-Content-Type-Options"] = "nosniff"

@@ -98,7 +98,11 @@
                         <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
                             <li><a class="dropdown-item" href="/change-password"><i class="bi bi-shield-lock"></i> Change Password</a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                            <li>
+                                <form method="post" action="/logout" class="px-3 py-1">
+                                    <button type="submit" class="dropdown-item px-0"><i class="bi bi-box-arrow-right"></i> Logout</button>
+                                </form>
+                            </li>
                         </ul>
                     </li>
                 </ul>
