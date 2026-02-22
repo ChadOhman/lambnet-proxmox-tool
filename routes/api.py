@@ -27,6 +27,8 @@ class UpdateJob:
         self.log = ""
         self.running = True
         self.success = None  # None=in progress, True=success, False=failed
+        self.cancel_requested = False
+        self.cancelled = False
         self.started_at = datetime.now(timezone.utc)
         self._lock = threading.Lock()
 
@@ -38,6 +40,8 @@ class UpdateJob:
         with self._lock:
             self.running = False
             self.success = success
+            if not success and self.cancel_requested:
+                self.cancelled = True
 
     def to_dict(self):
         with self._lock:
@@ -47,6 +51,7 @@ class UpdateJob:
                 "log": self.log,
                 "running": self.running,
                 "success": self.success,
+                "cancelled": self.cancelled,
                 "started_at": self.started_at.isoformat(),
             }
 
@@ -87,13 +92,25 @@ def _run_update_background(app, guest_id, dist_upgrade=False):
                         with SSHClient.from_credential(guest.ip_address, credential) as ssh:
                             job.append("$ apt-get update\n")
                             update_code = ssh.execute_sudo_streaming(
-                                "apt-get update", job.append, timeout=120
+                                "apt-get update", job.append, timeout=120,
+                                stop_fn=lambda: job.cancel_requested,
                             )
+                            if job.cancel_requested:
+                                job.append("\n[Cancelled by user]\n")
+                                job.finish(False)
+                                return
                             if update_code != 0:
                                 job.append(f"\napt-get update exited with code {update_code}.\n")
 
                             job.append(f"\n$ {cmd}\n")
-                            exit_code = ssh.execute_sudo_streaming(cmd, job.append, timeout=600)
+                            exit_code = ssh.execute_sudo_streaming(
+                                cmd, job.append, timeout=600,
+                                stop_fn=lambda: job.cancel_requested,
+                            )
+                            if job.cancel_requested:
+                                job.append("\n[Cancelled by user]\n")
+                                job.finish(False)
+                                return
 
                             if exit_code == 0:
                                 job.append("\n\nUpdates applied successfully.\n")
@@ -299,6 +316,17 @@ def update_status(guest_id):
     return jsonify(job.to_dict())
 
 
+@bp.route("/apply/<int:guest_id>/cancel", methods=["POST"])
+@login_required
+def update_cancel(guest_id):
+    with _jobs_lock:
+        job = _update_jobs.get(guest_id)
+    if not job or not job.running:
+        return jsonify({"ok": False, "error": "No active job"})
+    job.cancel_requested = True
+    return jsonify({"ok": True})
+
+
 # ---------------------------------------------------------------------------
 # Proxmox task tracking (backups, snapshots, rollbacks)
 # ---------------------------------------------------------------------------
@@ -327,6 +355,8 @@ class ProxmoxJob:
         self.log = ""
         self.running = True
         self.success = None
+        self.cancel_requested = False
+        self.cancelled = False
         self.started_at = datetime.now(timezone.utc)
         self._lock = threading.Lock()
         self._last_log_line = 0
@@ -343,6 +373,8 @@ class ProxmoxJob:
         with self._lock:
             self.running = False
             self.success = success
+            if not success and self.cancel_requested:
+                self.cancelled = True
 
     def to_dict(self):
         with self._lock:
@@ -354,6 +386,7 @@ class ProxmoxJob:
                 "log": self.log,
                 "running": self.running,
                 "success": self.success,
+                "cancelled": self.cancelled,
                 "started_at": self.started_at.isoformat(),
             }
 
@@ -392,7 +425,10 @@ def _poll_proxmox_task(app, job_key):
                         if exit_status == "OK":
                             job.finish(True)
                         else:
-                            job.append(f"\nTask failed: {exit_status}\n")
+                            if job.cancel_requested:
+                                job.append("\n[Cancelled by user]\n")
+                            else:
+                                job.append(f"\nTask failed: {exit_status}\n")
                             job.finish(False)
                         return
                 except Exception as e:
@@ -451,6 +487,24 @@ def task_status(guest_id, job_type):
     if not job:
         return jsonify({"running": False, "log": "", "success": None})
     return jsonify(job.to_dict())
+
+
+@bp.route("/task/<int:guest_id>/<job_type>/cancel", methods=["POST"])
+@login_required
+def task_cancel(guest_id, job_type):
+    job_key = f"{job_type}:{guest_id}"
+    with _proxmox_jobs_lock:
+        job = _proxmox_jobs.get(job_key)
+    if not job or not job.running:
+        return jsonify({"ok": False, "error": "No active job"})
+    job.cancel_requested = True
+    try:
+        from proxmox_api import ProxmoxClient
+        client = ProxmoxClient(job.host_model)
+        client.cancel_task(job.node, job.upid)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------------------

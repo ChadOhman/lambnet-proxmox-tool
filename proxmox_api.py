@@ -536,6 +536,13 @@ class ProxmoxClient:
         """Get task log lines. Returns list of dicts with n (line number), t (text)."""
         return self.api.nodes(node).tasks(upid).log.get(start=start, limit=limit)
 
+    def cancel_task(self, node, upid):
+        """Stop a running Proxmox task."""
+        try:
+            self.api.nodes(node).tasks(upid).delete()
+        except Exception:
+            pass  # Task may have already finished
+
     # ------------------------------------------------------------------
     # Guest configuration / hardware info
     # ------------------------------------------------------------------

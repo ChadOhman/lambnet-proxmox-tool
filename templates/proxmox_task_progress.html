@@ -25,9 +25,14 @@
             </div>
             <div class="card-footer d-flex justify-content-between align-items-center">
                 <small class="text-muted" id="statusText">Waiting for task output...</small>
-                <a href="/guests/{{ guest.id }}" id="backBtn" class="btn btn-secondary btn-sm disabled">
-                    <i class="bi bi-arrow-left"></i> Back to Guest
-                </a>
+                <div class="d-flex gap-2">
+                    <button id="cancelBtn" class="btn btn-danger btn-sm">
+                        <i class="bi bi-x-circle"></i> Cancel
+                    </button>
+                    <a href="/guests/{{ guest.id }}" id="backBtn" class="btn btn-secondary btn-sm disabled">
+                        <i class="bi bi-arrow-left"></i> Back to Guest
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -41,6 +46,7 @@
     const badge = document.getElementById('statusBadge');
     const statusText = document.getElementById('statusText');
     const backBtn = document.getElementById('backBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
     const spinIcon = document.getElementById('spinIcon');
 
     let taskComplete = false;
@@ -59,7 +65,22 @@
         backBtn.classList.remove('disabled');
         backBtn.removeAttribute('aria-disabled');
         spinIcon.classList.remove('spin-animation');
+        cancelBtn.style.display = 'none';
     }
+
+    cancelBtn.addEventListener('click', async function() {
+        cancelBtn.disabled = true;
+        cancelBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Cancelling\u2026';
+        setStatus('Cancellation requested\u2026', 'bg-warning', 'Cancelling\u2026');
+        try {
+            await fetch('/api/task/' + guestId + '/' + jobType + '/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+        } catch (e) {
+            // Keep polling — the status endpoint will reflect the final state
+        }
+    });
 
     async function poll() {
         if (taskComplete) return;
@@ -78,12 +99,17 @@
             }
 
             if (data.running) {
-                setStatus(jobLabel + ' in progress...', 'bg-info', 'Running...');
+                if (!cancelBtn.disabled) {
+                    setStatus(jobLabel + ' in progress...', 'bg-info', 'Running...');
+                }
             } else {
                 taskComplete = true;
                 if (data.success) {
                     logEl.textContent += '\n--- ' + jobLabel + ' complete ---\n';
                     setStatus(jobLabel + ' completed successfully!', 'bg-success', 'Complete');
+                } else if (data.cancelled) {
+                    logEl.textContent += '\n--- ' + jobLabel + ' cancelled ---\n';
+                    setStatus(jobLabel + ' was cancelled.', 'bg-warning', 'Cancelled');
                 } else {
                     logEl.textContent += '\n--- ' + jobLabel + ' failed ---\n';
                     setStatus(jobLabel + ' failed. Check the output above.', 'bg-danger', 'Failed');

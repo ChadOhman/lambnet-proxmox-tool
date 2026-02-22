@@ -126,7 +126,7 @@ class SSHClient:
         needs_stdin = bool(self.sudo_password and self.needs_sudo)
         return self.execute(wrapped, timeout=timeout, _sudo=needs_stdin)
 
-    def execute_streaming(self, command, callback, timeout=600, _sudo=False):
+    def execute_streaming(self, command, callback, timeout=600, _sudo=False, stop_fn=None):
         """Execute a command and call callback(chunk) as output arrives.
 
         Returns (exit_code).  The callback receives raw string chunks
@@ -146,6 +146,9 @@ class SSHClient:
 
             # Stream output while the command is running
             while not channel.closed:
+                if stop_fn and stop_fn():
+                    channel.close()
+                    break
                 got_data = False
                 if channel.recv_ready():
                     data = channel.recv(4096).decode("utf-8", errors="replace")
@@ -176,11 +179,11 @@ class SSHClient:
             callback(f"\n[SSH Error: {e}]\n")
             return -1
 
-    def execute_sudo_streaming(self, command, callback, timeout=600):
+    def execute_sudo_streaming(self, command, callback, timeout=600, stop_fn=None):
         """Execute a command with sudo wrapping, streaming output via callback."""
         wrapped = self.sudo_wrap(command)
         needs_stdin = bool(self.sudo_password and self.needs_sudo)
-        return self.execute_streaming(wrapped, callback, timeout=timeout, _sudo=needs_stdin)
+        return self.execute_streaming(wrapped, callback, timeout=timeout, _sudo=needs_stdin, stop_fn=stop_fn)
 
     def close(self):
         if self._client:
