@@ -96,7 +96,7 @@ def init_local_bypass(app):
             return
 
         # Check if bypass is enabled
-        if Setting.get("local_bypass_enabled", "true") == "false":
+        if Setting.get("local_bypass_enabled", "false") == "false":
             return
 
         client_ip = _get_client_ip()
