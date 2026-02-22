@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
-from models import db, User, Role, Tag, Setting
+from models import db, User, Role, Tag, Setting, AuditLog
+from audit import log_action
 
 bp = Blueprint("security", __name__)
 
@@ -57,7 +58,16 @@ def index():
     roles = Role.query.order_by(Role.level.desc(), Role.name).all()
     tags = Tag.query.order_by(Tag.name).all()
     settings = _get_access_settings() if current_user.is_super_admin else {}
-    return render_template("security.html", users=users, roles=roles, tags=tags, settings=settings)
+
+    audit_pagination = None
+    if current_user.can_view_audit_log:
+        page = request.args.get("audit_page", 1, type=int)
+        audit_pagination = (AuditLog.query
+                            .order_by(AuditLog.timestamp.desc())
+                            .paginate(page=page, per_page=50, error_out=False))
+
+    return render_template("security.html", users=users, roles=roles, tags=tags,
+                           settings=settings, audit_pagination=audit_pagination)
 
 
 # --- User management ---
@@ -113,6 +123,9 @@ def add_user():
         user.allowed_tags = tags
 
     db.session.add(user)
+    db.session.flush()
+    log_action("user_add", "user", resource_id=user.id, resource_name=username,
+               details={"role": target_role.name})
     db.session.commit()
 
     flash(f"User '{username}' created.", "success")
@@ -162,6 +175,7 @@ def edit_user(user_id):
             return redirect(url_for("security.index"))
         user.set_password(new_password)
 
+    log_action("user_edit", "user", resource_id=user.id, resource_name=user.username)
     db.session.commit()
     flash(f"User '{user.username}' updated.", "success")
     return redirect(url_for("security.index"))
@@ -180,6 +194,7 @@ def delete_user(user_id):
         return redirect(url_for("security.index"))
 
     username = user.username
+    log_action("user_delete", "user", resource_id=user.id, resource_name=username)
     db.session.delete(user)
     db.session.commit()
     flash(f"User '{username}' deleted.", "warning")
@@ -217,6 +232,8 @@ def add_role():
         setattr(role, perm, perm in request.form)
 
     db.session.add(role)
+    db.session.flush()
+    log_action("role_add", "role", resource_id=role.id, resource_name=display_name)
     db.session.commit()
 
     flash(f"Role '{display_name}' created.", "success")
@@ -246,6 +263,7 @@ def edit_role(role_id):
     for perm in Role.PERMISSION_FIELDS:
         setattr(role, perm, perm in request.form)
 
+    log_action("role_edit", "role", resource_id=role.id, resource_name=role.display_name)
     db.session.commit()
     flash(f"Role '{role.display_name}' updated.", "success")
     return redirect(url_for("security.index"))
@@ -264,6 +282,7 @@ def delete_role(role_id):
         return redirect(url_for("security.index"))
 
     name = role.display_name
+    log_action("role_delete", "role", resource_id=role.id, resource_name=name)
     db.session.delete(role)
     db.session.commit()
     flash(f"Role '{name}' deleted.", "warning")
@@ -287,6 +306,8 @@ def add_tag():
 
     tag = Tag(name=name, color=color)
     db.session.add(tag)
+    db.session.flush()
+    log_action("tag_add", "tag", resource_id=tag.id, resource_name=name)
     db.session.commit()
 
     flash(f"Tag '{name}' created.", "success")
@@ -297,6 +318,7 @@ def add_tag():
 def delete_tag(tag_id):
     tag = Tag.query.get_or_404(tag_id)
     name = tag.name
+    log_action("tag_delete", "tag", resource_id=tag.id, resource_name=name)
     db.session.delete(tag)
     db.session.commit()
     flash(f"Tag '{name}' deleted.", "warning")
@@ -324,6 +346,8 @@ def save_cloudflare():
     Setting.set("cf_access_auto_provision", "true" if auto_provision else "false")
     Setting.set("cf_access_bypass_local_auth", "true" if bypass_local else "false")
 
+    log_action("settings_cloudflare_save", "settings", resource_name="cloudflare_access")
+    db.session.commit()
     flash("Cloudflare Zero Trust settings saved.", "success")
     return redirect(url_for("security.index"))
 
@@ -349,6 +373,9 @@ def save_local_bypass():
     Setting.set("local_bypass_enabled", "true" if enabled else "false")
     Setting.set("trusted_subnets", subnets)
 
+    log_action("settings_local_bypass_save", "settings", resource_name="local_bypass",
+               details={"enabled": enabled})
+    db.session.commit()
     flash("Local network access settings saved.", "success")
     return redirect(url_for("security.index"))
 
@@ -357,6 +384,8 @@ def save_local_bypass():
 def dismiss_bypass_notice():
     """Explicitly record that the user has acknowledged the default change."""
     Setting.set("local_bypass_enabled", "false")
+    log_action("bypass_notice_dismiss", "settings", resource_name="local_bypass")
+    db.session.commit()
     return redirect(url_for("security.index"))
 
 
@@ -365,5 +394,8 @@ def save_snapshots():
     require_snapshot = "require_snapshot_before_action" in request.form
     Setting.set("require_snapshot_before_action", "true" if require_snapshot else "false")
 
+    log_action("settings_snapshots_save", "settings", resource_name="snapshots",
+               details={"require_snapshot": require_snapshot})
+    db.session.commit()
     flash("Snapshot settings saved.", "success")
     return redirect(url_for("security.index"))

@@ -2,9 +2,10 @@ import os
 import subprocess
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
-from models import Setting
+from models import db, Setting
 from credential_store import encrypt
 from config import BASE_DIR, DATA_DIR
+from audit import log_action
 
 bp = Blueprint("settings", __name__)
 
@@ -81,6 +82,8 @@ def save_email():
     Setting.set("email_recipients", recipients)
     Setting.set("email_enabled", "true" if enabled else "false")
 
+    log_action("settings_email_save", "settings", resource_name="email")
+    db.session.commit()
     flash("Email settings saved.", "success")
     return redirect(url_for("settings.index"))
 
@@ -117,6 +120,8 @@ def save_scan():
     Setting.set("service_check_interval", service_check_interval)
     Setting.set("service_check_enabled", "true" if service_check_enabled else "false")
 
+    log_action("settings_scan_save", "settings", resource_name="scan_discovery")
+    db.session.commit()
     flash("Scan & discovery settings saved.", "success")
     return redirect(url_for("settings.index"))
 
@@ -132,6 +137,8 @@ def save_backups():
     Setting.set("backup_mode", backup_mode)
     Setting.set("backup_compress", backup_compress)
 
+    log_action("settings_backups_save", "settings", resource_name="backups")
+    db.session.commit()
     flash("Backup settings saved.", "success")
     return redirect(url_for("settings.index"))
 
@@ -156,6 +163,8 @@ def save_unifi():
     Setting.set("unifi_is_udm", "true" if is_udm else "false")
     Setting.set("unifi_filter_subnet", filter_subnet)
 
+    log_action("settings_unifi_save", "settings", resource_name="unifi")
+    db.session.commit()
     flash("UniFi settings saved.", "success")
     return redirect(url_for("settings.index"))
 
@@ -195,6 +204,9 @@ def save_app_update_mode():
     update_branch = request.form.get("app_update_branch", "").strip()
     Setting.set("app_auto_update", "true" if auto_update else "false")
     Setting.set("app_update_branch", update_branch)
+    log_action("settings_update_mode_save", "settings", resource_name="app_update",
+               details={"auto_update": auto_update, "branch": update_branch or None})
+    db.session.commit()
     flash("Application update settings saved.", "success")
     return redirect(url_for("settings.index"))
 
@@ -277,6 +289,10 @@ def apply_update():
         pid_file = os.path.join(DATA_DIR, "update.pid")
         with open(pid_file, "w") as f:
             f.write(str(proc.pid))
+
+        log_action("settings_apply_update", "settings", resource_name="app_update",
+                   details={"branch": Setting.get("app_update_branch") or None})
+        db.session.commit()
 
     except Exception as e:
         flash(f"Update failed to start: {e}", "error")

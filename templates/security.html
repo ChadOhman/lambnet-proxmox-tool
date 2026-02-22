@@ -27,6 +27,13 @@
         </button>
     </li>
     {% endif %}
+    {% if current_user.can_view_audit_log %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="audit-tab" data-bs-toggle="pill" data-bs-target="#auditPane" type="button" role="tab">
+            <i class="bi bi-journal-text"></i> Audit Log
+        </button>
+    </li>
+    {% endif %}
 </ul>
 
 <div class="tab-content">
@@ -512,6 +519,87 @@
                         </table>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if current_user.can_view_audit_log %}
+    <!-- ============ AUDIT LOG TAB ============ -->
+    <div class="tab-pane fade" id="auditPane" role="tabpanel">
+        <div class="card bg-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-journal-text"></i> Audit Log</h5>
+                <small class="text-muted">Last 90 days &bull; 50 per page</small>
+            </div>
+            <div class="card-body p-0">
+                {% if audit_pagination and audit_pagination.items %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Time (UTC)</th>
+                                <th>User</th>
+                                <th>Action</th>
+                                <th>Resource</th>
+                                <th>Details</th>
+                                <th>IP</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in audit_pagination.items %}
+                            <tr>
+                                <td><small class="text-muted">{{ entry.timestamp.strftime('%Y-%m-%d %H:%M') }}</small></td>
+                                <td><small>{{ entry.user.username.split('@')[0] if '@' in entry.user.username else entry.user.username }}</small></td>
+                                <td><small>{{ entry.action | replace('_', ' ') | title }}</small></td>
+                                <td>
+                                    <small>
+                                    {% if entry.resource_type == 'guest' and entry.resource_id %}
+                                        <a href="/guests/{{ entry.resource_id }}" class="text-info text-decoration-none">{{ entry.resource_name or entry.resource_id }}</a>
+                                    {% elif entry.resource_type == 'host' and entry.resource_id %}
+                                        <a href="/hosts/{{ entry.resource_id }}" class="text-info text-decoration-none">{{ entry.resource_name or entry.resource_id }}</a>
+                                    {% else %}
+                                        {{ entry.resource_name or entry.resource_type }}
+                                    {% endif %}
+                                    </small>
+                                </td>
+                                <td><small class="text-muted">{% if entry.details %}{{ entry.details | tojson }}{% endif %}</small></td>
+                                <td><small class="text-muted">{{ entry.ip_address or '' }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if audit_pagination.pages > 1 %}
+                <div class="d-flex justify-content-center py-3">
+                    <nav>
+                        <ul class="pagination pagination-sm mb-0">
+                            {% if audit_pagination.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link bg-dark text-light border-secondary" href="?audit_page={{ audit_pagination.prev_num }}#auditPane">&laquo;</a>
+                            </li>
+                            {% endif %}
+                            {% for p in audit_pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                                {% if p %}
+                                <li class="page-item {% if p == audit_pagination.page %}active{% endif %}">
+                                    <a class="page-link bg-dark border-secondary {% if p == audit_pagination.page %}text-white{% else %}text-light{% endif %}" href="?audit_page={{ p }}#auditPane">{{ p }}</a>
+                                </li>
+                                {% else %}
+                                <li class="page-item disabled"><span class="page-link bg-dark text-muted border-secondary">&hellip;</span></li>
+                                {% endif %}
+                            {% endfor %}
+                            {% if audit_pagination.has_next %}
+                            <li class="page-item">
+                                <a class="page-link bg-dark text-light border-secondary" href="?audit_page={{ audit_pagination.next_num }}#auditPane">&raquo;</a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                </div>
+                {% endif %}
+                {% else %}
+                <div class="text-center text-muted py-4">No audit log entries yet.</div>
+                {% endif %}
             </div>
         </div>
     </div>

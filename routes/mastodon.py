@@ -2,6 +2,7 @@ import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required
 from models import db, Setting, Guest
+from audit import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,8 @@ def save():
     backup_mode = request.form.get("mastodon_backup_mode", "snapshot")
     Setting.set("mastodon_backup_mode", backup_mode if backup_mode in ("snapshot", "suspend", "stop") else "snapshot")
 
+    log_action("mastodon_config_save", "settings", resource_name="mastodon")
+    db.session.commit()
     flash("Mastodon settings saved.", "success")
     return redirect(url_for("mastodon.index"))
 
@@ -119,6 +122,9 @@ def upgrade():
     if ok:
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc).isoformat()
+        log_action("mastodon_upgrade", "settings", resource_name="mastodon",
+                   details={"status": "success"})
+        db.session.commit()
         flash("Mastodon upgrade completed successfully!", "success")
     else:
         from datetime import datetime, timezone
@@ -126,6 +132,8 @@ def upgrade():
         Setting.set("mastodon_last_upgrade_at", now)
         Setting.set("mastodon_last_upgrade_status", "error")
         Setting.set("mastodon_last_upgrade_log", log_output)
+        log_action("mastodon_upgrade", "settings", resource_name="mastodon",
+                   details={"status": "error"})
         db.session.commit()
         flash("Mastodon upgrade failed. Check the log for details.", "error")
 

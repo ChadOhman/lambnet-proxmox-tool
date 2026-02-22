@@ -1,9 +1,10 @@
 import re
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
-from models import db, ProxmoxHost, Guest, Tag
+from models import db, ProxmoxHost, Guest, Tag, AuditLog
 from credential_store import encrypt
 from proxmox_api import ProxmoxClient
+from audit import log_action
 
 bp = Blueprint("hosts", __name__)
 
@@ -55,6 +56,14 @@ def detail(host_id):
         except Exception as e:
             error = str(e)
 
+        from datetime import datetime, timedelta, timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        pbs_recent_logs = (AuditLog.query
+                           .filter(AuditLog.resource_type == "host",
+                                   AuditLog.resource_id == host.id,
+                                   AuditLog.timestamp >= cutoff)
+                           .order_by(AuditLog.timestamp.desc())
+                           .limit(25).all())
         return render_template(
             "host_detail.html",
             host=host,
@@ -64,6 +73,7 @@ def detail(host_id):
             guests=[],
             datastores=datastores,
             error=error,
+            recent_logs=pbs_recent_logs,
         )
 
     # PVE host
@@ -83,6 +93,16 @@ def detail(host_id):
     all_host_guests = Guest.query.filter_by(proxmox_host_id=host.id, enabled=True).order_by(Guest.name).all()
     guests = [g for g in all_host_guests if current_user.can_access_guest(g)]
 
+    # Recent audit activity for this host (last 7 days)
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    recent_logs = (AuditLog.query
+                   .filter(AuditLog.resource_type == "host",
+                           AuditLog.resource_id == host.id,
+                           AuditLog.timestamp >= cutoff)
+                   .order_by(AuditLog.timestamp.desc())
+                   .limit(25).all())
+
     return render_template(
         "host_detail.html",
         host=host,
@@ -92,6 +112,7 @@ def detail(host_id):
         guests=guests,
         datastores=[],
         error=error,
+        recent_logs=recent_logs,
     )
 
 
@@ -130,6 +151,8 @@ def add():
         host.encrypted_password = encrypt(request.form.get("password", ""))
 
     db.session.add(host)
+    db.session.flush()
+    log_action("host_add", "host", resource_id=host.id, resource_name=host.name)
     db.session.commit()
 
     flash(f"Host '{name}' added successfully.", "success")
@@ -271,6 +294,8 @@ def discover(host_id):
                     existing.tags.append(tag)
                 updated += 1
 
+        log_action("host_discover", "host", resource_id=host.id, resource_name=host.name,
+                   details={"added": added, "updated": updated, "removed": removed})
         db.session.commit()
         if len(node_guests) == 0:
             flash(
@@ -388,11 +413,15 @@ def discover_all():
                         existing.tags.append(tag)
                     updated += 1
 
+            log_action("host_discover", "host", resource_id=host.id, resource_name=host.name,
+                       details={"added": added, "updated": updated})
             db.session.commit()
             flash(f"'{host.name}': {len(node_guests)} guests ({added} new, {updated} updated).", "success")
         except Exception as e:
             flash(f"Discovery failed for '{host.name}': {e}", "error")
 
+    log_action("host_discover_all", "system", resource_name="all hosts")
+    db.session.commit()
     return redirect(url_for("hosts.index"))
 
 
@@ -400,6 +429,7 @@ def discover_all():
 def delete(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
     name = host.name
+    log_action("host_delete", "host", resource_id=host.id, resource_name=name)
     db.session.delete(host)
     db.session.commit()
     flash(f"Host '{name}' deleted.", "warning")

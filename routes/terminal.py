@@ -8,6 +8,7 @@ from flask_login import login_required, current_user
 from flask_sock import Sock
 from models import db, Guest, Credential, Tag
 from credential_store import decrypt
+from audit import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +299,9 @@ def terminal_ws(ws, guest_id):
         channel = ssh_client.invoke_shell(term="xterm-256color", width=120, height=40)
 
         _ws_send(ws, "connected", f"Connected to {guest.name} ({ssh_host})")
+        log_action("guest_ssh_connect", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"username": connect_kwargs.get("username")})
+        db.session.commit()
 
         # Read thread: SSH -> WebSocket
         def read_from_ssh():

@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from models import db, Credential
 from credential_store import encrypt
+from audit import log_action
 
 bp = Blueprint("credentials", __name__)
 
@@ -55,6 +56,8 @@ def add():
         is_default=is_default,
     )
     db.session.add(cred)
+    db.session.flush()
+    log_action("credential_add", "credential", resource_id=cred.id, resource_name=name)
     db.session.commit()
 
     flash(f"Credential '{name}' added.", "success")
@@ -100,6 +103,7 @@ def edit(cred_id):
     elif not is_default and cred.is_default:
         cred.is_default = False
 
+    log_action("credential_edit", "credential", resource_id=cred.id, resource_name=name)
     db.session.commit()
     flash(f"Credential '{name}' updated.", "success")
     return redirect(url_for("credentials.index"))
@@ -110,6 +114,7 @@ def set_default(cred_id):
     Credential.query.filter_by(is_default=True).update({"is_default": False})
     cred = Credential.query.get_or_404(cred_id)
     cred.is_default = True
+    log_action("credential_set_default", "credential", resource_id=cred.id, resource_name=cred.name)
     db.session.commit()
     flash(f"'{cred.name}' set as default credential.", "success")
     return redirect(url_for("credentials.index"))
@@ -119,6 +124,7 @@ def set_default(cred_id):
 def delete(cred_id):
     cred = Credential.query.get_or_404(cred_id)
     name = cred.name
+    log_action("credential_delete", "credential", resource_id=cred.id, resource_name=name)
     db.session.delete(cred)
     db.session.commit()
     flash(f"Credential '{name}' deleted.", "warning")

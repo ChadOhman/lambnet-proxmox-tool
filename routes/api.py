@@ -7,6 +7,7 @@ from flask_login import login_required, current_user
 from models import db, Guest, ProxmoxHost, Tag
 from scanner import scan_guest, scan_all_guests
 from notifier import send_update_notification
+from audit import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +183,9 @@ def scan_single(guest_id):
 
     result = scan_guest(guest)
     if result.status == "success":
+        log_action("guest_scan", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"updates_found": result.total_updates})
+        db.session.commit()
         flash(f"Scan complete for '{guest.name}': {result.total_updates} update(s) found.", "success")
     else:
         flash(f"Scan failed for '{guest.name}': {result.error_message}", "error")
@@ -204,6 +208,10 @@ def scan_all():
     errors = sum(1 for r in results if r.status == "error")
 
     send_update_notification(results)
+
+    log_action("guest_scan_all", "system", resource_name="all guests",
+               details={"total": total, "errors": errors})
+    db.session.commit()
 
     if errors:
         flash(f"Scan complete: {total} guest(s) scanned, {errors} error(s).", "warning")
@@ -242,6 +250,10 @@ def apply(guest_id):
             return redirect(url_for("api.update_progress", guest_id=guest_id))
 
     dist_upgrade = request.form.get("dist_upgrade") == "1"
+
+    log_action("guest_update", "guest", resource_id=guest.id, resource_name=guest.name,
+               details={"dist_upgrade": dist_upgrade})
+    db.session.commit()
 
     # Create the job and start the background thread
     from flask import current_app

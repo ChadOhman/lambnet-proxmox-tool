@@ -26,7 +26,7 @@ class Role(db.Model):
     PERMISSION_FIELDS = [
         "can_ssh", "can_update", "can_manage_users", "can_manage_settings",
         "can_manage_credentials", "can_view_hosts", "can_manage_hosts",
-        "can_manage_guests", "can_restart_unifi",
+        "can_manage_guests", "can_restart_unifi", "can_view_audit_log",
     ]
 
     PERMISSION_LABELS = {
@@ -39,6 +39,7 @@ class Role(db.Model):
         "can_manage_hosts": "Manage Hosts",
         "can_manage_guests": "Manage Guests",
         "can_restart_unifi": "Restart UniFi Devices",
+        "can_view_audit_log": "View Audit Log",
     }
 
     BASE_TIER_LEVELS = {"viewer": 1, "operator": 2, "admin": 3}
@@ -60,6 +61,7 @@ class Role(db.Model):
     can_manage_hosts = db.Column(db.Boolean, default=False)
     can_manage_guests = db.Column(db.Boolean, default=False)
     can_restart_unifi = db.Column(db.Boolean, default=False)
+    can_view_audit_log = db.Column(db.Boolean, default=False)
 
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -78,19 +80,23 @@ DEFAULT_ROLES = [
     {"name": "super_admin", "display_name": "Super Admin", "level": 4, "is_builtin": True,
      "can_ssh": True, "can_update": True, "can_manage_users": True,
      "can_manage_settings": True, "can_manage_credentials": True,
-     "can_view_hosts": True, "can_manage_hosts": True, "can_manage_guests": True, "can_restart_unifi": True},
+     "can_view_hosts": True, "can_manage_hosts": True, "can_manage_guests": True,
+     "can_restart_unifi": True, "can_view_audit_log": True},
     {"name": "admin", "display_name": "Admin", "level": 3, "is_builtin": True,
      "can_ssh": True, "can_update": True, "can_manage_users": True,
      "can_manage_settings": False, "can_manage_credentials": False,
-     "can_view_hosts": True, "can_manage_hosts": True, "can_manage_guests": True, "can_restart_unifi": True},
+     "can_view_hosts": True, "can_manage_hosts": True, "can_manage_guests": True,
+     "can_restart_unifi": True, "can_view_audit_log": True},
     {"name": "operator", "display_name": "Operator", "level": 2, "is_builtin": True,
      "can_ssh": True, "can_update": True, "can_manage_users": False,
      "can_manage_settings": False, "can_manage_credentials": False,
-     "can_view_hosts": True, "can_manage_hosts": False, "can_manage_guests": False, "can_restart_unifi": False},
+     "can_view_hosts": True, "can_manage_hosts": False, "can_manage_guests": False,
+     "can_restart_unifi": False, "can_view_audit_log": False},
     {"name": "viewer", "display_name": "Viewer", "level": 1, "is_builtin": True,
      "can_ssh": False, "can_update": False, "can_manage_users": False,
      "can_manage_settings": False, "can_manage_credentials": False,
-     "can_view_hosts": False, "can_manage_hosts": False, "can_manage_guests": False, "can_restart_unifi": False},
+     "can_view_hosts": False, "can_manage_hosts": False, "can_manage_guests": False,
+     "can_restart_unifi": False, "can_view_audit_log": False},
 ]
 
 
@@ -189,6 +195,12 @@ class User(UserMixin, db.Model):
         if self.is_super_admin:
             return True
         return self.role_obj.can_restart_unifi if self.role_obj else False
+
+    @property
+    def can_view_audit_log(self):
+        if self.is_super_admin:
+            return True
+        return self.role_obj.can_view_audit_log if self.role_obj else False
 
     @property
     def role_display(self):
@@ -421,3 +433,21 @@ class Setting(db.Model):
             db.session.add(s)
         db.session.commit()
         return s
+
+
+class AuditLog(db.Model):
+    __tablename__ = "audit_logs"
+
+    id            = db.Column(db.Integer, primary_key=True)
+    timestamp     = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    user_id       = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    user          = db.relationship("User", backref="audit_logs")
+    action        = db.Column(db.String(64),  nullable=False, index=True)
+    resource_type = db.Column(db.String(32),  nullable=False, index=True)
+    resource_id   = db.Column(db.Integer,     nullable=True,  index=True)
+    resource_name = db.Column(db.String(256), nullable=True)
+    details       = db.Column(db.JSON,        nullable=True)
+    ip_address    = db.Column(db.String(45),  nullable=True)
+
+    def __repr__(self):
+        return f"<AuditLog {self.action} by user_id={self.user_id}>"

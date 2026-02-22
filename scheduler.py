@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -276,6 +276,18 @@ def _check_app_update(app):
             logger.warning("update.sh not found, cannot auto-update")
 
 
+def _purge_old_audit_logs(app):
+    """Delete audit log entries older than 90 days."""
+    with app.app_context():
+        from models import db, AuditLog
+        from datetime import timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+        deleted = AuditLog.query.filter(AuditLog.timestamp < cutoff).delete()
+        db.session.commit()
+        if deleted:
+            logger.info(f"Purged {deleted} audit log entries older than 90 days.")
+
+
 def _run_service_health_checks(app):
     """Check status of all tracked services on all guests."""
     with app.app_context():
@@ -373,6 +385,16 @@ def init_scheduler(app):
         args=[app],
         id="app_update_check",
         name="Check for app updates",
+        replace_existing=True,
+    )
+
+    # Audit log retention purge - runs daily
+    _scheduler.add_job(
+        _purge_old_audit_logs,
+        trigger=IntervalTrigger(hours=24),
+        args=[app],
+        id="audit_log_purge",
+        name="Purge audit log entries older than 90 days",
         replace_existing=True,
     )
 

@@ -2,8 +2,9 @@ import ipaddress
 import logging
 from flask import Blueprint, render_template, redirect, url_for, flash
 from flask_login import login_required, current_user
-from models import Setting
+from models import db, Setting
 from credential_store import decrypt
+from audit import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,8 @@ def restart(mac):
 
     ok, msg = client.restart_device(mac)
     if ok:
+        log_action("unifi_device_restart", "unifi", resource_name=mac)
+        db.session.commit()
         flash(f"Restart command sent to device {mac}.", "success")
     else:
         flash(f"Failed to restart device: {msg}", "error")

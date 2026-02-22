@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from models import db, Guest, GuestService
 from scanner import check_service_statuses, service_action, get_service_logs, get_service_stats
+from audit import log_action
 
 bp = Blueprint("services", __name__)
 
@@ -38,6 +39,9 @@ def control(service_id, action):
 
     ok, msg = service_action(guest, svc, action)
     if ok:
+        log_action("service_control", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"service": svc.service_name, "action": action})
+        db.session.commit()
         flash(f"{action.capitalize()} sent for {svc.service_name} on {guest.name}.", "success")
     else:
         flash(f"Failed to {action} {svc.service_name} on {guest.name}: {msg}", "error")
@@ -104,6 +108,8 @@ def assign(guest_id):
         auto_detected=False,
     )
     db.session.add(svc)
+    log_action("service_assign", "guest", resource_id=guest.id, resource_name=guest.name,
+               details={"service": service_key})
     db.session.commit()
 
     flash(f"{display_name} assigned to {guest.name}.", "success")
@@ -115,6 +121,8 @@ def remove(service_id):
     svc = GuestService.query.get_or_404(service_id)
     guest_id = svc.guest_id
     name = svc.service_name
+    log_action("service_remove", "guest", resource_id=guest_id, resource_name=svc.guest.name,
+               details={"service": name})
     db.session.delete(svc)
     db.session.commit()
     flash(f"Service '{name}' removed.", "warning")

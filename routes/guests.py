@@ -1,8 +1,9 @@
 import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
-from models import db, Guest, GuestService, ProxmoxHost, Credential, Tag, Setting, UpdatePackage
+from models import db, Guest, GuestService, ProxmoxHost, Credential, Tag, Setting, UpdatePackage, AuditLog
 from proxmox_api import ProxmoxClient
+from audit import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,8 @@ def add():
         guest.tags = tags
 
     db.session.add(guest)
+    db.session.flush()  # populate guest.id before logging
+    log_action("guest_add", "guest", resource_id=guest.id, resource_name=guest.name)
     db.session.commit()
 
     flash(f"Guest '{name}' added.", "success")
@@ -219,6 +222,16 @@ def detail(guest_id):
         unifi_client = unifi_map.get(guest.mac_address)
         unifi_last_polled = Setting.get("unifi_last_polled", "")
 
+    # Recent audit activity for this guest (last 7 days)
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    recent_logs = (AuditLog.query
+                   .filter(AuditLog.resource_type == "guest",
+                           AuditLog.resource_id == guest.id,
+                           AuditLog.timestamp >= cutoff)
+                   .order_by(AuditLog.timestamp.desc())
+                   .limit(25).all())
+
     return render_template("guest_detail.html", guest=guest, credentials=credentials, tags=tags,
                            repl_jobs=repl_jobs, cluster_nodes=cluster_nodes,
                            snapshots=snapshots, backups=backups,
@@ -226,7 +239,8 @@ def detail(guest_id):
                            hardware=hardware,
                            unifi_client=unifi_client,
                            unifi_last_polled=unifi_last_polled,
-                           known_services=GuestService.KNOWN_SERVICES)
+                           known_services=GuestService.KNOWN_SERVICES,
+                           recent_logs=recent_logs)
 
 
 @bp.route("/<int:guest_id>/edit", methods=["POST"])
@@ -253,6 +267,7 @@ def edit(guest_id):
     else:
         guest.tags = []
 
+    log_action("guest_edit", "guest", resource_id=guest.id, resource_name=guest.name)
     db.session.commit()
     flash(f"Guest '{guest.name}' updated.", "success")
     return redirect(url_for("guests.detail", guest_id=guest.id))
@@ -281,6 +296,8 @@ def create_replication(guest_id):
     ok, msg = client.create_replication(guest.vmid, target_node, schedule=schedule)
     if ok:
         guest.replication_target = target_node
+        log_action("guest_replication_save", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"target_node": target_node, "schedule": schedule})
         db.session.commit()
         flash(msg, "success")
     else:
@@ -305,6 +322,8 @@ def delete_replication(guest_id, job_id):
     ok, msg = client.delete_replication(job_id)
     if ok:
         guest.replication_target = None
+        log_action("guest_replication_delete", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"job_id": job_id})
         db.session.commit()
         flash(msg, "success")
     else:
@@ -333,6 +352,8 @@ def unifi_reconnect(guest_id):
 
     ok, msg = client.reconnect_client(guest.mac_address)
     if ok:
+        log_action("guest_unifi_reconnect", "guest", resource_id=guest.id, resource_name=guest.name)
+        db.session.commit()
         flash(f"Reconnect command sent to {guest.name}.", "success")
     else:
         flash(f"Failed to reconnect: {msg}", "error")
@@ -360,6 +381,8 @@ def unifi_block(guest_id):
 
     ok, msg = client.block_client(guest.mac_address)
     if ok:
+        log_action("guest_unifi_block", "guest", resource_id=guest.id, resource_name=guest.name)
+        db.session.commit()
         flash(f"Block command sent for {guest.name}.", "warning")
     else:
         flash(f"Failed to block: {msg}", "error")
@@ -387,6 +410,8 @@ def unifi_unblock(guest_id):
 
     ok, msg = client.unblock_client(guest.mac_address)
     if ok:
+        log_action("guest_unifi_unblock", "guest", resource_id=guest.id, resource_name=guest.name)
+        db.session.commit()
         flash(f"Unblock command sent for {guest.name}.", "success")
     else:
         flash(f"Failed to unblock: {msg}", "error")
@@ -433,6 +458,8 @@ def power_action(guest_id, action):
             guest.power_state = "running"
         elif action in ("shutdown", "stop"):
             guest.power_state = "stopped"
+        log_action("guest_power", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"action": action})
         db.session.commit()
         flash(f"{action.capitalize()} command sent to {guest.name}.", "success")
     else:
@@ -468,6 +495,9 @@ def create_snapshot(guest_id):
 
     ok, upid = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
     if ok:
+        log_action("guest_snapshot_create", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"snapname": snapname})
+        db.session.commit()
         from routes.api import start_proxmox_job
         start_proxmox_job(guest, "snapshot", upid, node)
         return redirect(url_for("api.task_progress", guest_id=guest.id, job_type="snapshot"))
@@ -497,6 +527,9 @@ def delete_snapshot(guest_id, snapname):
 
     ok, upid = client.delete_snapshot(node, guest.vmid, guest.guest_type, snapname)
     if ok:
+        log_action("guest_snapshot_delete", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"snapname": snapname})
+        db.session.commit()
         from routes.api import start_proxmox_job
         start_proxmox_job(guest, "snapshot_delete", upid, node)
         return redirect(url_for("api.task_progress", guest_id=guest.id, job_type="snapshot_delete"))
@@ -526,6 +559,9 @@ def rollback_snapshot(guest_id, snapname):
 
     ok, upid = client.rollback_snapshot(node, guest.vmid, guest.guest_type, snapname)
     if ok:
+        log_action("guest_snapshot_rollback", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"snapname": snapname})
+        db.session.commit()
         from routes.api import start_proxmox_job
         start_proxmox_job(guest, "rollback", upid, node)
         return redirect(url_for("api.task_progress", guest_id=guest.id, job_type="rollback"))
@@ -573,6 +609,9 @@ def create_backup(guest_id):
 
     ok, upid = client.create_backup(node, guest.vmid, storage, mode=mode, compress=compress, protected=protected, notes=notes)
     if ok:
+        log_action("guest_backup_create", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"storage": storage, "mode": mode})
+        db.session.commit()
         from routes.api import start_proxmox_job
         start_proxmox_job(guest, "backup", upid, node)
         return redirect(url_for("api.task_progress", guest_id=guest.id, job_type="backup"))
@@ -604,6 +643,9 @@ def delete_backup(guest_id, volid):
 
     ok, msg = client.delete_backup(node, storage, volid)
     if ok:
+        log_action("guest_backup_delete", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"volid": volid})
+        db.session.commit()
         flash("Backup deleted.", "warning")
     else:
         flash(f"Failed to delete backup: {msg}", "error")
@@ -634,6 +676,9 @@ def toggle_backup_protection(guest_id, volid):
 
     ok, msg = client.update_backup_protection(node, storage, volid, protect)
     if ok:
+        log_action("guest_backup_protect", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"volid": volid, "protected": protect})
+        db.session.commit()
         flash(msg, "success")
     else:
         flash(f"Failed to update protection: {msg}", "error")
@@ -664,6 +709,9 @@ def update_backup_notes(guest_id, volid):
 
     ok, msg = client.update_backup_notes(node, storage, volid, notes)
     if ok:
+        log_action("guest_backup_notes", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"volid": volid})
+        db.session.commit()
         flash("Backup notes updated.", "success")
     else:
         flash(f"Failed to update notes: {msg}", "error")
@@ -680,6 +728,7 @@ def delete(guest_id):
 
     guest = Guest.query.get_or_404(guest_id)
     name = guest.name
+    log_action("guest_delete", "guest", resource_id=guest.id, resource_name=name)
     db.session.delete(guest)
     db.session.commit()
     flash(f"Guest '{name}' deleted.", "warning")
