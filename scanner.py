@@ -730,12 +730,13 @@ def _stats_sidekiq(guest, service):
         " echo \"retry=$($_RC zcard retry 2>/dev/null || true)\";"
         " echo \"dead=$($_RC zcard dead 2>/dev/null || true)\";"
         " echo \"scheduled=$($_RC zcard schedule 2>/dev/null || true)\";"
-        # Debug section: show resolved connection parameters
+        # Debug section: show resolved connection parameters + cli availability
         " echo ---debug---;"
         " echo \"host=$_HOST\";"
         " echo \"port=$_PORT\";"
         " echo \"db=$_DB\";"
-        " echo \"auth_set=$([ -n \"$_RP\" ] && echo yes || echo no)\""
+        " echo \"auth_set=$([ -n \"$_RP\" ] && echo yes || echo no)\";"
+        " echo \"redis_cli=$(which redis-cli 2>/dev/null || echo missing)\""
     )
 
     out, _ = _execute_command(guest, redis_script, timeout=30)

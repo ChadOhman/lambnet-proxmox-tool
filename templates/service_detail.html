@@ -329,6 +329,11 @@
             <i class="bi bi-info-circle"></i> Redis:
             <code>{{ stats._debug.host|default('?') }}:{{ stats._debug.port|default('?') }}/{{ stats._debug.db|default('?') }}</code>
             {% if stats._debug.auth_set == 'yes' %}<span class="badge bg-secondary ms-1">auth</span>{% endif %}
+            {% if stats._debug.redis_cli and stats._debug.redis_cli != 'missing' %}
+            <span class="badge bg-success ms-1">redis-cli ok</span>
+            {% elif stats._debug.redis_cli == 'missing' %}
+            <span class="badge bg-danger ms-1">redis-cli missing</span>
+            {% endif %}
         </div>
         {% endif %}
 
