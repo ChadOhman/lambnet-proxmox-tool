@@ -39,6 +39,7 @@ def _get_mastodon_settings():
         "protection_type": Setting.get("mastodon_protection_type", "snapshot"),
         "backup_storage": Setting.get("mastodon_backup_storage", ""),
         "backup_mode": Setting.get("mastodon_backup_mode", "snapshot"),
+        "guest_id_2": Setting.get("mastodon_guest_id_2", ""),
     }
 
 
@@ -68,6 +69,7 @@ def index():
 @bp.route("/save", methods=["POST"])
 def save():
     Setting.set("mastodon_guest_id", request.form.get("mastodon_guest_id", "").strip())
+    Setting.set("mastodon_guest_id_2", request.form.get("mastodon_guest_id_2", "").strip())
     Setting.set("mastodon_db_guest_id", request.form.get("mastodon_db_guest_id", "").strip())
     Setting.set("mastodon_user", request.form.get("mastodon_user", "mastodon").strip())
     Setting.set("mastodon_app_dir", request.form.get("mastodon_app_dir", "/home/mastodon/live").strip())

@@ -26,6 +26,19 @@
                     </div>
 
                     <div class="mb-3">
+                        <label class="form-label">Second Mastodon App Guest <small class="text-muted">(optional)</small></label>
+                        <select class="form-select" name="mastodon_guest_id_2">
+                            <option value="">-- None --</option>
+                            {% for guest in guests %}
+                            <option value="{{ guest.id }}" {{ 'selected' if settings.guest_id_2 == guest.id|string }}>
+                                {{ guest.name }} ({{ guest.ip_address or 'no IP' }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">If you run a second Mastodon app server, code will be synced to it after the primary upgrade (no migrations).</div>
+                    </div>
+
+                    <div class="mb-3">
                         <label class="form-label">PostgreSQL Guest</label>
                         <select class="form-select" name="mastodon_db_guest_id">
                             <option value="">-- Select Guest --</option>
@@ -249,7 +262,7 @@
                     </form>
                     {% if settings.guest_id and settings.db_guest_id %}
                     <form method="post" action="/mastodon/upgrade"
-                          onsubmit="return confirm('This will:\n1. {% if settings.protection_type == 'backup' %}Backup{% else %}Snapshot{% endif %} both VMs/CTs\n2. Run the full Mastodon upgrade\n3. Restart all services\n\nContinue?')">
+                          onsubmit="return confirm('This will:\n1. {% if settings.protection_type == 'backup' %}Backup{% else %}Snapshot{% endif %} {% if settings.guest_id_2 %}all{% else %}both{% endif %} VMs/CTs\n2. Run the full Mastodon upgrade\n{% if settings.guest_id_2 %}3. Sync code to second Mastodon guest\n4.{% else %}3.{% endif %} Restart all services\n\nContinue?')">
                         <button type="submit" class="btn btn-warning">
                             <i class="bi bi-rocket-takeoff"></i> Upgrade Now
                         </button>
@@ -293,10 +306,10 @@
             </div>
             <div class="card-body">
                 <ol class="small mb-0">
-                    <li>{% if settings.protection_type == 'backup' %}Backup (vzdump) Mastodon app + PostgreSQL guests to <code>{{ settings.backup_storage or '(storage not set)' }}</code>{% else %}Snapshot Mastodon app + PostgreSQL guests{% endif %}</li>
+                    <li>{% if settings.protection_type == 'backup' %}Backup (vzdump) {% if settings.guest_id_2 %}all{% else %}both{% endif %} guests to <code>{{ settings.backup_storage or '(storage not set)' }}</code>{% else %}Snapshot {% if settings.guest_id_2 %}all{% else %}both{% endif %} guests{% endif %}</li>
                     <li><code>git stash</code> (save local changes)</li>
                     <li>Swap <code>.env.production</code> to direct DB</li>
-                    <li><code>git pull</code> (fetch latest glitch-soc)</li>
+                    <li><code>git pull</code> (fetch latest)</li>
                     <li><code>git stash pop</code> (restore local changes)</li>
                     <li><code>bundle install</code></li>
                     <li><code>yarn install --frozen-lockfile</code></li>
@@ -307,6 +320,7 @@
                     <li>Post-deployment migrations</li>
                     <li>Restore <code>.env.production</code> to PGBouncer</li>
                     <li>Final service restart</li>
+                    {% if settings.guest_id_2 %}<li>Sync code to second Mastodon guest (git pull + bundle + yarn + assets + restart, no migrations)</li>{% endif %}
                 </ol>
             </div>
         </div>

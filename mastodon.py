@@ -123,6 +123,91 @@ def backup_guest(guest, storage, mode="snapshot"):
     return False, f"Backup of '{guest.name}' timed out after {timeout // 60} minutes"
 
 
+def _run_second_guest_sync(guest, user, app_dir, log):
+    """Sync code to a second Mastodon app guest via SSH (no DB migrations).
+
+    Runs: git stash, git pull, git stash pop, bundle install, yarn install,
+    asset precompile, restart mastodon services.
+    Returns True on success, False on failure.
+    """
+    from models import Credential
+
+    credential = guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        log(f"[VM2] No SSH credential available for '{guest.name}'")
+        return False
+    if not guest.ip_address:
+        log(f"[VM2] No IP address configured for '{guest.name}'")
+        return False
+
+    try:
+        with SSHClient.from_credential(guest.ip_address, credential) as ssh:
+            log("--- [VM2] git stash ---")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && git stash'", timeout=30
+            )
+            log(stdout or stderr or "(no output)")
+
+            log("--- [VM2] git pull ---")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && git pull'", timeout=120
+            )
+            log(stdout or stderr or "(no output)")
+            if code != 0:
+                log(f"ERROR: [VM2] git pull failed (exit {code})")
+                return False
+
+            log("--- [VM2] git stash pop ---")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && git stash pop'", timeout=30
+            )
+            log(stdout or stderr or "(no output)")
+            if code != 0:
+                log("WARNING: [VM2] git stash pop returned non-zero (may be no stash to pop)")
+
+            log("--- [VM2] bundle install ---")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && bundle install'", timeout=600
+            )
+            out = stdout or ""
+            log(out[-2000:] if len(out) > 2000 else out or stderr or "(no output)")
+            if code != 0:
+                log(f"ERROR: [VM2] bundle install failed (exit {code})")
+                return False
+
+            log("--- [VM2] yarn install ---")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && yarn install --frozen-lockfile'", timeout=600
+            )
+            out = stdout or ""
+            log(out[-2000:] if len(out) > 2000 else out or stderr or "(no output)")
+            if code != 0:
+                log(f"ERROR: [VM2] yarn install failed (exit {code})")
+                return False
+
+            log("--- [VM2] asset precompilation ---")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && RAILS_ENV=production bundle exec rails assets:precompile'",
+                timeout=900,
+            )
+            out = stdout or ""
+            log(out[-2000:] if len(out) > 2000 else out or stderr or "(no output)")
+            if code != 0:
+                log(f"ERROR: [VM2] asset precompilation failed (exit {code})")
+                return False
+
+            log("--- [VM2] restarting mastodon services ---")
+            stdout, stderr, code = ssh.execute_sudo("systemctl restart mastodon-*", timeout=60)
+            log(stdout or stderr or "(no output)")
+
+            return True
+    except Exception as e:
+        log(f"[VM2] SSH ERROR: {e}")
+        return False
+
+
 def _get_mastodon_config():
     """Read all Mastodon-related settings."""
     return {
@@ -140,6 +225,7 @@ def _get_mastodon_config():
         "protection_type": Setting.get("mastodon_protection_type", "snapshot"),
         "backup_storage": Setting.get("mastodon_backup_storage", ""),
         "backup_mode": Setting.get("mastodon_backup_mode", "snapshot"),
+        "guest_id_2": Setting.get("mastodon_guest_id_2", ""),
     }
 
 
@@ -192,6 +278,18 @@ def run_mastodon_upgrade():
     if not db_guest:
         return False, "PostgreSQL guest not found"
 
+    # Optional second Mastodon app guest
+    mastodon_guest_2 = None
+    guest_id_2 = config.get("guest_id_2", "")
+    if guest_id_2:
+        mastodon_guest_2 = Guest.query.get(int(guest_id_2))
+        if not mastodon_guest_2:
+            log("WARNING: Second Mastodon guest configured but not found — proceeding without it")
+            mastodon_guest_2 = None
+        elif mastodon_guest_2.id == mastodon_guest.id:
+            log("WARNING: Second Mastodon guest is the same as the primary — skipping")
+            mastodon_guest_2 = None
+
     user = config["user"]
     app_dir = config["app_dir"]
 
@@ -216,6 +314,12 @@ def run_mastodon_upgrade():
         if not ok:
             return False, "\n".join(log_lines)
 
+        if mastodon_guest_2:
+            ok, msg = backup_guest(mastodon_guest_2, backup_storage, mode=backup_mode)
+            log(f"Backup {mastodon_guest_2.name}: {msg}")
+            if not ok:
+                return False, "\n".join(log_lines)
+
         ok, msg = backup_guest(db_guest, backup_storage, mode=backup_mode)
         log(f"Backup {db_guest.name}: {msg}")
         if not ok:
@@ -227,6 +331,12 @@ def run_mastodon_upgrade():
         log(f"Snapshot {mastodon_guest.name}: {msg}")
         if not ok:
             return False, "\n".join(log_lines)
+
+        if mastodon_guest_2:
+            ok, msg = snapshot_guest(mastodon_guest_2)
+            log(f"Snapshot {mastodon_guest_2.name}: {msg}")
+            if not ok:
+                return False, "\n".join(log_lines)
 
         ok, msg = snapshot_guest(db_guest)
         log(f"Snapshot {db_guest.name}: {msg}")
@@ -386,6 +496,13 @@ def run_mastodon_upgrade():
             except Exception:
                 log("WARNING: Could not restore .env.production after failure")
         return False, "\n".join(log_lines)
+
+    # --- Step 3: Sync code to second Mastodon app guest (if configured) ---
+    if mastodon_guest_2:
+        log(f"=== Step 3: Syncing code to second Mastodon guest '{mastodon_guest_2.name}' ===")
+        ok = _run_second_guest_sync(mastodon_guest_2, user, app_dir, log)
+        if not ok:
+            log(f"WARNING: Code sync to '{mastodon_guest_2.name}' failed — primary upgrade was successful")
 
     # Success - update version tracking
     log("=== Upgrade complete! ===")
