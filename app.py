@@ -37,6 +37,7 @@ def create_app(test_config=None):
         _migrate_roles()
         _seed_roles()
         _migrate_users_to_role_fk()
+        _fix_cloudflare_created_via()
         _ensure_default_admin()
 
     # Read version from file
@@ -433,6 +434,26 @@ def _ensure_default_admin():
         print(f"  Password: {default_password}")
         print("  Please change this password immediately!")
         print("=" * 60)
+
+
+def _fix_cloudflare_created_via():
+    """Backfill created_via for Cloudflare users created before the field was tracked.
+
+    Users provisioned via Cloudflare Access have email addresses as usernames.
+    Any user whose username contains '@' and still has the default 'local' value
+    was almost certainly provisioned by Cloudflare before tracking was added.
+    """
+    updated = (
+        User.query
+        .filter(User.username.contains("@"), User.created_via == "local")
+        .all()
+    )
+    if updated:
+        for user in updated:
+            user.created_via = "cloudflare"
+        db.session.commit()
+        logger.info("Backfilled created_via='cloudflare' for %d user(s): %s",
+                    len(updated), [u.username for u in updated])
 
 
 if __name__ == "__main__":

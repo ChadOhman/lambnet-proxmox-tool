@@ -56,8 +56,9 @@
                         </thead>
                         <tbody>
                             {% for user in users %}
+                            {% set display_username = (user.username.split('@')[0] if '@' in user.username else user.username) if safety_mode else user.username %}
                             <tr>
-                                <td><code>{{ user.username }}</code></td>
+                                <td><code>{{ display_username }}</code></td>
                                 <td>{{ user.display_name or '-' }}</td>
                                 <td>
                                     {% if user.role_level >= 4 %}
@@ -103,7 +104,7 @@
                                     </button>
                                     {% endif %}
                                     {% if user.id != current_user.id and current_user.can_edit_user(user) %}
-                                    <form method="post" action="/security/users/{{ user.id }}/delete" class="d-inline" onsubmit="return confirm('Delete user {{ user.username }}?')">
+                                    <form method="post" action="/security/users/{{ user.id }}/delete" class="d-inline" onsubmit="return confirm('Delete user {{ display_username }}?')">
                                         <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                                     </form>
                                     {% endif %}
@@ -707,7 +708,7 @@
         <div class="modal-content bg-dark">
             <form method="post" action="/security/users/{{ user.id }}/edit">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Edit: {{ user.username }}</h5>
+                    <h5 class="modal-title">Edit: {{ display_username }}</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
