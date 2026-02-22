@@ -352,6 +352,7 @@
 {% block scripts %}
 <script>
 (function() {
+    const CURRENT_TAG = {{ current_tag | tojson if current_tag else '""' }};
     function formatBytes(bytes) {
         if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' GB';
         if (bytes >= 1048576) return (bytes / 1048576).toFixed(0) + ' MB';
@@ -537,7 +538,8 @@
     }
 
     function fetchGuestStats() {
-        fetch('/api/dashboard/guest-stats', { cache: 'no-store' })
+        const guestUrl = '/api/dashboard/guest-stats' + (CURRENT_TAG ? '?tag=' + encodeURIComponent(CURRENT_TAG) : '');
+        fetch(guestUrl, { cache: 'no-store' })
             .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(renderGuestStats)
             .catch(() => {

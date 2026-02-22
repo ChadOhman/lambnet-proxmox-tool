@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from flask import Blueprint, redirect, url_for, flash, request, render_template, jsonify
 from flask_login import login_required, current_user
-from models import db, Guest, ProxmoxHost
+from models import db, Guest, ProxmoxHost, Tag
 from scanner import scan_guest, scan_all_guests
 from notifier import send_update_notification
 
@@ -739,13 +739,24 @@ def dashboard_guest_stats():
     if not current_user.can_view_hosts and not current_user.can_manage_hosts:
         return jsonify({"error": "Permission denied"}), 403
 
+    tag_filter = request.args.get("tag", "")
+
     hosts = ProxmoxHost.query.all()
     if not hosts:
         return jsonify({"guests": []})
 
-    # Build lookup: (host_id, vmid) -> db guest (for links)
+    # Build lookup: (host_id, vmid) -> db guest (for links).
+    # Apply the active tag filter so the panel matches the dashboard view.
+    guest_query = Guest.query.filter_by(enabled=True)
+    if tag_filter == "__my_tags__":
+        user_tag_names = [t.name for t in current_user.allowed_tags]
+        if user_tag_names:
+            guest_query = guest_query.filter(Guest.tags.any(Tag.name.in_(user_tag_names)))
+    elif tag_filter:
+        guest_query = guest_query.filter(Guest.tags.any(Tag.name == tag_filter))
+
     db_lookup = {}
-    for g in Guest.query.filter_by(enabled=True).all():
+    for g in guest_query.all():
         if g.proxmox_host_id and g.vmid:
             db_lookup[(g.proxmox_host_id, g.vmid)] = g
 
@@ -765,6 +776,10 @@ def dashboard_guest_stats():
                 continue
 
             vmid = g.get("vmid")
+            db_guest = db_lookup.get((host.id, vmid))
+            # When a tag filter is active, skip guests not in the filtered set.
+            if tag_filter and db_guest is None:
+                continue
             mem_used = g.get("mem", 0)
             mem_total = g.get("maxmem", 0) or 1
             disk_used = g.get("disk", 0)
@@ -773,7 +788,6 @@ def dashboard_guest_stats():
             mem_pct = round(mem_used / mem_total * 100, 1)
             disk_pct = round(disk_used / disk_total * 100, 1)
 
-            db_guest = db_lookup.get((host.id, vmid))
             results.append({
                 "vmid": vmid,
                 "name": g.get("name", f"VMID {vmid}"),
