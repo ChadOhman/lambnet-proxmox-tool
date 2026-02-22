@@ -407,30 +407,35 @@
 
 {% if current_user.can_view_audit_log and recent_logs %}
 <div class="card bg-dark mb-4">
-    <div class="card-header">
-        <h5 class="mb-0"><i class="bi bi-journal-text"></i> Recent Activity <small class="text-muted fw-normal">(7 days)</small></h5>
+    <div class="card-header" style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#recentActivityCollapse" aria-expanded="false" aria-controls="recentActivityCollapse">
+        <h5 class="mb-0 d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-journal-text"></i> Recent Activity <small class="text-muted fw-normal">(7 days)</small></span>
+            <i class="bi bi-chevron-down text-muted small"></i>
+        </h5>
     </div>
-    <div class="card-body p-0">
-        <table class="table table-dark table-sm table-hover mb-0">
-            <thead>
-                <tr>
-                    <th>Time (UTC)</th>
-                    <th>User</th>
-                    <th>Action</th>
-                    <th>Details</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for entry in recent_logs %}
-                <tr>
-                    <td><small class="text-muted">{{ entry.timestamp.strftime('%m/%d %H:%M') }}</small></td>
-                    <td><small>{{ entry.user.username.split('@')[0] if '@' in entry.user.username else entry.user.username }}</small></td>
-                    <td><small>{{ entry.action | replace('_', ' ') | title }}</small></td>
-                    <td><small class="text-muted">{% if entry.details %}{{ entry.details | tojson }}{% endif %}</small></td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="collapse" id="recentActivityCollapse">
+        <div class="card-body p-0">
+            <table class="table table-dark table-sm table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Time (UTC)</th>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in recent_logs %}
+                    <tr>
+                        <td><small class="text-muted">{{ entry.timestamp.strftime('%m/%d %H:%M') }}</small></td>
+                        <td><small>{{ entry.user.username.split('@')[0] if '@' in entry.user.username else entry.user.username }}</small></td>
+                        <td><small>{{ entry.action | replace('_', ' ') | title }}</small></td>
+                        <td><small class="text-muted">{% if entry.details %}{{ entry.details | tojson }}{% endif %}</small></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 {% endif %}
