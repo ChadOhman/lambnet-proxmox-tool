@@ -140,7 +140,12 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">PGBouncer DB_HOST</label>
+                            {% if safety_mode %}
+                            <input type="hidden" name="mastodon_pgbouncer_host" value="{{ settings.pgbouncer_host }}">
+                            <input type="text" class="form-control font-monospace text-muted" value="hidden" disabled>
+                            {% else %}
                             <input type="text" class="form-control font-monospace" name="mastodon_pgbouncer_host" value="{{ settings.pgbouncer_host }}" placeholder="e.g. 127.0.0.1">
+                            {% endif %}
                             <div class="form-text">Normal operation (via PGBouncer)</div>
                         </div>
                         <div class="col-md-6">
@@ -152,7 +157,12 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Direct DB_HOST</label>
+                            {% if safety_mode %}
+                            <input type="hidden" name="mastodon_direct_db_host" value="{{ settings.direct_db_host }}">
+                            <input type="text" class="form-control font-monospace text-muted" value="hidden" disabled>
+                            {% else %}
                             <input type="text" class="form-control font-monospace" name="mastodon_direct_db_host" value="{{ settings.direct_db_host }}" placeholder="e.g. 10.0.0.50">
+                            {% endif %}
                             <div class="form-text">Direct PostgreSQL (for migrations)</div>
                         </div>
                         <div class="col-md-6">
