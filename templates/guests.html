@@ -96,7 +96,9 @@
                         </td>
                         <td>{{ guest.vmid or '-' }}</td>
                         <td>
-                            {%- if guest.ip_address and guest.ip_address != 'dhcp' -%}
+                            {%- if safety_mode -%}
+                                <span class="text-muted"><i class="bi bi-eye-slash"></i></span>
+                            {%- elif guest.ip_address and guest.ip_address != 'dhcp' -%}
                                 {{ guest.ip_address }}
                             {%- elif guest.mac_address and unifi_map.get(guest.mac_address) -%}
                                 {{ unifi_map[guest.mac_address].ip }}

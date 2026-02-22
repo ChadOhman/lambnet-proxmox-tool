@@ -238,7 +238,6 @@ def edit(guest_id):
         flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    guest.ip_address = request.form.get("ip_address", "").strip() or None
     guest.connection_method = request.form.get("connection_method", "ssh")
     guest.auto_update = "auto_update" in request.form
     guest.require_snapshot = request.form.get("require_snapshot", "inherit")

@@ -62,8 +62,8 @@
                             <tr>
                                 <td><strong>{{ device.name }}</strong></td>
                                 <td><code>{{ device.model }}</code></td>
-                                <td><code>{{ device.ip }}</code></td>
-                                <td><small class="text-muted">{{ device.mac }}</small></td>
+                                <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<code>{{ device.ip }}</code>{% endif %}</td>
+                                <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<small class="text-muted">{{ device.mac }}</small>{% endif %}</td>
                                 <td>
                                     {% if device.state == 1 %}
                                     <span class="badge bg-success">Online</span>
@@ -128,8 +128,8 @@
                             {% for client in clients %}
                             <tr>
                                 <td>{{ client.hostname }}</td>
-                                <td><code>{{ client.ip }}</code></td>
-                                <td><small class="text-muted">{{ client.mac }}</small></td>
+                                <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<code>{{ client.ip }}</code>{% endif %}</td>
+                                <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<small class="text-muted">{{ client.mac }}</small>{% endif %}</td>
                                 <td>{{ client.network or '-' }}</td>
                                 <td>
                                     {% if client.is_wired %}

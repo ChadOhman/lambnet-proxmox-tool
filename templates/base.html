@@ -90,7 +90,15 @@
                     {% endif %}
                 </ul>
 
-                <ul class="navbar-nav ms-auto">
+                <ul class="navbar-nav ms-auto align-items-center">
+                    <li class="nav-item me-2">
+                        <form method="post" action="/toggle-safety-mode">
+                            <button type="submit" class="btn btn-sm {% if safety_mode %}btn-warning{% else %}btn-outline-secondary{% endif %}" title="{% if safety_mode %}Safety mode on — click to disable{% else %}Safety mode off — click to enable{% endif %}">
+                                <i class="bi bi-{% if safety_mode %}eye-slash-fill{% else %}eye{% endif %}"></i>
+                                <span class="d-none d-xl-inline ms-1">{% if safety_mode %}Safety Mode{% else %}Stream Mode{% endif %}</span>
+                            </button>
+                        </form>
+                    </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
                             <i class="bi bi-person-circle"></i> {{ current_user.display_name or current_user.username }}

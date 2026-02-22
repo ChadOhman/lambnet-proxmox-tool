@@ -38,7 +38,9 @@
                 </div>
                 <p class="text-muted mb-2">
                     <small>
-                        {% if guest.ip_address and guest.ip_address != 'dhcp' %}
+                        {% if safety_mode %}
+                            <span class="text-muted"><i class="bi bi-eye-slash"></i> hidden</span>
+                        {% elif guest.ip_address and guest.ip_address != 'dhcp' %}
                             {{ guest.ip_address }}
                         {% elif guest.ip_address == 'dhcp' %}
                             <span class="text-warning"><i class="bi bi-arrow-repeat"></i> DHCP</span>

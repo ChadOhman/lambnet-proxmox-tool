@@ -167,6 +167,24 @@ def create_app(test_config=None):
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
+    @app.context_processor
+    def inject_safety_mode():
+        from flask import session
+        from flask_login import current_user
+        if current_user.is_authenticated:
+            return {"safety_mode": session.get("safety_mode", False)}
+        return {"safety_mode": False}
+
+    @app.route("/toggle-safety-mode", methods=["POST"])
+    def toggle_safety_mode():
+        from flask import session, redirect, request
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            from flask import abort
+            abort(403)
+        session["safety_mode"] = not session.get("safety_mode", False)
+        return redirect(request.referrer or "/")
+
     return app
 
 
