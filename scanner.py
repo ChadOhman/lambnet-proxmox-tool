@@ -793,7 +793,7 @@ def _stats_sidekiq(guest, service):
                     k, _, v = line.partition("=")
                     unit_props[current_unit][k.strip()] = v.strip()
 
-            for svc, unit in zip(valid_svcs, unit_names):
+            for svc, unit in zip(valid_svcs, unit_names, strict=False):
                 p = unit_props.get(unit, {})
                 mem = p.get("MemoryCurrent", "")
                 mem_human = ""
