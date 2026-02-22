@@ -681,66 +681,117 @@ def _stats_sidekiq(guest, service):
     """Collect Sidekiq stats — per-instance systemd info plus aggregate queue stats from Redis."""
     stats = {}
 
-    # Aggregate stats from Redis (only fetch once per guest, not per-instance)
-    # Queue info
-    out, _ = _execute_command(guest, "redis-cli smembers queues 2>/dev/null", timeout=10)
+    # All Redis queries in ONE SSH call to avoid per-call connection overhead and
+    # auth failures causing slow agent fallthrough for each individual command.
+    # Password detection mirrors _stats_redis (config file then Mastodon env).
+    redis_script = (
+        "_RP=\"\";"
+        " for _F in /etc/redis/redis.conf /etc/redis/redis-server.conf /etc/redis.conf; do"
+        "   _RP=$(grep -i \"^requirepass\" \"$_F\" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '\"');"
+        "   [ -n \"$_RP\" ] && break;"
+        " done;"
+        " [ -z \"$_RP\" ] && _RP=$(grep \"^REDIS_PASSWORD=\""
+        " /home/mastodon/live/.env.production"
+        " /var/www/mastodon/.env.production"
+        " /opt/mastodon/.env.production"
+        " 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"');"
+        " export REDISCLI_AUTH=\"$_RP\";"
+        # Queue names + lengths
+        " echo '---queues---';"
+        " QUEUES=$(redis-cli smembers queues 2>/dev/null || true);"
+        " for Q in $QUEUES; do"
+        "   LEN=$(redis-cli llen \"queue:$Q\" 2>/dev/null || true);"
+        "   echo \"$Q=$LEN\";"
+        " done;"
+        # Scalar stats
+        " echo '---stats---';"
+        " echo \"processed=$(redis-cli get stat:processed 2>/dev/null || true)\";"
+        " echo \"failed=$(redis-cli get stat:failed 2>/dev/null || true)\";"
+        " echo \"retry=$(redis-cli zcard retry 2>/dev/null || true)\";"
+        " echo \"dead=$(redis-cli zcard dead 2>/dev/null || true)\";"
+        " echo \"scheduled=$(redis-cli zcard schedule 2>/dev/null || true)\""
+    )
+
+    out, _ = _execute_command(guest, redis_script, timeout=30, sudo=True)
+
     queues = []
-    if out:
-        queue_names = [q.strip() for q in out.strip().split("\n") if q.strip()]
-        for qname in queue_names:
-            len_out, _ = _execute_command(guest, f"redis-cli llen queue:{qname} 2>/dev/null", timeout=5)
+    kv = {}
+    section = None
+    for line in (out or "").split("\n"):
+        line = line.strip()
+        if line == "---queues---":
+            section = "queues"
+        elif line == "---stats---":
+            section = "stats"
+        elif section == "queues" and "=" in line:
+            name, _, size_str = line.partition("=")
+            size_str = size_str.strip()
             queues.append({
-                "name": qname,
-                "size": int(len_out.strip()) if len_out and len_out.strip().isdigit() else 0,
+                "name": name.strip(),
+                "size": int(size_str) if size_str.isdigit() else 0,
             })
+        elif section == "stats" and "=" in line:
+            key, _, val = line.partition("=")
+            kv[key.strip()] = val.strip()
+
     stats["queues"] = queues
+    stats["processed"] = kv.get("processed", "0") if kv.get("processed", "") not in ("(nil)", "", None) else "0"
+    stats["failed"] = kv.get("failed", "0") if kv.get("failed", "") not in ("(nil)", "", None) else "0"
+    stats["retry_size"] = kv.get("retry", "0") if (kv.get("retry", "") or "").isdigit() else "0"
+    stats["dead_size"] = kv.get("dead", "0") if (kv.get("dead", "") or "").isdigit() else "0"
+    stats["scheduled_size"] = kv.get("scheduled", "0") if (kv.get("scheduled", "") or "").isdigit() else "0"
 
-    # Processed / failed counters
-    out, _ = _execute_command(guest, "redis-cli get stat:processed 2>/dev/null", timeout=5)
-    stats["processed"] = out.strip() if out and out.strip() not in ("(nil)", "") else "0"
-
-    out, _ = _execute_command(guest, "redis-cli get stat:failed 2>/dev/null", timeout=5)
-    stats["failed"] = out.strip() if out and out.strip() not in ("(nil)", "") else "0"
-
-    # Retry set size
-    out, _ = _execute_command(guest, "redis-cli zcard retry 2>/dev/null", timeout=5)
-    stats["retry_size"] = out.strip() if out and out.strip().isdigit() else "0"
-
-    # Dead set size
-    out, _ = _execute_command(guest, "redis-cli zcard dead 2>/dev/null", timeout=5)
-    stats["dead_size"] = out.strip() if out and out.strip().isdigit() else "0"
-
-    # Scheduled set size
-    out, _ = _execute_command(guest, "redis-cli zcard schedule 2>/dev/null", timeout=5)
-    stats["scheduled_size"] = out.strip() if out and out.strip().isdigit() else "0"
-
-    # All sidekiq instances on this guest
+    # Per-instance systemd stats — batched into a single SSH call
     sibling_services = GuestService.query.filter_by(guest_id=guest.id, service_name="sidekiq").all()
     instances = []
-    for svc in sibling_services:
-        try:
-            svc_unit = _safe_unit_name(svc.unit_name)
-        except ValueError:
-            continue
-        props_out, _ = _execute_command(guest,
-            f"systemctl show {svc_unit} --property=MemoryCurrent,CPUUsageNSec,ActiveState,MainPID 2>/dev/null",
-            timeout=10)
-        p = _parse_systemd_props(props_out)
-        mem = p.get("MemoryCurrent", "")
-        mem_human = ""
-        if mem and mem not in ("[not set]", "infinity", ""):
+    if sibling_services:
+        unit_names = []
+        valid_svcs = []
+        for svc in sibling_services:
             try:
-                mem_human = _human_bytes(int(mem))
+                unit_names.append(_safe_unit_name(svc.unit_name))
+                valid_svcs.append(svc)
             except ValueError:
-                pass
-        instances.append({
-            "unit_name": svc.unit_name,
-            "status": _map_systemctl_status(p.get("ActiveState", "unknown")),
-            "pid": p.get("MainPID", ""),
-            "memory": mem_human,
-        })
-    stats["instances"] = instances
+                continue
 
+        if unit_names:
+            units_str = " ".join(unit_names)
+            batch_cmd = (
+                f"for _U in {units_str}; do"
+                " echo \"---unit:$_U---\";"
+                " systemctl show \"$_U\" --property=MemoryCurrent,CPUUsageNSec,ActiveState,MainPID 2>/dev/null || true;"
+                " done"
+            )
+            batch_out, _ = _execute_command(guest, batch_cmd, timeout=20)
+            # Split output by unit markers
+            current_unit = None
+            unit_props = {}
+            for line in (batch_out or "").split("\n"):
+                line = line.strip()
+                if line.startswith("---unit:") and line.endswith("---"):
+                    current_unit = line[8:-3]
+                    unit_props[current_unit] = {}
+                elif current_unit and "=" in line:
+                    k, _, v = line.partition("=")
+                    unit_props[current_unit][k.strip()] = v.strip()
+
+            for svc, unit in zip(valid_svcs, unit_names):
+                p = unit_props.get(unit, {})
+                mem = p.get("MemoryCurrent", "")
+                mem_human = ""
+                if mem and mem not in ("[not set]", "infinity", ""):
+                    try:
+                        mem_human = _human_bytes(int(mem))
+                    except ValueError:
+                        pass
+                instances.append({
+                    "unit_name": svc.unit_name,
+                    "status": _map_systemctl_status(p.get("ActiveState", "unknown")),
+                    "pid": p.get("MainPID", ""),
+                    "memory": mem_human,
+                })
+
+    stats["instances"] = instances
     return stats
 
 
