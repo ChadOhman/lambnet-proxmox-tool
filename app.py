@@ -146,7 +146,7 @@ def create_app(test_config=None):
             dt = dt.replace(tzinfo=tz.utc)
         iso = dt.isoformat()
         display = dt.strftime(fmt)
-        return Markup(f'<span data-utc="{iso}">{display}</span>')
+        return Markup('<span data-utc="{}">{}</span>').format(iso, display)
 
     # Security headers
     @app.before_request
