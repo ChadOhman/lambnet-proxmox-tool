@@ -122,52 +122,56 @@ class TerminalSession:
         self.owner_username = owner_username
         self.started_at = datetime.now(timezone.utc)
         self._lock = threading.Lock()
-        self._subscribers: list = []   # all WebSocket objects (primary + followers)
+        self._queues: dict = {}        # id(ws) -> queue.Queue; each connection drains its own
         self._buffer_chunks: list = []
         self._buffer_size: int = 0
 
-    def add_subscriber(self, ws):
-        """Add a WebSocket and immediately send the ring-buffer catch-up."""
+    def add_subscriber(self, ws) -> queue.Queue:
+        """Register a WebSocket and return its dedicated send queue.
+
+        The caller is responsible for draining the queue and calling ws.send()
+        from the WebSocket's own thread.  The catch-up snapshot is pre-loaded
+        into the queue so the caller just needs to start draining.
+        """
+        q: queue.Queue = queue.Queue(maxsize=500)
         catchup = self._snapshot()
-        with self._lock:
-            self._subscribers.append(ws)
         if catchup:
-            try:
-                ws.send(json.dumps({"type": "output", "data": catchup}))
-            except Exception:
-                pass
+            q.put_nowait(json.dumps({"type": "output", "data": catchup}))
+        with self._lock:
+            self._queues[id(ws)] = q
+        return q
 
     def remove_subscriber(self, ws):
         with self._lock:
-            self._subscribers = [s for s in self._subscribers if s is not ws]
+            self._queues.pop(id(ws), None)
 
     def broadcast_output(self, data: str):
-        """Append SSH output to the ring buffer and fan it out to all subscribers."""
+        """Append SSH output to the ring buffer and enqueue it for all subscribers."""
         self._append(data)
         msg = json.dumps({"type": "output", "data": data})
         with self._lock:
-            subs = list(self._subscribers)
-        for ws in subs:
+            queues = list(self._queues.values())
+        for q in queues:
             try:
-                ws.send(msg)
-            except Exception:
-                pass
+                q.put_nowait(msg)
+            except queue.Full:
+                pass  # Slow consumer — drop rather than block
 
     def send_control(self, msg: dict):
-        """Send a non-output control message (e.g. disconnected) to all subscribers."""
+        """Enqueue a control message (e.g. disconnected) for all subscribers."""
         raw = json.dumps(msg)
         with self._lock:
-            subs = list(self._subscribers)
-        for ws in subs:
+            queues = list(self._queues.values())
+        for q in queues:
             try:
-                ws.send(raw)
-            except Exception:
+                q.put_nowait(raw)
+            except queue.Full:
                 pass
 
     def follower_count(self) -> int:
         """Number of follower connections (total subscribers minus the primary)."""
         with self._lock:
-            return max(0, len(self._subscribers) - 1)
+            return max(0, len(self._queues) - 1)
 
     def _append(self, data: str):
         with self._lock:

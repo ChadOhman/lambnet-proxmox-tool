@@ -1,4 +1,5 @@
 import json
+import queue as _queue
 import threading
 import logging
 import paramiko
@@ -273,6 +274,7 @@ def _ws_primary(ws, guest_id):
     ssh_client = None
     channel = None
     term_session = None
+    send_q = None
 
     try:
         # Auth checks
@@ -360,7 +362,22 @@ def _ws_primary(ws, guest_id):
             owner_user_id=ws_user.id,
             owner_username=ws_user.display_name or ws_user.username,
         )
-        term_session.add_subscriber(ws)  # primary is also a subscriber (gets its own output)
+        send_q = term_session.add_subscriber(ws)
+
+        # Sender thread: drains send_q and writes to the browser from THIS WebSocket's
+        # dedicated thread, avoiding cross-thread ws.send() issues in flask-sock.
+        def _primary_sender():
+            while True:
+                try:
+                    msg = send_q.get(timeout=2)
+                    if msg is None:
+                        break
+                    ws.send(msg)
+                except _queue.Empty:
+                    continue
+                except Exception:
+                    break
+        threading.Thread(target=_primary_sender, daemon=True).start()
 
         _ws_send(ws, "connected", f"Connected to {guest.name} ({ssh_host})")
         _ws_send(ws, "session_id", term_session.session_id)  # let the client know the session ID
@@ -424,6 +441,11 @@ def _ws_primary(ws, guest_id):
         logger.error(f"Terminal error for guest {guest_id}: {e}", exc_info=True)
         _ws_send(ws, "error", f"Connection failed: {e}")
     finally:
+        if send_q is not None:
+            try:
+                send_q.put_nowait(None)  # sentinel — stop _primary_sender
+            except Exception:
+                pass
         if term_session:
             term_session.remove_subscriber(ws)
             # If the primary disconnected and no other subscribers remain, clean up
@@ -450,6 +472,9 @@ def _ws_follow(ws, guest_id, session_id):
     from flask_login import current_user as ws_user
     from collaboration import terminal_registry
 
+    term_session = None
+    send_q = None
+
     try:
         if not ws_user.is_authenticated:
             _ws_send(ws, "error", "Not authenticated")
@@ -471,10 +496,29 @@ def _ws_follow(ws, guest_id, session_id):
             _ws_send(ws, "error", "Session not found or has ended.")
             return
 
-        # Attach as follower — ring buffer catch-up sent automatically
-        term_session.add_subscriber(ws)
-        _ws_send(ws, "connected",
-                 f"Following {term_session.owner_username}'s session on {guest.name}")
+        # Attach as follower — catch-up snapshot is pre-loaded into the queue
+        send_q = term_session.add_subscriber(ws)
+
+        # Sender thread: drains send_q and writes to the follower's browser.
+        # Must run in its own thread so ws.send() is never called cross-thread.
+        def _follower_sender():
+            while True:
+                try:
+                    msg = send_q.get(timeout=2)
+                    if msg is None:
+                        break
+                    ws.send(msg)
+                except _queue.Empty:
+                    continue
+                except Exception:
+                    break
+        threading.Thread(target=_follower_sender, daemon=True).start()
+
+        # connected message goes through the queue so it arrives after the catch-up
+        send_q.put_nowait(json.dumps({
+            "type": "connected",
+            "data": f"Following {term_session.owner_username}'s session on {guest.name}",
+        }))
 
         logger.info(f"Follower {ws_user.username} joined session {session_id} on {guest.name}")
 
@@ -491,7 +535,12 @@ def _ws_follow(ws, guest_id, session_id):
     except Exception as e:
         logger.error(f"Follow session error for guest {guest_id}: {e}", exc_info=True)
     finally:
-        if term_session := terminal_registry.get(session_id):
+        if send_q is not None:
+            try:
+                send_q.put_nowait(None)  # sentinel — stop _follower_sender
+            except Exception:
+                pass
+        if term_session:
             term_session.remove_subscriber(ws)
         try:
             ws.close()
