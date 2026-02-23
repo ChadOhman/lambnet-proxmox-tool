@@ -993,7 +993,7 @@ def collab_stream():
         except GeneratorExit:
             pass
         finally:
-            collab_hub.disconnect(user_id)
+            collab_hub.disconnect(user_id, event_queue=event_queue)
 
     return Response(
         generate(),
@@ -1012,7 +1012,8 @@ def collab_presence():
     from collaboration import collab_hub
     data = request.get_json(silent=True) or {}
     page = data.get("page", "/")
-    collab_hub.update_presence(current_user.id, page)
+    following = data.get("following") or None  # username string or null
+    collab_hub.update_presence(current_user.id, page, following=following)
     return jsonify({"ok": True})
 
 

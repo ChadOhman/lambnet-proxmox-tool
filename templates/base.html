@@ -248,12 +248,14 @@
             _followingUser = username;
             sessionStorage.setItem('collabFollowing', username);
             _updateFollowIndicators();
+            sendPresence(); // broadcast follow state immediately
         }
 
         function stopFollowing() {
             _followingUser = null;
             sessionStorage.removeItem('collabFollowing');
             _updateFollowIndicators();
+            sendPresence(); // broadcast cleared follow state immediately
         }
 
         function _updateFollowIndicators() {
@@ -368,6 +370,8 @@
                 const target = (window._collabPresence || []).find(u => u.username === _followingUser);
                 if (!target) {
                     stopFollowing(); // followed user went offline
+                } else if (target.following === ME) {
+                    stopFollowing(); // mutual follow — they are following us, so we step back
                 } else if (target.page && target.page !== window.location.pathname) {
                     window.location.href = target.page;
                 }
@@ -528,7 +532,10 @@
             fetch('/api/collab/presence', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ page: window.location.pathname }),
+                body: JSON.stringify({
+                    page: window.location.pathname,
+                    following: _followingUser || null,
+                }),
             }).catch(() => {});
         }
 
@@ -536,6 +543,13 @@
         sendPresence();
         setInterval(sendPresence, 30000);
         window.addEventListener('popstate', sendPresence);
+        // Re-announce presence immediately when the user returns to the tab
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                startSSE();
+                sendPresence();
+            }
+        });
     })();
     </script>
     {% block scripts %}{% endblock %}

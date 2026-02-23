@@ -45,23 +45,34 @@ class CollaborationHub:
                 "username": username,
                 "display_name": display_name or username,
                 "page": page,
+                "following": None,
                 "last_seen": time.time(),
                 "queue": q,
             }
         self._push_presence()
         return q
 
-    def disconnect(self, user_id: int):
-        """Unregister a user's SSE connection and broadcast updated presence."""
+    def disconnect(self, user_id: int, event_queue=None):
+        """Unregister a user's SSE connection and broadcast updated presence.
+
+        Pass event_queue to guard against the reconnect race: if the user has
+        already reconnected (new queue registered), this disconnect is a no-op.
+        """
         with self._lock:
-            self._users.pop(user_id, None)
+            entry = self._users.get(user_id)
+            if entry is None:
+                return
+            if event_queue is not None and entry["queue"] is not event_queue:
+                return  # stale disconnect from a superseded connection
+            self._users.pop(user_id)
         self._push_presence()
 
-    def update_presence(self, user_id: int, page: str):
-        """Update a user's current page and refresh their last-seen timestamp."""
+    def update_presence(self, user_id: int, page: str, following: str | None = None):
+        """Update a user's current page, follow target, and last-seen timestamp."""
         with self._lock:
             if user_id in self._users:
                 self._users[user_id]["page"] = page
+                self._users[user_id]["following"] = following
                 self._users[user_id]["last_seen"] = time.time()
         self._push_presence()
 
@@ -83,6 +94,7 @@ class CollaborationHub:
                     "username": u["username"],
                     "display_name": u["display_name"],
                     "page": u["page"],
+                    "following": u.get("following"),
                 }
                 for u in self._users.values()
                 if now - u["last_seen"] < _PRESENCE_TIMEOUT
