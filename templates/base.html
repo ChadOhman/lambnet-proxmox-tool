@@ -449,8 +449,8 @@
         let _cursorThrottle = null;
 
         function hasCoViewers() {
-            const p = window.location.pathname;
-            return (window._collabPresence || []).some(u => u.username !== ME && u.page === p);
+            // Any other online user is enough to start tracking; page filtering is done server-side
+            return (window._collabPresence || []).some(u => u.username !== ME);
         }
 
         function startCursors() {
@@ -480,16 +480,14 @@
             if (_cursorThrottle) return;
             _cursorThrottle = setTimeout(function() {
                 _cursorThrottle = null;
-                fetch('/api/collab/cursor', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        x_pct: e.clientX / window.innerWidth,
-                        y_pct: e.clientY / window.innerHeight,
-                        page: window.location.pathname,
-                        color: avatarColor(ME),
-                    }),
-                }).catch(() => {});
+                const params = new URLSearchParams({
+                    x_pct: (e.clientX / window.innerWidth).toFixed(4),
+                    y_pct: (e.clientY / window.innerHeight).toFixed(4),
+                    page:  window.location.pathname,
+                    color: avatarColor(ME),
+                });
+                fetch('/api/collab/cursor?' + params.toString(), { cache: 'no-store' })
+                    .catch(() => {});
             }, 100);
         }
 

@@ -209,7 +209,7 @@ class TerminalSessionRegistry:
 class CursorHub:
     """Stores the most-recent cursor position per user for co-presence tracking."""
 
-    EXPIRY = 0.8  # seconds without update → cursor considered gone
+    EXPIRY = 3.0  # seconds without update → cursor considered gone
 
     def __init__(self):
         self._lock = threading.Lock()

@@ -1039,23 +1039,22 @@ def collab_terminal_sessions():
     return jsonify({"sessions": sessions})
 
 
-@bp.route("/collab/cursor", methods=["POST"])
+@bp.route("/collab/cursor")
 @login_required
 def collab_cursor_update():
-    """Receive and store the current user's cursor position."""
+    """Receive and store the current user's cursor position (GET with query params)."""
     from collaboration import cursor_hub
-    data = request.get_json(silent=True) or {}
     try:
-        x_pct = float(data["x_pct"])
-        y_pct = float(data["y_pct"])
+        x_pct = float(request.args["x_pct"])
+        y_pct = float(request.args["y_pct"])
     except (KeyError, TypeError, ValueError):
         return jsonify(ok=False), 400
     cursor_hub.update(
         current_user.username,
         current_user.display_name or current_user.username,
-        data.get("page", "/"),
+        request.args.get("page", "/"),
         x_pct, y_pct,
-        data.get("color", "#3b82f6"),
+        request.args.get("color", "#3b82f6"),
     )
     return jsonify(ok=True)
 
