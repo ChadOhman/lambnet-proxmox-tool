@@ -271,9 +271,13 @@
                         s => String(s.guest_id) === String(guestId)
                     );
                 if (session) {
-                    _stopTerminalFollowPoll();
-                    window.location.href =
+                    const followUrl =
                         `/terminal/${session.guest_id}/follow/${session.session_id}`;
+                    _stopTerminalFollowPoll();
+                    // Guard: don't reload if we're already on this follow URL
+                    if (window.location.pathname !== followUrl) {
+                        window.location.href = followUrl;
+                    }
                 } else {
                     // Session not visible yet — refresh the cache and try again
                     refreshCollabSessions();
@@ -427,21 +431,32 @@
                     const termMatch = target.page.match(/^\/terminal\/(\d+)$/);
                     if (termMatch) {
                         const guestId = termMatch[1];
-                        // Check the cache first for an immediate hit
-                        const session =
-                            (window._collabSessions || []).find(
-                                s => String(s.guest_id) === guestId &&
-                                     s.owner_username === _followingUser
-                            ) ||
-                            (window._collabSessions || []).find(
-                                s => String(s.guest_id) === guestId
-                            );
-                        if (session) {
+                        // If we're already on a follow URL for this guest, stay put.
+                        // This prevents a reload loop when User A's presence briefly
+                        // reverts to the plain /terminal/<id> URL on SSE reconnect
+                        // before their next sendPresence() re-broadcasts the follow URL.
+                        const alreadyOnFollow = window.location.pathname.startsWith(
+                            `/terminal/${guestId}/follow/`
+                        );
+                        if (alreadyOnFollow) {
                             _stopTerminalFollowPoll();
-                            window.location.href =
-                                `/terminal/${session.guest_id}/follow/${session.session_id}`;
                         } else {
-                            _startTerminalFollowPoll(guestId);
+                            // Check the cache for an immediate hit
+                            const session =
+                                (window._collabSessions || []).find(
+                                    s => String(s.guest_id) === guestId &&
+                                         s.owner_username === _followingUser
+                                ) ||
+                                (window._collabSessions || []).find(
+                                    s => String(s.guest_id) === guestId
+                                );
+                            if (session) {
+                                _stopTerminalFollowPoll();
+                                window.location.href =
+                                    `/terminal/${session.guest_id}/follow/${session.session_id}`;
+                            } else {
+                                _startTerminalFollowPoll(guestId);
+                            }
                         }
                     } else {
                         // Normal page (or full follow URL) — navigate immediately
