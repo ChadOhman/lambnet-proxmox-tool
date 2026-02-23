@@ -1,9 +1,35 @@
+import collections
+import threading
+import time
+import zoneinfo
 from urllib.parse import urlparse
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required, current_user
 from models import db, User
 
 bp = Blueprint("auth", __name__)
+
+# ---------------------------------------------------------------------------
+# Login rate-limiting (in-process; works with single gunicorn worker / gthread)
+# ---------------------------------------------------------------------------
+_FAIL_WINDOW = 300   # 5-minute sliding window
+_FAIL_LIMIT = 10     # failed attempts before lockout
+
+_failed_attempts: dict = collections.defaultdict(list)
+_failed_lock = threading.Lock()
+
+
+def _check_rate_limit(ip: str) -> bool:
+    """Return True if this IP is currently locked out."""
+    cutoff = time.time() - _FAIL_WINDOW
+    with _failed_lock:
+        _failed_attempts[ip] = [t for t in _failed_attempts[ip] if t > cutoff]
+        return len(_failed_attempts[ip]) >= _FAIL_LIMIT
+
+
+def _record_failed_login(ip: str) -> None:
+    with _failed_lock:
+        _failed_attempts[ip].append(time.time())
 
 
 def _is_safe_next_url(target):
@@ -20,6 +46,11 @@ def login():
         return redirect(url_for("dashboard.index"))
 
     if request.method == "POST":
+        ip = request.remote_addr or "unknown"
+        if _check_rate_limit(ip):
+            flash("Too many failed login attempts. Please try again later.", "error")
+            return render_template("login.html")
+
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
 
@@ -31,6 +62,7 @@ def login():
                 return redirect(next_page)
             return redirect(url_for("dashboard.index"))
 
+        _record_failed_login(ip)
         flash("Invalid username or password.", "error")
 
     return render_template("login.html")
@@ -72,6 +104,9 @@ def change_password():
 def profile():
     if request.method == "POST":
         tz = request.form.get("timezone", "").strip()
+        if tz and tz not in zoneinfo.available_timezones():
+            flash("Invalid timezone.", "error")
+            return redirect(url_for("auth.profile"))
         current_user.timezone = tz or None
         db.session.commit()
         flash("Profile saved.", "success")

@@ -32,6 +32,7 @@ def _validate_shell_param(value, label):
         raise ValueError(f"{label} contains unsafe characters: {value!r}")
 
 DEFAULT_MASTODON_REPO = "mastodon/mastodon"
+_REPO_RE = re.compile(r'^[\w.\-]+/[\w.\-]+$')
 
 
 def check_mastodon_release():
@@ -41,6 +42,9 @@ def check_mastodon_release():
     """
     try:
         repo = Setting.get("mastodon_repo", DEFAULT_MASTODON_REPO) or DEFAULT_MASTODON_REPO
+        if not _REPO_RE.match(repo):
+            logger.error("Invalid mastodon_repo format: %r — expected 'owner/repo'", repo)
+            return False, "", ""
         releases_url = f"https://api.github.com/repos/{repo}/releases/latest"
         req = Request(releases_url, headers={"User-Agent": "MCAT"})
         with urlopen(req, timeout=15) as resp:
