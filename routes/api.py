@@ -311,6 +311,10 @@ def update_progress(guest_id):
 @bp.route("/apply/<int:guest_id>/status")
 @login_required
 def update_status(guest_id):
+    guest = Guest.query.get_or_404(guest_id)
+    if not current_user.can_manage_guests and not current_user.can_access_guest(guest):
+        return jsonify({"error": "forbidden"}), 403
+
     job = _update_jobs.get(guest_id)
     if not job:
         return jsonify({"running": False, "log": "", "success": None})
@@ -320,6 +324,10 @@ def update_status(guest_id):
 @bp.route("/apply/<int:guest_id>/cancel", methods=["POST"])
 @login_required
 def update_cancel(guest_id):
+    guest = Guest.query.get_or_404(guest_id)
+    if not current_user.can_manage_guests and not current_user.can_access_guest(guest):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
     with _jobs_lock:
         job = _update_jobs.get(guest_id)
     if not job or not job.running:
@@ -483,6 +491,10 @@ def task_progress(guest_id, job_type):
 @bp.route("/task/<int:guest_id>/<job_type>/status")
 @login_required
 def task_status(guest_id, job_type):
+    guest = Guest.query.get_or_404(guest_id)
+    if not current_user.can_manage_guests and not current_user.can_access_guest(guest):
+        return jsonify({"error": "forbidden"}), 403
+
     job_key = f"{job_type}:{guest_id}"
     job = _proxmox_jobs.get(job_key)
     if not job:
@@ -493,6 +505,10 @@ def task_status(guest_id, job_type):
 @bp.route("/task/<int:guest_id>/<job_type>/cancel", methods=["POST"])
 @login_required
 def task_cancel(guest_id, job_type):
+    guest = Guest.query.get_or_404(guest_id)
+    if not current_user.can_manage_guests and not current_user.can_access_guest(guest):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
     job_key = f"{job_type}:{guest_id}"
     with _proxmox_jobs_lock:
         job = _proxmox_jobs.get(job_key)
