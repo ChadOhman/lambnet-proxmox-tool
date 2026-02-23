@@ -268,7 +268,7 @@ def terminal_ws(ws, guest_id):
 def _ws_primary(ws, guest_id):
     """Handle the primary (owner) WebSocket connection."""
     from flask_login import current_user as ws_user
-    from collaboration import terminal_registry, collab_hub
+    from collaboration import terminal_registry
 
     ssh_client = None
     channel = None
