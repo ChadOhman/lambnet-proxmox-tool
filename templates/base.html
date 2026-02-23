@@ -244,6 +244,49 @@
         // ── Page follow mode ──────────────────────────────────────────────
         let _followingUser = sessionStorage.getItem('collabFollowing') || null;
 
+        // Terminal-follow polling: when following someone who is at a plain
+        // /terminal/<id> URL we can't navigate there directly (it would open a
+        // new primary SSH connection).  Instead we poll the sessions cache every
+        // 2 s until their TerminalSession appears, then jump to the follow URL.
+        // This is the fallback for when the SSE delivery of the follow URL is
+        // delayed (e.g. through Cloudflare Zero Trust tunnels).
+        let _terminalFollowPollTimer = null;
+        let _terminalFollowGuestId   = null;
+
+        function _startTerminalFollowPoll(guestId) {
+            // Already polling for the same guest — nothing to do
+            if (_terminalFollowPollTimer && _terminalFollowGuestId === guestId) return;
+            // Guest changed (or poll not started) — (re)start
+            _stopTerminalFollowPoll();
+            _terminalFollowGuestId = guestId;
+            _terminalFollowPollTimer = setInterval(function() {
+                // Prefer a session owned by the user we are following; fall back to any
+                // session on this guest (handles display-name / username mismatches).
+                const session =
+                    (window._collabSessions || []).find(
+                        s => String(s.guest_id) === String(guestId) &&
+                             s.owner_username === _followingUser
+                    ) ||
+                    (window._collabSessions || []).find(
+                        s => String(s.guest_id) === String(guestId)
+                    );
+                if (session) {
+                    _stopTerminalFollowPoll();
+                    window.location.href =
+                        `/terminal/${session.guest_id}/follow/${session.session_id}`;
+                } else {
+                    // Session not visible yet — refresh the cache and try again
+                    refreshCollabSessions();
+                }
+            }, 2000);
+        }
+
+        function _stopTerminalFollowPoll() {
+            clearInterval(_terminalFollowPollTimer);
+            _terminalFollowPollTimer = null;
+            _terminalFollowGuestId   = null;
+        }
+
         function startFollowing(username) {
             _followingUser = username;
             sessionStorage.setItem('collabFollowing', username);
@@ -254,6 +297,7 @@
         function stopFollowing() {
             _followingUser = null;
             sessionStorage.removeItem('collabFollowing');
+            _stopTerminalFollowPoll();
             _updateFollowIndicators();
             sendPresence(); // broadcast cleared follow state immediately
         }
@@ -373,16 +417,40 @@
                 } else if (target.following === ME) {
                     stopFollowing(); // mutual follow — they are following us, so we step back
                 } else if (target.page && target.page !== window.location.pathname) {
-                    // Never navigate to a plain /terminal/<id> URL — that would open a
-                    // new primary SSH connection instead of following.  terminal_session.html
-                    // sets data-collab-page to /terminal/<id>/follow/<sid> and fires
-                    // sendPresence() as soon as the session ID is known, so the very next
-                    // presence update will carry the correct follow URL and we navigate then.
-                    const plainTerminal = /^\/terminal\/\d+$/.test(target.page);
-                    if (!plainTerminal) {
+                    // A plain /terminal/<id> URL means the followed user has opened the
+                    // terminal page but SSH hasn't been established yet (so no follow URL
+                    // is in presence).  We must NOT navigate there — that would open a new
+                    // primary SSH connection.  Instead, poll the sessions API every 2 s
+                    // until the TerminalSession appears; then jump to the follow URL.
+                    // This also covers the case where the SSE delivery of the follow URL
+                    // is delayed (e.g. through Cloudflare Zero Trust tunnels).
+                    const termMatch = target.page.match(/^\/terminal\/(\d+)$/);
+                    if (termMatch) {
+                        const guestId = termMatch[1];
+                        // Check the cache first for an immediate hit
+                        const session =
+                            (window._collabSessions || []).find(
+                                s => String(s.guest_id) === guestId &&
+                                     s.owner_username === _followingUser
+                            ) ||
+                            (window._collabSessions || []).find(
+                                s => String(s.guest_id) === guestId
+                            );
+                        if (session) {
+                            _stopTerminalFollowPoll();
+                            window.location.href =
+                                `/terminal/${session.guest_id}/follow/${session.session_id}`;
+                        } else {
+                            _startTerminalFollowPoll(guestId);
+                        }
+                    } else {
+                        // Normal page (or full follow URL) — navigate immediately
+                        _stopTerminalFollowPoll();
                         window.location.href = target.page;
                     }
-                    // else: hold position; follow URL will appear in the next presence update
+                } else {
+                    // On the same page as the followed user — stop any pending poll
+                    _stopTerminalFollowPoll();
                 }
             }
 
@@ -447,8 +515,8 @@
                 document.body.appendChild(el);
                 _ghosts[c.username] = el;
             }
-            el.style.left = (c.x_pct * 100).toFixed(2) + 'vw';
-            el.style.top  = (c.y_pct * 100).toFixed(2) + 'vh';
+            el.style.left = (c.x_pct * window.innerWidth).toFixed(1) + 'px';
+            el.style.top  = (c.y_pct * window.innerHeight).toFixed(1) + 'px';
         }
 
         function removeGhost(username) {

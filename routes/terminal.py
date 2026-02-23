@@ -360,7 +360,7 @@ def _ws_primary(ws, guest_id):
             guest_id=guest.id,
             guest_name=guest.name,
             owner_user_id=ws_user.id,
-            owner_username=ws_user.display_name or ws_user.username,
+            owner_username=ws_user.username,  # use login username for identity matching
         )
         send_q = term_session.add_subscriber(ws)
 
