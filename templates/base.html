@@ -266,37 +266,36 @@
                 }
             });
 
-            // Update or add each user
+            // Add new users; skip existing — content functions read live data on every show
             others.forEach(u => {
+                if (_popoverInstances.has(u.username)) return;
+
                 const initials = (u.display_name || u.username).slice(0, 2).toUpperCase();
                 const color = avatarColor(u.username);
-                const bodyHtml = makePopoverBody(u);
-                const headerHtml = escHtml(u.display_name || u.username);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'collab-avatar';
+                btn.style.background = color;
+                btn.dataset.username = u.username;
+                btn.textContent = initials;
+                bar.appendChild(btn);
 
-                if (_popoverInstances.has(u.username)) {
-                    _popoverInstances.get(u.username).setContent({
-                        '.popover-header': headerHtml,
-                        '.popover-body': bodyHtml,
-                    });
-                } else {
-                    const btn = document.createElement('button');
-                    btn.type = 'button';
-                    btn.className = 'collab-avatar';
-                    btn.style.background = color;
-                    btn.dataset.username = u.username;
-                    btn.textContent = initials;
-                    bar.appendChild(btn);
-
-                    const popover = new bootstrap.Popover(btn, {
-                        html: true,
-                        trigger: 'hover focus',
-                        placement: 'bottom',
-                        title: headerHtml,
-                        content: bodyHtml,
-                        delay: { show: 100, hide: 300 },
-                    });
-                    _popoverInstances.set(u.username, popover);
-                }
+                const uname = u.username; // stable closure key
+                const popover = new bootstrap.Popover(btn, {
+                    html: true,
+                    trigger: 'hover focus',
+                    placement: 'bottom',
+                    title: function() {
+                        const live = (window._collabPresence || []).find(x => x.username === uname);
+                        return live ? escHtml(live.display_name || live.username) : escHtml(uname);
+                    },
+                    content: function() {
+                        const live = (window._collabPresence || []).find(x => x.username === uname);
+                        return live ? makePopoverBody(live) : '';
+                    },
+                    delay: { show: 100, hide: 300 },
+                });
+                _popoverInstances.set(u.username, popover);
             });
         }
 
