@@ -15,11 +15,10 @@
             display: inline-flex; align-items: center; justify-content: center;
             width: 26px; height: 26px; border-radius: 50%;
             font-size: 10px; font-weight: 600; color: #fff;
-            border: 2px solid #212529; cursor: default;
+            border: none; padding: 0; cursor: pointer;
             transition: transform .15s;
         }
         .collab-avatar:hover { transform: scale(1.15); }
-        #collabPresence { gap: 4px; }
     </style>
 </head>
 <body>
@@ -103,8 +102,6 @@
                 </ul>
 
                 <ul class="navbar-nav ms-auto align-items-center">
-                    <!-- Real-time presence: filled by collab JS -->
-                    <li class="nav-item d-flex align-items-center me-2" id="collabPresence"></li>
                     <li class="nav-item me-2">
                         <form method="post" action="/toggle-safety-mode">
                             <button type="submit" class="btn btn-sm {% if safety_mode %}btn-warning{% else %}btn-outline-secondary{% endif %}" title="{% if safety_mode %}Safety mode on — click to disable{% else %}Safety mode off — click to enable{% endif %}">
@@ -131,6 +128,12 @@
             </div>
         </div>
     </nav>
+
+    <!-- Presence bar: hidden until ≥1 other user is online -->
+    <div id="presenceBar" class="bg-dark border-bottom border-secondary px-3 d-flex align-items-center justify-content-end" style="min-height:28px; display:none;">
+        <small class="text-muted me-2" style="font-size:0.7rem;"><i class="bi bi-people"></i> Online:</small>
+        <div id="presenceAvatars" class="d-flex gap-1 align-items-center"></div>
+    </div>
 
     <main class="container-fluid py-4">
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -191,7 +194,11 @@
     (function() {
         const ME = {{ (current_user.username) | tojson }};
 
-        // Avatar colour derived from username
+        // ── Helpers ───────────────────────────────────────────────────────
+        function escHtml(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
         const PALETTE = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6',
                          '#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
         function avatarColor(name) {
@@ -200,7 +207,6 @@
             return PALETTE[Math.abs(h) % PALETTE.length];
         }
 
-        // Convert a pathname to a short human-readable label
         function pageLabel(path) {
             if (!path || path === '/') return 'Dashboard';
             const parts = path.split('/').filter(Boolean);
@@ -213,34 +219,88 @@
             return parts.length > 1 ? `${top} › #${parts[1]}` : top;
         }
 
-        // Render presence avatars in the navbar
-        function renderPresence(users) {
-            const el = document.getElementById('collabPresence');
-            if (!el) return;
-            const others = users.filter(u => u.username !== ME);
-            el.innerHTML = others.map(u => {
-                const initials = (u.display_name || u.username).slice(0, 2).toUpperCase();
-                const color = avatarColor(u.username);
-                const label = `${u.display_name || u.username} — ${pageLabel(u.page)}`;
-                return `<span class="collab-avatar" style="background:${color}" title="${label}">${initials}</span>`;
-            }).join('');
+        // ── Presence bar ──────────────────────────────────────────────────
+        window._collabPresence = [];
+        window._collabSessions = [];
+        const _popoverInstances = new Map(); // username -> bootstrap.Popover
 
-            // Update same-page viewer count if a marker element exists on the page
-            const viewerEl = document.getElementById('collabPageViewers');
-            if (viewerEl) {
-                const myPath = window.location.pathname;
-                const coViewers = others.filter(u => u.page === myPath);
-                if (coViewers.length) {
-                    const names = coViewers.map(u => u.display_name || u.username).join(', ');
-                    viewerEl.textContent = `👁 ${names} also here`;
-                    viewerEl.style.display = '';
-                } else {
-                    viewerEl.style.display = 'none';
-                }
-            }
+        function makePopoverBody(u) {
+            const session = window._collabSessions.find(s => s.owner_username === u.username);
+            const goLink = `<a href="${escHtml(u.page)}" class="text-info text-decoration-none">` +
+                           `<i class="bi bi-cursor"></i> ${escHtml(pageLabel(u.page))}</a>`;
+            const followBtn = session
+                ? `<div class="mt-2"><a href="/terminal/${session.guest_id}/follow/${session.session_id}" ` +
+                  `class="btn btn-sm btn-outline-info py-0 w-100" style="font-size:0.75rem;">` +
+                  `<i class="bi bi-eye"></i> Follow on ${escHtml(session.guest_name)}</a></div>`
+                : '';
+            return `<div style="font-size:0.8rem;">${goLink}${followBtn}</div>`;
         }
 
-        // Readable labels for audit actions
+        function renderPresence(users) {
+            window._collabPresence = users;
+            window.dispatchEvent(new CustomEvent('collabPresenceUpdate', { detail: users }));
+
+            const others = users.filter(u => u.username !== ME);
+            const bar = document.getElementById('presenceAvatars');
+            const presenceBar = document.getElementById('presenceBar');
+            if (!bar || !presenceBar) return;
+
+            if (others.length === 0) {
+                presenceBar.style.display = 'none';
+                _popoverInstances.forEach(p => p.dispose());
+                _popoverInstances.clear();
+                bar.innerHTML = '';
+                return;
+            }
+
+            presenceBar.style.display = '';
+            const currentUsernames = new Set(others.map(u => u.username));
+
+            // Remove avatars for users who left
+            _popoverInstances.forEach((popover, username) => {
+                if (!currentUsernames.has(username)) {
+                    popover.dispose();
+                    _popoverInstances.delete(username);
+                    const el = bar.querySelector(`[data-username="${CSS.escape(username)}"]`);
+                    if (el) el.remove();
+                }
+            });
+
+            // Update or add each user
+            others.forEach(u => {
+                const initials = (u.display_name || u.username).slice(0, 2).toUpperCase();
+                const color = avatarColor(u.username);
+                const bodyHtml = makePopoverBody(u);
+                const headerHtml = escHtml(u.display_name || u.username);
+
+                if (_popoverInstances.has(u.username)) {
+                    _popoverInstances.get(u.username).setContent({
+                        '.popover-header': headerHtml,
+                        '.popover-body': bodyHtml,
+                    });
+                } else {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'collab-avatar';
+                    btn.style.background = color;
+                    btn.dataset.username = u.username;
+                    btn.textContent = initials;
+                    bar.appendChild(btn);
+
+                    const popover = new bootstrap.Popover(btn, {
+                        html: true,
+                        trigger: 'hover focus',
+                        placement: 'bottom',
+                        title: headerHtml,
+                        content: bodyHtml,
+                        delay: { show: 100, hide: 300 },
+                    });
+                    _popoverInstances.set(u.username, popover);
+                }
+            });
+        }
+
+        // ── Activity toasts ───────────────────────────────────────────────
         const ACTION_VERBS = {
             guest_update_start:    'started updates on',
             guest_update_complete: 'finished updates on',
@@ -258,9 +318,7 @@
             host_delete:           'deleted host',
         };
 
-        // Show an activity toast in the bottom-right corner
         function showToast(event) {
-            // Skip low-signal events
             const skip = new Set(['guest_scan', 'guest_ssh_connect']);
             if (skip.has(event.action)) return;
 
@@ -285,6 +343,21 @@
             div.addEventListener('hidden.bs.toast', () => div.remove());
         }
 
+        // ── Terminal sessions cache (for Follow links in popovers) ────────
+        function refreshCollabSessions() {
+            fetch('/api/collab/terminal-sessions', { cache: 'no-store' })
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                    if (!data) return;
+                    window._collabSessions = data.sessions || [];
+                    // Re-render to update any Follow links
+                    renderPresence(window._collabPresence);
+                })
+                .catch(() => {});
+        }
+        refreshCollabSessions();
+        setInterval(refreshCollabSessions, 15000);
+
         // ── SSE connection ────────────────────────────────────────────────
         let es = null;
         function startSSE() {
@@ -297,12 +370,11 @@
                 else if (event.type === 'activity') showToast(event);
             };
             es.onerror = function() {
-                // EventSource reconnects automatically; just log quietly
                 console.debug('[collab] SSE reconnecting…');
             };
         }
 
-        // ── Heartbeat (presence page update) ─────────────────────────────
+        // ── Heartbeat ─────────────────────────────────────────────────────
         function sendPresence() {
             fetch('/api/collab/presence', {
                 method: 'POST',
@@ -311,12 +383,9 @@
             }).catch(() => {});
         }
 
-        // Start on load
         startSSE();
         sendPresence();
         setInterval(sendPresence, 30000);
-
-        // Update presence immediately on navigation (htmx, pushState, etc.)
         window.addEventListener('popstate', sendPresence);
     })();
     </script>

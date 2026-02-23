@@ -65,7 +65,12 @@
                             {% for user in users %}
                             {% set display_username = (user.username.split('@')[0] if '@' in user.username else user.username) if safety_mode else user.username %}
                             <tr>
-                                <td><code>{{ display_username }}</code></td>
+                                <td>
+                                    <code>{{ display_username }}</code>
+                                    <span class="presence-dot ms-1" data-security-username="{{ user.username }}" style="display:none;">
+                                        <i class="bi bi-circle-fill text-success" style="font-size:0.5rem;" title="Currently online"></i>
+                                    </span>
+                                </td>
                                 <td>{{ user.display_name or '-' }}</td>
                                 <td>
                                     {% if user.role_level >= 4 %}
@@ -872,5 +877,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const tierSelect = document.getElementById('newRoleBaseTier');
     if (tierSelect) prefillPermissions(tierSelect.value);
 });
+
+// Online presence dots in Users table
+function applyPresenceDots(users) {
+    const online = new Set((users || []).map(u => u.username));
+    document.querySelectorAll('.presence-dot[data-security-username]').forEach(function(dot) {
+        dot.style.display = online.has(dot.dataset.securityUsername) ? '' : 'none';
+    });
+}
+window.addEventListener('collabPresenceUpdate', function(e) { applyPresenceDots(e.detail); });
+// Handle case where SSE already fired before this script loaded
+if (window._collabPresence) applyPresenceDots(window._collabPresence);
 </script>
 {% endblock %}
