@@ -312,7 +312,7 @@ def update_progress(guest_id):
 @login_required
 def update_status(guest_id):
     guest = Guest.query.get_or_404(guest_id)
-    if not current_user.can_manage_guests and not current_user.can_access_guest(guest):
+    if not current_user.is_admin and not current_user.can_access_guest(guest):
         return jsonify({"error": "forbidden"}), 403
 
     job = _update_jobs.get(guest_id)
@@ -325,7 +325,7 @@ def update_status(guest_id):
 @login_required
 def update_cancel(guest_id):
     guest = Guest.query.get_or_404(guest_id)
-    if not current_user.can_manage_guests and not current_user.can_access_guest(guest):
+    if not current_user.is_admin and not current_user.can_access_guest(guest):
         return jsonify({"ok": False, "error": "forbidden"}), 403
 
     with _jobs_lock:

@@ -123,3 +123,59 @@ class TestApiAuthorization:
             Guest.query.filter_by(id=guest_id).delete()
             db.session.commit()
         _proxmox_jobs.pop(job_key, None)
+
+    def test_update_status_allows_admin(self, app, auth_client):
+        with app.app_context():
+            guest = Guest(name="_api-authz-status-ok", guest_type="ct", enabled=True)
+            db.session.add(guest)
+            db.session.commit()
+            guest_id = guest.id
+
+        resp = auth_client.get(f"/api/apply/{guest_id}/status")
+        assert resp.status_code == 200
+
+        with app.app_context():
+            Guest.query.filter_by(id=guest_id).delete()
+            db.session.commit()
+
+    def test_update_cancel_allows_admin(self, app, auth_client):
+        with app.app_context():
+            guest = Guest(name="_api-authz-cancel-ok", guest_type="ct", enabled=True)
+            db.session.add(guest)
+            db.session.commit()
+            guest_id = guest.id
+
+        resp = auth_client.post(f"/api/apply/{guest_id}/cancel")
+        assert resp.status_code == 200  # reaches handler (no active job), not 403
+
+        with app.app_context():
+            Guest.query.filter_by(id=guest_id).delete()
+            db.session.commit()
+
+    def test_task_status_allows_admin(self, app, auth_client):
+        with app.app_context():
+            guest = Guest(name="_api-task-status-ok", guest_type="ct", enabled=True)
+            db.session.add(guest)
+            db.session.commit()
+            guest_id = guest.id
+
+        resp = auth_client.get(f"/api/task/{guest_id}/backup/status")
+        assert resp.status_code == 200
+
+        with app.app_context():
+            Guest.query.filter_by(id=guest_id).delete()
+            db.session.commit()
+
+    def test_task_cancel_allows_admin(self, app, auth_client):
+        with app.app_context():
+            guest = Guest(name="_api-task-cancel-ok", guest_type="ct", enabled=True)
+            db.session.add(guest)
+            db.session.commit()
+            guest_id = guest.id
+
+        resp = auth_client.post(f"/api/task/{guest_id}/backup/cancel")
+        assert resp.status_code == 200  # reaches handler (no active job), not 403
+
+        with app.app_context():
+            Guest.query.filter_by(id=guest_id).delete()
+            db.session.commit()
