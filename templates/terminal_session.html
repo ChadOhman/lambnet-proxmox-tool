@@ -183,9 +183,31 @@
         }
     };
 
+    function hasSudoPrompt() {
+        const buf = term.buffer.active;
+        // Check the cursor line and up to 2 lines above (handles minor scroll lag)
+        for (let offset = 0; offset <= 2; offset++) {
+            const row = buf.baseY + buf.cursorY - offset;
+            if (row < 0) break;
+            const line = buf.getLine(row);
+            if (line && /\[sudo\] password|[Pp]assword:\s*$/.test(line.translateToString(true))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     window.sendSudo = function() {
-        if (ws && ws.readyState === WebSocket.OPEN) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        if (hasSudoPrompt()) {
             ws.send(JSON.stringify({type: 'sudo'}));
+        } else {
+            // Flash the button red briefly — no sudo prompt detected
+            const btn = document.getElementById('btnSudo');
+            if (btn) {
+                btn.classList.replace('btn-outline-warning', 'btn-outline-danger');
+                setTimeout(() => btn.classList.replace('btn-outline-danger', 'btn-outline-warning'), 1500);
+            }
         }
     };
 
