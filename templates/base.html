@@ -241,16 +241,47 @@
         window._collabSessions = [];
         const _popoverInstances = new Map(); // username -> bootstrap.Popover
 
+        // ── Page follow mode ──────────────────────────────────────────────
+        let _followingUser = sessionStorage.getItem('collabFollowing') || null;
+
+        function startFollowing(username) {
+            _followingUser = username;
+            sessionStorage.setItem('collabFollowing', username);
+            _updateFollowIndicators();
+        }
+
+        function stopFollowing() {
+            _followingUser = null;
+            sessionStorage.removeItem('collabFollowing');
+            _updateFollowIndicators();
+        }
+
+        function _updateFollowIndicators() {
+            const bar = document.getElementById('presenceAvatars');
+            if (!bar) return;
+            bar.querySelectorAll('.collab-avatar').forEach(function(a) {
+                const followed = a.dataset.username === _followingUser;
+                a.style.outline = followed ? '2px solid #fff' : '';
+                a.style.outlineOffset = followed ? '2px' : '';
+            });
+        }
+
         function makePopoverBody(u) {
             const session = window._collabSessions.find(s => s.owner_username === u.username);
             const goLink = `<a href="${escHtml(u.page)}" class="text-info text-decoration-none">` +
                            `<i class="bi bi-cursor"></i> ${escHtml(pageLabel(u.page))}</a>`;
-            const followBtn = session
+            const isFollowing = _followingUser === u.username;
+            const followHint = `<div class="mt-1 text-muted" style="font-size:0.7rem;">` +
+                (isFollowing
+                    ? `<i class="bi bi-broadcast text-warning"></i> Following — click to stop`
+                    : `<i class="bi bi-hand-index"></i> Click avatar to follow`) +
+                `</div>`;
+            const terminalBtn = session
                 ? `<div class="mt-2"><a href="/terminal/${session.guest_id}/follow/${session.session_id}" ` +
                   `class="btn btn-sm btn-outline-info py-0 w-100" style="font-size:0.75rem;">` +
                   `<i class="bi bi-eye"></i> Follow on ${escHtml(session.guest_name)}</a></div>`
                 : '';
-            return `<div style="font-size:0.8rem;">${goLink}${followBtn}</div>`;
+            return `<div style="font-size:0.8rem;">${goLink}${followHint}${terminalBtn}</div>`;
         }
 
         function renderPresence(users) {
@@ -299,10 +330,17 @@
 
                 const uname = u.username; // stable closure key
 
-                // Click navigates to their current page
+                // Click toggles follow mode; navigates immediately if on a different page
                 btn.addEventListener('click', function() {
-                    const live = (window._collabPresence || []).find(x => x.username === uname);
-                    if (live && live.page) window.location.href = live.page;
+                    if (_followingUser === uname) {
+                        stopFollowing();
+                    } else {
+                        startFollowing(uname);
+                        const live = (window._collabPresence || []).find(x => x.username === uname);
+                        if (live && live.page && live.page !== window.location.pathname) {
+                            window.location.href = live.page;
+                        }
+                    }
                 });
 
                 const popover = new bootstrap.Popover(btn, {
@@ -321,6 +359,19 @@
                 });
                 _popoverInstances.set(u.username, popover);
             });
+
+            // Restore follow ring after avatar rebuilds
+            _updateFollowIndicators();
+
+            // Auto-navigate when following someone who moved to a different page
+            if (_followingUser) {
+                const target = (window._collabPresence || []).find(u => u.username === _followingUser);
+                if (!target) {
+                    stopFollowing(); // followed user went offline
+                } else if (target.page && target.page !== window.location.pathname) {
+                    window.location.href = target.page;
+                }
+            }
 
             // Start or stop cursor tracking based on co-viewer presence
             if (hasCoViewers()) startCursors(); else stopCursors();
