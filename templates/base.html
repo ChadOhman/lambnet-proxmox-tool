@@ -530,11 +530,10 @@
                 document.body.appendChild(el);
                 _ghosts[c.username] = el;
             }
-            // Use % on a position:fixed element — the percentage is relative to the
-            // initial containing block (viewport without scrollbars), matching exactly
-            // what clientWidth/clientHeight-based fractions represent on the sender.
-            el.style.left = (c.x_pct * 100).toFixed(2) + '%';
-            el.style.top  = (c.y_pct * 100).toFixed(2) + '%';
+            // vw/vh are defined as 1% of window.innerWidth/innerHeight, which is the
+            // same reference used when computing x_pct/y_pct on the sending side.
+            el.style.left = (c.x_pct * 100).toFixed(2) + 'vw';
+            el.style.top  = (c.y_pct * 100).toFixed(2) + 'vh';
         }
 
         function removeGhost(username) {
@@ -579,13 +578,11 @@
             if (_cursorThrottle) return;
             _cursorThrottle = setTimeout(function() {
                 _cursorThrottle = null;
-                // Use clientWidth/clientHeight (excludes scrollbar) so the fraction
-                // matches the viewport area that percentage-based layout uses.
-                const vw = document.documentElement.clientWidth  || window.innerWidth;
-                const vh = document.documentElement.clientHeight || window.innerHeight;
+                // window.innerWidth/innerHeight is the same measurement vw/vh units
+                // use, keeping send and receive on identical coordinate systems.
                 const params = new URLSearchParams({
-                    x_pct: (e.clientX / vw).toFixed(4),
-                    y_pct: (e.clientY / vh).toFixed(4),
+                    x_pct: (e.clientX / window.innerWidth).toFixed(4),
+                    y_pct: (e.clientY / window.innerHeight).toFixed(4),
                     page:  window.location.pathname,
                     color: avatarColor(ME),
                 });
