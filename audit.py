@@ -7,7 +7,8 @@ def log_action(action, resource_type, resource_id=None, resource_name=None, deta
     """Add an AuditLog entry to the current db.session.
 
     Call before db.session.commit() so the log entry is committed atomically
-    with the main change.
+    with the main change.  Also broadcasts the action to the real-time
+    collaboration hub so connected users see it instantly.
     """
     db.session.add(AuditLog(
         user_id=current_user.id,
@@ -18,3 +19,18 @@ def log_action(action, resource_type, resource_id=None, resource_name=None, deta
         details=details,
         ip_address=request.remote_addr,
     ))
+
+    # Broadcast to collaboration hub (best-effort — never breaks the audit write)
+    try:
+        import datetime as _dt
+        from collaboration import collab_hub
+        collab_hub.broadcast({
+            "type": "activity",
+            "action": action,
+            "resource_type": resource_type,
+            "resource_name": resource_name or "",
+            "username": current_user.display_name or current_user.username,
+            "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        })
+    except Exception:
+        pass

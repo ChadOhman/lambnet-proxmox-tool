@@ -1,8 +1,9 @@
+import queue
 import time
 import threading
 import logging
 from datetime import datetime, timezone
-from flask import Blueprint, redirect, url_for, flash, request, render_template, jsonify
+from flask import Blueprint, redirect, url_for, flash, request, render_template, jsonify, Response, stream_with_context
 from flask_login import login_required, current_user
 from models import db, Guest, ProxmoxHost, Tag
 from scanner import scan_guest, scan_all_guests
@@ -950,3 +951,88 @@ def guest_unifi_stats(guest_id):
     except Exception as e:
         logger.error(f"UniFi stats fetch failed for guest {guest_id}: {e}")
         return jsonify({"error": "fetch_failed"}), 500
+
+
+# ---------------------------------------------------------------------------
+# Real-time collaboration
+# ---------------------------------------------------------------------------
+
+@bp.route("/collab/stream")
+@login_required
+def collab_stream():
+    """Long-lived SSE stream that pushes presence and activity events.
+
+    Each authenticated browser tab opens this connection on page load.
+    Requires threaded or single-worker gunicorn deployment (one thread per
+    active connection).  For multi-process deployments, replace the in-process
+    CollaborationHub with a Redis pub/sub backend.
+    """
+    from collaboration import collab_hub
+
+    user_id = current_user.id
+    username = current_user.username
+    display_name = current_user.display_name or username
+
+    event_queue = collab_hub.connect(user_id, username, display_name)
+
+    @stream_with_context
+    def generate():
+        try:
+            # Immediately send the current presence snapshot
+            import json as _json
+            yield f"data: {_json.dumps({'type': 'presence', 'users': collab_hub.get_online_users()})}\n\n"
+            while True:
+                try:
+                    event = event_queue.get(timeout=25)
+                    if event is None:   # sentinel — shut down this stream
+                        break
+                    yield f"data: {_json.dumps(event)}\n\n"
+                except queue.Empty:
+                    yield ": keepalive\n\n"   # prevent proxy timeouts
+        except GeneratorExit:
+            pass
+        finally:
+            collab_hub.disconnect(user_id)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # disable nginx / gunicorn buffering
+        },
+    )
+
+
+@bp.route("/collab/presence", methods=["POST"])
+@login_required
+def collab_presence():
+    """Heartbeat + page update sent by every tab every 30 seconds."""
+    from collaboration import collab_hub
+    data = request.get_json(silent=True) or {}
+    page = data.get("page", "/")
+    collab_hub.update_presence(current_user.id, page)
+    return jsonify({"ok": True})
+
+
+@bp.route("/collab/terminal-sessions")
+@login_required
+def collab_terminal_sessions():
+    """List active terminal sessions the current user is permitted to follow."""
+    from collaboration import terminal_registry
+    sessions = []
+    for s in terminal_registry.get_all():
+        guest = Guest.query.get(s.guest_id)
+        if not guest:
+            continue
+        if not current_user.is_admin and not current_user.can_access_guest(guest):
+            continue
+        sessions.append({
+            "session_id": s.session_id,
+            "guest_id": s.guest_id,
+            "guest_name": s.guest_name,
+            "owner_username": s.owner_username,
+            "started_at": s.started_at.isoformat(),
+            "follower_count": s.follower_count(),
+        })
+    return jsonify({"sessions": sessions})

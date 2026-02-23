@@ -27,6 +27,30 @@
     </div>
 </div>
 
+<!-- Live Sessions Panel (populated by JS) -->
+<div id="liveSessionsPanel" style="display:none;" class="mb-4">
+    <div class="card bg-dark border-info">
+        <div class="card-header border-info d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-broadcast"></i> Live Sessions</span>
+            <span class="badge bg-info" id="liveSessionCount">0</span>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-3">Guest</th>
+                        <th>Owner</th>
+                        <th>Started</th>
+                        <th>Followers</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="liveSessionsBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <div class="row g-4">
     {% for guest in guests %}
     <div class="col-md-4 col-lg-3">
@@ -88,4 +112,67 @@
     </div>
     {% endfor %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    function formatRelative(isoString) {
+        const d = new Date(isoString);
+        if (isNaN(d)) return '—';
+        const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+        if (diff < 60) return diff + 's ago';
+        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+        return Math.floor(diff / 3600) + 'h ago';
+    }
+
+    function escHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function refreshLiveSessions() {
+        fetch('/api/collab/terminal-sessions', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (!data) return;
+                const sessions = data.sessions || [];
+                const panel = document.getElementById('liveSessionsPanel');
+                const tbody = document.getElementById('liveSessionsBody');
+                const countBadge = document.getElementById('liveSessionCount');
+
+                if (sessions.length === 0) {
+                    panel.style.display = 'none';
+                    return;
+                }
+
+                panel.style.display = '';
+                countBadge.textContent = sessions.length;
+                tbody.innerHTML = sessions.map(s => `
+                    <tr>
+                        <td class="ps-3"><i class="bi bi-terminal"></i> ${escHtml(s.guest_name)}</td>
+                        <td><i class="bi bi-person"></i> ${escHtml(s.owner_username)}</td>
+                        <td class="text-muted">${formatRelative(s.started_at)}</td>
+                        <td>${s.follower_count > 0
+                            ? `<span class="badge bg-info"><i class="bi bi-eye"></i> ${s.follower_count}</span>`
+                            : '<span class="text-muted">—</span>'}</td>
+                        <td class="text-end pe-3">
+                            <a href="/terminal/${s.guest_id}/follow/${s.session_id}"
+                               class="btn btn-sm btn-outline-info">
+                                <i class="bi bi-eye"></i> Follow
+                            </a>
+                        </td>
+                    </tr>
+                `).join('');
+            })
+            .catch(() => {});
+    }
+
+    refreshLiveSessions();
+    setInterval(refreshLiveSessions, 10000);
+})();
+</script>
 {% endblock %}
