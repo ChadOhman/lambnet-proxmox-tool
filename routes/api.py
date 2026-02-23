@@ -1037,3 +1037,35 @@ def collab_terminal_sessions():
             "follower_count": s.follower_count(),
         })
     return jsonify({"sessions": sessions})
+
+
+@bp.route("/collab/cursor", methods=["POST"])
+@login_required
+def collab_cursor_update():
+    """Receive and store the current user's cursor position."""
+    from collaboration import cursor_hub
+    data = request.get_json(silent=True) or {}
+    try:
+        x_pct = float(data["x_pct"])
+        y_pct = float(data["y_pct"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify(ok=False), 400
+    cursor_hub.update(
+        current_user.username,
+        current_user.display_name or current_user.username,
+        data.get("page", "/"),
+        x_pct, y_pct,
+        data.get("color", "#3b82f6"),
+    )
+    return jsonify(ok=True)
+
+
+@bp.route("/collab/cursors")
+@login_required
+def collab_cursors():
+    """Return cursor positions of all co-viewers on the given page."""
+    from collaboration import cursor_hub
+    page = request.args.get("page", "/")
+    return jsonify(cursors=cursor_hub.get_for_page(
+        page, exclude_username=current_user.username
+    ))

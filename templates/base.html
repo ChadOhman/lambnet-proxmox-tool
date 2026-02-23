@@ -19,6 +19,23 @@
             transition: transform .15s;
         }
         .collab-avatar:hover { transform: scale(1.15); }
+        /* Ghost cursor overlay */
+        .collab-ghost-cursor {
+            position: fixed; pointer-events: none; z-index: 9999;
+            transition: left 0.12s linear, top 0.12s linear;
+        }
+        .collab-cursor-dot {
+            width: 14px; height: 14px; border-radius: 50% 50% 50% 0;
+            background: var(--cur-color, #3b82f6);
+            border: 2px solid rgba(255,255,255,0.85);
+            transform: rotate(-45deg);
+        }
+        .collab-cursor-name {
+            background: var(--cur-color, #3b82f6); color: #fff;
+            font-size: 0.6rem; font-weight: 600;
+            padding: 1px 5px; border-radius: 3px;
+            white-space: nowrap; margin-top: 3px; margin-left: 8px;
+        }
     </style>
 </head>
 <body>
@@ -281,6 +298,13 @@
                 bar.appendChild(btn);
 
                 const uname = u.username; // stable closure key
+
+                // Click navigates to their current page
+                btn.addEventListener('click', function() {
+                    const live = (window._collabPresence || []).find(x => x.username === uname);
+                    if (live && live.page) window.location.href = live.page;
+                });
+
                 const popover = new bootstrap.Popover(btn, {
                     html: true,
                     trigger: 'hover focus',
@@ -297,6 +321,9 @@
                 });
                 _popoverInstances.set(u.username, popover);
             });
+
+            // Start or stop cursor tracking based on co-viewer presence
+            if (hasCoViewers()) startCursors(); else stopCursors();
         }
 
         // ── Activity toasts ───────────────────────────────────────────────
@@ -340,6 +367,79 @@
             const t = new bootstrap.Toast(div, { delay: 5000 });
             t.show();
             div.addEventListener('hidden.bs.toast', () => div.remove());
+        }
+
+        // ── Ghost cursors ─────────────────────────────────────────────────
+        const _ghosts = {}; // username -> DOM element
+
+        function upsertGhost(c) {
+            let el = _ghosts[c.username];
+            if (!el) {
+                el = document.createElement('div');
+                el.className = 'collab-ghost-cursor';
+                el.innerHTML = '<div class="collab-cursor-dot"></div>' +
+                               `<div class="collab-cursor-name">${escHtml(c.display_name || c.username)}</div>`;
+                el.style.setProperty('--cur-color', c.color);
+                document.body.appendChild(el);
+                _ghosts[c.username] = el;
+            }
+            el.style.left = (c.x_pct * 100).toFixed(2) + 'vw';
+            el.style.top  = (c.y_pct * 100).toFixed(2) + 'vh';
+        }
+
+        function removeGhost(username) {
+            if (_ghosts[username]) { _ghosts[username].remove(); delete _ghosts[username]; }
+        }
+
+        function clearGhosts() { Object.keys(_ghosts).forEach(removeGhost); }
+
+        // ── Cursor tracking ───────────────────────────────────────────────
+        let _cursorPollTimer = null;
+        let _cursorThrottle = null;
+
+        function hasCoViewers() {
+            const p = window.location.pathname;
+            return (window._collabPresence || []).some(u => u.username !== ME && u.page === p);
+        }
+
+        function startCursors() {
+            if (_cursorPollTimer) return;
+            _cursorPollTimer = setInterval(function() {
+                if (!hasCoViewers()) { stopCursors(); return; }
+                fetch('/api/collab/cursors?page=' + encodeURIComponent(window.location.pathname),
+                      { cache: 'no-store' })
+                    .then(r => r.ok ? r.json() : null)
+                    .then(data => {
+                        if (!data) return;
+                        const active = new Set(data.cursors.map(c => c.username));
+                        Object.keys(_ghosts).forEach(u => { if (!active.has(u)) removeGhost(u); });
+                        data.cursors.forEach(upsertGhost);
+                    }).catch(() => {});
+            }, 150);
+            document.addEventListener('mousemove', _onMouseMove);
+        }
+
+        function stopCursors() {
+            clearInterval(_cursorPollTimer); _cursorPollTimer = null;
+            document.removeEventListener('mousemove', _onMouseMove);
+            clearGhosts();
+        }
+
+        function _onMouseMove(e) {
+            if (_cursorThrottle) return;
+            _cursorThrottle = setTimeout(function() {
+                _cursorThrottle = null;
+                fetch('/api/collab/cursor', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        x_pct: e.clientX / window.innerWidth,
+                        y_pct: e.clientY / window.innerHeight,
+                        page: window.location.pathname,
+                        color: avatarColor(ME),
+                    }),
+                }).catch(() => {});
+            }, 100);
         }
 
         // ── Terminal sessions cache (for Follow links in popovers) ────────

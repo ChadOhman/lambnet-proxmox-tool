@@ -203,8 +203,52 @@ class TerminalSessionRegistry:
 
 
 # ---------------------------------------------------------------------------
+# Cursor position tracking
+# ---------------------------------------------------------------------------
+
+class CursorHub:
+    """Stores the most-recent cursor position per user for co-presence tracking."""
+
+    EXPIRY = 0.8  # seconds without update → cursor considered gone
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._positions: dict = {}  # username -> {display_name, page, x_pct, y_pct, color, ts}
+
+    def update(self, username: str, display_name: str, page: str,
+               x_pct: float, y_pct: float, color: str):
+        with self._lock:
+            self._positions[username] = {
+                "display_name": display_name,
+                "page": page,
+                "x_pct": x_pct,
+                "y_pct": y_pct,
+                "color": color,
+                "ts": time.time(),
+            }
+
+    def get_for_page(self, page: str, exclude_username: str = None) -> list:
+        now = time.time()
+        with self._lock:
+            return [
+                {
+                    "username": u,
+                    "display_name": v["display_name"],
+                    "x_pct": v["x_pct"],
+                    "y_pct": v["y_pct"],
+                    "color": v["color"],
+                }
+                for u, v in self._positions.items()
+                if v["page"] == page
+                and u != exclude_username
+                and now - v["ts"] < self.EXPIRY
+            ]
+
+
+# ---------------------------------------------------------------------------
 # Module-level singletons
 # ---------------------------------------------------------------------------
 
 collab_hub = CollaborationHub()
 terminal_registry = TerminalSessionRegistry()
+cursor_hub = CursorHub()
