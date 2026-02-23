@@ -10,6 +10,17 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script>window.USER_TIMEZONE = {{ user_timezone | tojson }};</script>
+    <style>
+        .collab-avatar {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 26px; height: 26px; border-radius: 50%;
+            font-size: 10px; font-weight: 600; color: #fff;
+            border: 2px solid #212529; cursor: default;
+            transition: transform .15s;
+        }
+        .collab-avatar:hover { transform: scale(1.15); }
+        #collabPresence { gap: 4px; }
+    </style>
 </head>
 <body>
     <nav class="navbar navbar-expand-xl navbar-dark bg-dark border-bottom border-secondary">
@@ -92,6 +103,8 @@
                 </ul>
 
                 <ul class="navbar-nav ms-auto align-items-center">
+                    <!-- Real-time presence: filled by collab JS -->
+                    <li class="nav-item d-flex align-items-center me-2" id="collabPresence"></li>
                     <li class="nav-item me-2">
                         <form method="post" action="/toggle-safety-mode">
                             <button type="submit" class="btn btn-sm {% if safety_mode %}btn-warning{% else %}btn-outline-secondary{% endif %}" title="{% if safety_mode %}Safety mode on — click to disable{% else %}Safety mode off — click to enable{% endif %}">
@@ -147,6 +160,9 @@
         </small>
     </footer>
 
+    <!-- Activity toast container (bottom-right) -->
+    <div id="collabToastStack" class="position-fixed bottom-0 end-0 p-3" style="z-index:1200; max-width:320px; pointer-events:none;"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     (function() {
@@ -168,6 +184,140 @@
         } else {
             localizeTimestamps();
         }
+    })();
+    </script>
+    <script>
+    // ── Real-time collaboration client ────────────────────────────────────────
+    (function() {
+        const ME = {{ (current_user.username) | tojson }};
+
+        // Avatar colour derived from username
+        const PALETTE = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6',
+                         '#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
+        function avatarColor(name) {
+            let h = 0;
+            for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+            return PALETTE[Math.abs(h) % PALETTE.length];
+        }
+
+        // Convert a pathname to a short human-readable label
+        function pageLabel(path) {
+            if (!path || path === '/') return 'Dashboard';
+            const parts = path.split('/').filter(Boolean);
+            const labels = { guests:'Guests', hosts:'Hosts', terminal:'Terminal',
+                             services:'Services', settings:'Settings',
+                             security:'Security', credentials:'Credentials',
+                             schedules:'Schedules', unifi:'Network',
+                             mastodon:'Mastodon' };
+            const top = labels[parts[0]] || parts[0];
+            return parts.length > 1 ? `${top} › #${parts[1]}` : top;
+        }
+
+        // Render presence avatars in the navbar
+        function renderPresence(users) {
+            const el = document.getElementById('collabPresence');
+            if (!el) return;
+            const others = users.filter(u => u.username !== ME);
+            el.innerHTML = others.map(u => {
+                const initials = (u.display_name || u.username).slice(0, 2).toUpperCase();
+                const color = avatarColor(u.username);
+                const label = `${u.display_name || u.username} — ${pageLabel(u.page)}`;
+                return `<span class="collab-avatar" style="background:${color}" title="${label}">${initials}</span>`;
+            }).join('');
+
+            // Update same-page viewer count if a marker element exists on the page
+            const viewerEl = document.getElementById('collabPageViewers');
+            if (viewerEl) {
+                const myPath = window.location.pathname;
+                const coViewers = others.filter(u => u.page === myPath);
+                if (coViewers.length) {
+                    const names = coViewers.map(u => u.display_name || u.username).join(', ');
+                    viewerEl.textContent = `👁 ${names} also here`;
+                    viewerEl.style.display = '';
+                } else {
+                    viewerEl.style.display = 'none';
+                }
+            }
+        }
+
+        // Readable labels for audit actions
+        const ACTION_VERBS = {
+            guest_update_start:    'started updates on',
+            guest_update_complete: 'finished updates on',
+            guest_snapshot:        'snapshotted',
+            guest_rollback:        'rolled back',
+            guest_backup:          'backed up',
+            guest_ssh_connect:     'opened terminal on',
+            guest_power_on:        'powered on',
+            guest_power_off:       'powered off',
+            guest_reboot:          'rebooted',
+            guest_scan:            'scanned',
+            host_discover:         'discovered guests on',
+            host_discover_all:     'ran discover-all',
+            host_add:              'added host',
+            host_delete:           'deleted host',
+        };
+
+        // Show an activity toast in the bottom-right corner
+        function showToast(event) {
+            // Skip low-signal events
+            const skip = new Set(['guest_scan', 'guest_ssh_connect']);
+            if (skip.has(event.action)) return;
+
+            const verb = ACTION_VERBS[event.action] || event.action.replace(/_/g, ' ');
+            const resource = event.resource_name ? ` <strong>${event.resource_name}</strong>` : '';
+            const html = `<strong>${event.username}</strong> ${verb}${resource}`;
+
+            const id = 'ct' + Date.now();
+            const div = document.createElement('div');
+            div.className = 'toast align-items-center text-bg-dark border border-secondary mb-2';
+            div.id = id;
+            div.setAttribute('role', 'alert');
+            div.style.pointerEvents = 'auto';
+            div.innerHTML = `
+                <div class="d-flex">
+                    <div class="toast-body" style="font-size:.85rem;">${html}</div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                </div>`;
+            document.getElementById('collabToastStack').prepend(div);
+            const t = new bootstrap.Toast(div, { delay: 5000 });
+            t.show();
+            div.addEventListener('hidden.bs.toast', () => div.remove());
+        }
+
+        // ── SSE connection ────────────────────────────────────────────────
+        let es = null;
+        function startSSE() {
+            if (es) es.close();
+            es = new EventSource('/api/collab/stream');
+            es.onmessage = function(e) {
+                let event;
+                try { event = JSON.parse(e.data); } catch { return; }
+                if (event.type === 'presence') renderPresence(event.users || []);
+                else if (event.type === 'activity') showToast(event);
+            };
+            es.onerror = function() {
+                // EventSource reconnects automatically; just log quietly
+                console.debug('[collab] SSE reconnecting…');
+            };
+        }
+
+        // ── Heartbeat (presence page update) ─────────────────────────────
+        function sendPresence() {
+            fetch('/api/collab/presence', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page: window.location.pathname }),
+            }).catch(() => {});
+        }
+
+        // Start on load
+        startSSE();
+        sendPresence();
+        setInterval(sendPresence, 30000);
+
+        // Update presence immediately on navigation (htmx, pushState, etc.)
+        window.addEventListener('popstate', sendPresence);
     })();
     </script>
     {% block scripts %}{% endblock %}

@@ -71,6 +71,10 @@ def _ws_send(ws, msg_type, data):
         pass
 
 
+# ---------------------------------------------------------------------------
+# HTTP routes
+# ---------------------------------------------------------------------------
+
 @bp.route("/")
 @login_required
 def index():
@@ -135,10 +139,8 @@ def connect(guest_id):
                 flash(f"Cannot connect: snapshot required but failed — {msg}", "error")
                 return redirect(url_for("terminal.index"))
 
-    # Try to resolve IP if needed
     ip = _resolve_guest_ip(guest)
 
-    # Check if credentials are available
     credential = guest.credential
     if not credential:
         credential = Credential.query.filter_by(is_default=True).first()
@@ -147,7 +149,38 @@ def connect(guest_id):
     has_sudo_password = credential is not None and credential.encrypted_sudo_password is not None
 
     return render_template("terminal_session.html", guest=guest, resolved_ip=ip,
-                           needs_credentials=needs_credentials, has_sudo_password=has_sudo_password)
+                           needs_credentials=needs_credentials,
+                           has_sudo_password=has_sudo_password,
+                           follow_mode=False, follow_session_id=None,
+                           follow_owner=None)
+
+
+@bp.route("/<int:guest_id>/follow/<session_id>")
+@login_required
+def follow(guest_id, session_id):
+    """Read-only follow view that mirrors an active terminal session."""
+    if not current_user.can_ssh and not current_user.is_admin:
+        flash("You don't have SSH terminal permission.", "error")
+        return redirect(url_for("dashboard.index"))
+
+    guest = Guest.query.get_or_404(guest_id)
+
+    if not current_user.is_admin and not current_user.can_access_guest(guest):
+        flash("You don't have permission to access this guest.", "error")
+        return redirect(url_for("terminal.index"))
+
+    from collaboration import terminal_registry
+    term_session = terminal_registry.get(session_id)
+    if not term_session or term_session.guest_id != guest_id:
+        flash("Session not found or has ended.", "warning")
+        return redirect(url_for("terminal.index"))
+
+    ip = _resolve_guest_ip(guest)
+
+    return render_template("terminal_session.html", guest=guest, resolved_ip=ip,
+                           needs_credentials=False, has_sudo_password=False,
+                           follow_mode=True, follow_session_id=session_id,
+                           follow_owner=term_session.owner_username)
 
 
 @bp.route("/<int:guest_id>/popout")
@@ -209,20 +242,43 @@ def connect_adhoc(guest_id):
     return redirect(url_for("terminal.connect", guest_id=guest_id))
 
 
+# ---------------------------------------------------------------------------
+# WebSocket handler — primary (owner) and follower modes
+# ---------------------------------------------------------------------------
+
 @sock.route("/ws/terminal/<int:guest_id>")
 def terminal_ws(ws, guest_id):
-    """WebSocket handler for SSH terminal sessions."""
+    """WebSocket handler for SSH terminal sessions.
+
+    Query params:
+      mode=follow&session_id=XXXX  — read-only follower; attaches to an
+                                     existing shared session.
+      (default)                    — primary connection; creates an SSH
+                                     channel and registers a shared session.
+    """
+    mode = request.args.get("mode", "primary")
+    session_id = request.args.get("session_id")
+
+    if mode == "follow" and session_id:
+        _ws_follow(ws, guest_id, session_id)
+    else:
+        _ws_primary(ws, guest_id)
+
+
+def _ws_primary(ws, guest_id):
+    """Handle the primary (owner) WebSocket connection."""
     from flask_login import current_user as ws_user
+    from collaboration import terminal_registry, collab_hub
 
     ssh_client = None
     channel = None
+    term_session = None
 
     try:
         # Auth checks
         if not ws_user.is_authenticated:
             _ws_send(ws, "error", "Not authenticated")
             return
-
         if not ws_user.can_ssh and not ws_user.is_admin:
             _ws_send(ws, "error", "No SSH permission")
             return
@@ -231,7 +287,6 @@ def terminal_ws(ws, guest_id):
         if not guest:
             _ws_send(ws, "error", "Guest not found")
             return
-
         if not ws_user.is_admin and not ws_user.can_access_guest(guest):
             _ws_send(ws, "error", "Access denied")
             return
@@ -298,19 +353,30 @@ def terminal_ws(ws, guest_id):
         ssh_client.connect(**connect_kwargs)
         channel = ssh_client.invoke_shell(term="xterm-256color", width=120, height=40)
 
+        # Register this session for sharing / follower fan-out
+        term_session = terminal_registry.create(
+            guest_id=guest.id,
+            guest_name=guest.name,
+            owner_user_id=ws_user.id,
+            owner_username=ws_user.display_name or ws_user.username,
+        )
+        term_session.add_subscriber(ws)  # primary is also a subscriber (gets its own output)
+
         _ws_send(ws, "connected", f"Connected to {guest.name} ({ssh_host})")
+        _ws_send(ws, "session_id", term_session.session_id)  # let the client know the session ID
         log_action("guest_ssh_connect", "guest", resource_id=guest.id, resource_name=guest.name,
-                   details={"username": connect_kwargs.get("username")})
+                   details={"username": connect_kwargs.get("username"),
+                             "session_id": term_session.session_id})
         db.session.commit()
 
-        # Read thread: SSH -> WebSocket
+        # SSH read thread: fans output to all subscribers via the session
         def read_from_ssh():
             try:
                 while True:
                     if channel.recv_ready():
                         data = channel.recv(4096).decode("utf-8", errors="replace")
                         if data:
-                            ws.send(json.dumps({"type": "output", "data": data}))
+                            term_session.broadcast_output(data)
                     if channel.closed:
                         break
                     channel.settimeout(0.1)
@@ -321,17 +387,17 @@ def terminal_ws(ws, guest_id):
             except Exception as e:
                 logger.debug(f"SSH read thread ended: {e}")
             finally:
-                _ws_send(ws, "disconnected", "SSH session closed")
+                term_session.send_control({"type": "disconnected", "data": "SSH session closed"})
+                terminal_registry.remove(term_session.session_id)
 
         read_thread = threading.Thread(target=read_from_ssh, daemon=True)
         read_thread.start()
 
-        # Main loop: WebSocket -> SSH
+        # Main loop: WebSocket → SSH (primary only)
         while not channel.closed:
             try:
                 message = ws.receive()
                 if message is None:
-                    # Connection closed by client
                     break
                 msg = json.loads(message)
                 if msg.get("type") == "input":
@@ -358,6 +424,11 @@ def terminal_ws(ws, guest_id):
         logger.error(f"Terminal error for guest {guest_id}: {e}", exc_info=True)
         _ws_send(ws, "error", f"Connection failed: {e}")
     finally:
+        if term_session:
+            term_session.remove_subscriber(ws)
+            # If the primary disconnected and no other subscribers remain, clean up
+            if term_session.follower_count() == 0:
+                terminal_registry.remove(term_session.session_id)
         if channel:
             try:
                 channel.close()
@@ -368,6 +439,60 @@ def terminal_ws(ws, guest_id):
                 ssh_client.close()
             except Exception:
                 pass
+        try:
+            ws.close()
+        except Exception:
+            pass
+
+
+def _ws_follow(ws, guest_id, session_id):
+    """Handle a read-only follower WebSocket connection."""
+    from flask_login import current_user as ws_user
+    from collaboration import terminal_registry
+
+    try:
+        if not ws_user.is_authenticated:
+            _ws_send(ws, "error", "Not authenticated")
+            return
+        if not ws_user.can_ssh and not ws_user.is_admin:
+            _ws_send(ws, "error", "No SSH permission")
+            return
+
+        guest = Guest.query.get(guest_id)
+        if not guest:
+            _ws_send(ws, "error", "Guest not found")
+            return
+        if not ws_user.is_admin and not ws_user.can_access_guest(guest):
+            _ws_send(ws, "error", "Access denied")
+            return
+
+        term_session = terminal_registry.get(session_id)
+        if not term_session or term_session.guest_id != guest_id:
+            _ws_send(ws, "error", "Session not found or has ended.")
+            return
+
+        # Attach as follower — ring buffer catch-up sent automatically
+        term_session.add_subscriber(ws)
+        _ws_send(ws, "connected",
+                 f"Following {term_session.owner_username}'s session on {guest.name}")
+
+        logger.info(f"Follower {ws_user.username} joined session {session_id} on {guest.name}")
+
+        # Keep the connection alive; discard any input from the follower
+        while True:
+            try:
+                message = ws.receive()
+                if message is None:
+                    break
+                # Followers cannot send input — silently ignore everything
+            except Exception:
+                break
+
+    except Exception as e:
+        logger.error(f"Follow session error for guest {guest_id}: {e}", exc_info=True)
+    finally:
+        if term_session := terminal_registry.get(session_id):
+            term_session.remove_subscriber(ws)
         try:
             ws.close()
         except Exception:

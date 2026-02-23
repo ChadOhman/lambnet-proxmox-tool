@@ -20,24 +20,41 @@
                     ({{ resolved_ip or 'no IP' }})
                 {% endif %}
             </small>
+            {% if follow_mode %}
+            <span class="badge bg-info ms-2">
+                <i class="bi bi-eye"></i> Following {{ follow_owner }}
+            </span>
+            {% else %}
+            <span id="followerBadge" class="badge bg-secondary ms-2" style="display:none;" title="Users watching this session">
+                <i class="bi bi-eye"></i> <span id="followerCount">0</span>
+            </span>
+            {% endif %}
         </h4>
     </div>
     <div>
         <span id="connStatus" class="badge bg-warning">Connecting...</span>
-        {% if has_sudo_password %}
-        <button id="btnSudo" class="btn btn-sm btn-outline-warning ms-2" onclick="sendSudo()" title="Send stored sudo password to the terminal">
-            <i class="bi bi-shield-lock"></i> Sudo
-        </button>
+        {% if not follow_mode %}
+            {% if has_sudo_password %}
+            <button id="btnSudo" class="btn btn-sm btn-outline-warning ms-2" onclick="sendSudo()" title="Send stored sudo password to the terminal">
+                <i class="bi bi-shield-lock"></i> Sudo
+            </button>
+            {% endif %}
+            <button class="btn btn-sm btn-outline-light ms-2" onclick="popOut()" title="Open in a new window">
+                <i class="bi bi-box-arrow-up-right"></i> Pop Out
+            </button>
+            <button id="btnDisconnect" class="btn btn-sm btn-outline-danger ms-2" onclick="disconnect()">
+                <i class="bi bi-x-lg"></i> Disconnect
+            </button>
+        {% else %}
+            <span class="badge bg-info me-2">Read-only</span>
+            <button id="btnDisconnect" class="btn btn-sm btn-outline-secondary ms-2" onclick="disconnect()">
+                <i class="bi bi-x-lg"></i> Stop Following
+            </button>
         {% endif %}
-        <button class="btn btn-sm btn-outline-light ms-2" onclick="popOut()" title="Open in a new window">
-            <i class="bi bi-box-arrow-up-right"></i> Pop Out
-        </button>
-        <button id="btnDisconnect" class="btn btn-sm btn-outline-danger ms-2" onclick="disconnect()">
-            <i class="bi bi-x-lg"></i> Disconnect
-        </button>
     </div>
 </div>
 
+{% if not follow_mode %}
 {% if needs_credentials %}
 <!-- Credential prompt shown when no stored credentials -->
 <div id="credentialForm" class="card bg-dark mb-3">
@@ -73,6 +90,7 @@
     Try running <a href="/hosts" class="alert-link">discovery</a> again, or the guest may not be running.
 </div>
 {% endif %}
+{% endif %}
 
 <div id="terminal-container" style="background: #000; border-radius: 8px; padding: 4px; min-height: 500px;"></div>
 {% endblock %}
@@ -84,10 +102,14 @@
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
 <script>
 (function() {
+    const FOLLOW_MODE = {{ 'true' if follow_mode else 'false' }};
+    const FOLLOW_SESSION_ID = {{ (follow_session_id or '') | tojson }};
+
     const term = new Terminal({
         cursorBlink: true,
         fontSize: 14,
         fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", monospace',
+        disableStdin: FOLLOW_MODE,   // followers cannot type
         theme: {
             background: '#0d1117',
             foreground: '#c9d1d9',
@@ -113,8 +135,13 @@
     fitAddon.fit();
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws/terminal/{{ guest.id }}`;
+    const wsBase = `${wsProtocol}//${window.location.host}/ws/terminal/{{ guest.id }}`;
+    const wsUrl = FOLLOW_MODE
+        ? `${wsBase}?mode=follow&session_id=${FOLLOW_SESSION_ID}`
+        : wsBase;
+
     let ws = null;
+    let currentSessionId = null;
     const needsCredentials = {{ 'true' if needs_credentials else 'false' }};
     const hasResolvedIp = {{ 'true' if resolved_ip else 'false' }};
 
@@ -122,9 +149,10 @@
         ws = new WebSocket(wsUrl);
 
         ws.onopen = function() {
-            term.writeln('\x1b[33mConnecting to {{ guest.name }}{% if not safety_mode %} ({{ resolved_ip or "..." }}){% endif %}...\x1b[0m');
-            // Send initial terminal size
-            ws.send(JSON.stringify({type: 'resize', cols: term.cols, rows: term.rows}));
+            if (!FOLLOW_MODE) {
+                term.writeln('\x1b[33mConnecting to {{ guest.name }}{% if not safety_mode %} ({{ resolved_ip or "..." }}){% endif %}...\x1b[0m');
+                ws.send(JSON.stringify({type: 'resize', cols: term.cols, rows: term.rows}));
+            }
         };
 
         ws.onmessage = function(event) {
@@ -132,7 +160,11 @@
             switch (msg.type) {
                 case 'connected':
                     document.getElementById('connStatus').className = 'badge bg-success';
-                    document.getElementById('connStatus').textContent = 'Connected';
+                    document.getElementById('connStatus').textContent = FOLLOW_MODE ? 'Following' : 'Connected';
+                    break;
+                case 'session_id':
+                    // Server tells us our session ID so we can display a share link
+                    currentSessionId = msg.data;
                     break;
                 case 'output':
                     term.write(msg.data);
@@ -145,7 +177,7 @@
                 case 'disconnected':
                     term.writeln('\r\n\x1b[33m' + msg.data + '\x1b[0m');
                     document.getElementById('connStatus').className = 'badge bg-secondary';
-                    document.getElementById('connStatus').textContent = 'Disconnected';
+                    document.getElementById('connStatus').textContent = FOLLOW_MODE ? 'Session Ended' : 'Disconnected';
                     break;
             }
         };
@@ -162,25 +194,25 @@
         };
     }
 
-    // Send keystrokes to server
-    term.onData(function(data) {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({type: 'input', data: data}));
-        }
-    });
+    // Keystroke forwarding (only for primary sessions)
+    if (!FOLLOW_MODE) {
+        term.onData(function(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({type: 'input', data: data}));
+            }
+        });
+    }
 
     // Handle terminal resize
     window.addEventListener('resize', function() {
         fitAddon.fit();
-        if (ws && ws.readyState === WebSocket.OPEN) {
+        if (!FOLLOW_MODE && ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({type: 'resize', cols: term.cols, rows: term.rows}));
         }
     });
 
     window.disconnect = function() {
-        if (ws) {
-            ws.close();
-        }
+        if (ws) ws.close();
     };
 
     function hasSudoPrompt() {
@@ -212,16 +244,39 @@
     };
 
     window.popOut = function() {
-        // Close the current session before opening popout (to avoid duplicate connections)
-        if (ws) {
-            ws.close();
-        }
+        if (ws) ws.close();
         const popoutUrl = '/terminal/{{ guest.id }}/popout';
         window.open(popoutUrl, 'terminal_{{ guest.id }}', 'width=900,height=600,menubar=no,toolbar=no,location=no,status=no');
     };
 
-    // Auto-connect if we have IP and credentials
-    if (hasResolvedIp && !needsCredentials) {
+    // Poll follower count for primary sessions
+    {% if not follow_mode %}
+    function pollFollowers() {
+        fetch('/api/collab/terminal-sessions', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (!data || !currentSessionId) return;
+                const s = (data.sessions || []).find(x => x.session_id === currentSessionId);
+                if (!s) return;
+                const badge = document.getElementById('followerBadge');
+                const count = document.getElementById('followerCount');
+                if (s.follower_count > 0) {
+                    count.textContent = s.follower_count;
+                    badge.title = `${s.follower_count} user${s.follower_count > 1 ? 's' : ''} watching`;
+                    badge.style.display = '';
+                } else {
+                    badge.style.display = 'none';
+                }
+            })
+            .catch(() => {});
+    }
+    setInterval(pollFollowers, 10000);
+    {% endif %}
+
+    // Auto-connect
+    if (FOLLOW_MODE) {
+        connect();
+    } else if (hasResolvedIp && !needsCredentials) {
         connect();
     } else if (needsCredentials) {
         term.writeln('\x1b[33mEnter credentials above to connect.\x1b[0m');
