@@ -36,14 +36,15 @@ class CollaborationHub:
         self._lock = threading.Lock()
         self._users: dict = {}  # user_id -> {username, display_name, page, last_seen, queue}
 
-    def connect(self, user_id: int, username: str, display_name: str) -> queue.Queue:
+    def connect(self, user_id: int, username: str, display_name: str,
+                page: str = "/") -> queue.Queue:
         """Register an SSE connection and return the event queue for this user."""
         q: queue.Queue = queue.Queue(maxsize=200)
         with self._lock:
             self._users[user_id] = {
                 "username": username,
                 "display_name": display_name or username,
-                "page": "/",
+                "page": page,
                 "last_seen": time.time(),
                 "queue": q,
             }

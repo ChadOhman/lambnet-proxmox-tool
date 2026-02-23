@@ -973,7 +973,8 @@ def collab_stream():
     username = current_user.username
     display_name = current_user.display_name or username
 
-    event_queue = collab_hub.connect(user_id, username, display_name)
+    page = request.args.get("page", "/")
+    event_queue = collab_hub.connect(user_id, username, display_name, page=page)
 
     @stream_with_context
     def generate():

@@ -361,7 +361,8 @@
         let es = null;
         function startSSE() {
             if (es) es.close();
-            es = new EventSource('/api/collab/stream');
+            const sseUrl = '/api/collab/stream?page=' + encodeURIComponent(window.location.pathname);
+            es = new EventSource(sseUrl);
             es.onmessage = function(e) {
                 let event;
                 try { event = JSON.parse(e.data); } catch { return; }
