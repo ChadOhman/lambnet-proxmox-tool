@@ -104,6 +104,8 @@
 (function() {
     const FOLLOW_MODE = {{ 'true' if follow_mode else 'false' }};
     const FOLLOW_SESSION_ID = {{ (follow_session_id or '') | tojson }};
+    const GUEST_NAME = {{ guest.name | tojson }};
+    const RESOLVED_IP = {{ (resolved_ip or '') | tojson }};
 
     const term = new Terminal({
         cursorBlink: true,
@@ -150,7 +152,7 @@
 
         ws.onopen = function() {
             if (!FOLLOW_MODE) {
-                term.writeln('\x1b[33mConnecting to {{ guest.name }}{% if not safety_mode %} ({{ resolved_ip or "..." }}){% endif %}...\x1b[0m');
+                term.writeln('\x1b[33mConnecting to ' + GUEST_NAME + '{% if not safety_mode %} (' + (RESOLVED_IP || '...') + '){% endif %}...\x1b[0m');
                 ws.send(JSON.stringify({type: 'resize', cols: term.cols, rows: term.rows}));
             }
         };
