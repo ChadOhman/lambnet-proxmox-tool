@@ -530,10 +530,11 @@
                 document.body.appendChild(el);
                 _ghosts[c.username] = el;
             }
-            // vw/vh are defined as 1% of window.innerWidth/innerHeight, which is the
-            // same reference used when computing x_pct/y_pct on the sending side.
+            // x: viewport fraction → vw  (same reference as the sender's innerWidth).
+            // y: absolute pageY (pixels) sent by the sender → subtract receiver's scrollY
+            //    to get the correct fixed-position offset from the viewport top.
             el.style.left = (c.x_pct * 100).toFixed(2) + 'vw';
-            el.style.top  = (c.y_pct * 100).toFixed(2) + 'vh';
+            el.style.top  = (c.y_pct - window.scrollY).toFixed(0) + 'px';
         }
 
         function removeGhost(username) {
@@ -578,11 +579,14 @@
             if (_cursorThrottle) return;
             _cursorThrottle = setTimeout(function() {
                 _cursorThrottle = null;
-                // window.innerWidth/innerHeight is the same measurement vw/vh units
-                // use, keeping send and receive on identical coordinate systems.
+                // x_pct: viewport-relative fraction (handles different viewport widths for
+                //         full-width layouts where content scales proportionally).
+                // y_pct: absolute pageY in pixels (NOT a fraction) — normalising by
+                //         innerHeight causes proportional errors when browser windows have
+                //         different heights.  The receiver subtracts its own scrollY.
                 const params = new URLSearchParams({
                     x_pct: (e.clientX / window.innerWidth).toFixed(4),
-                    y_pct: (e.clientY / window.innerHeight).toFixed(4),
+                    y_pct: e.pageY.toFixed(0),
                     page:  window.location.pathname,
                     color: avatarColor(ME),
                 });
