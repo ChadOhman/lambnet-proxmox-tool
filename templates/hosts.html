@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_live_jobs_panel.html" import live_jobs_panel %}
 {% block title %}Proxmox Hosts - Mastodon Canada Administration Tool{% endblock %}
 
 {% block content %}
@@ -18,8 +17,6 @@
         </button>
     </div>
 </div>
-
-{{ live_jobs_panel('/api/live-jobs') }}
 
 <div class="row g-4">
     {% for host in hosts %}
