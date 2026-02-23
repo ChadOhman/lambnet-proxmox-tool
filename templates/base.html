@@ -373,28 +373,16 @@
                 } else if (target.following === ME) {
                     stopFollowing(); // mutual follow — they are following us, so we step back
                 } else if (target.page && target.page !== window.location.pathname) {
-                    // If target is on a plain terminal page (no /follow/ yet), look up
-                    // their active session so we land on the read-only follower URL
+                    // Never navigate to a plain /terminal/<id> URL — that would open a
+                    // new primary SSH connection instead of following.  terminal_session.html
+                    // sets data-collab-page to /terminal/<id>/follow/<sid> and fires
+                    // sendPresence() as soon as the session ID is known, so the very next
+                    // presence update will carry the correct follow URL and we navigate then.
                     const plainTerminal = /^\/terminal\/\d+$/.test(target.page);
-                    if (plainTerminal) {
-                        const cached = (window._collabSessions || [])
-                            .find(s => s.owner_username === target.username);
-                        if (cached) {
-                            window.location.href = `/terminal/${cached.guest_id}/follow/${cached.session_id}`;
-                        } else {
-                            fetch('/api/collab/terminal-sessions', { cache: 'no-store' })
-                                .then(r => r.ok ? r.json() : null)
-                                .then(data => {
-                                    const sess = (data?.sessions || [])
-                                        .find(s => s.owner_username === target.username);
-                                    window.location.href = sess
-                                        ? `/terminal/${sess.guest_id}/follow/${sess.session_id}`
-                                        : target.page;
-                                }).catch(() => { window.location.href = target.page; });
-                        }
-                    } else {
+                    if (!plainTerminal) {
                         window.location.href = target.page;
                     }
+                    // else: hold position; follow URL will appear in the next presence update
                 }
             }
 
