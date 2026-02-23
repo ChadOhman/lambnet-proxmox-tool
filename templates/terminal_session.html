@@ -165,6 +165,13 @@
                 case 'session_id':
                     // Server tells us our session ID so we can display a share link
                     currentSessionId = msg.data;
+                    // Tell the presence system to advertise the follow URL so that
+                    // users following us land directly on the read-only follower page
+                    if (!FOLLOW_MODE) {
+                        document.body.dataset.collabPage =
+                            `/terminal/{{ guest.id }}/follow/${msg.data}`;
+                        if (window._collabSendPresence) window._collabSendPresence();
+                    }
                     break;
                 case 'output':
                     term.write(msg.data);

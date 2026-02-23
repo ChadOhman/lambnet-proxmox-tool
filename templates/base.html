@@ -373,7 +373,28 @@
                 } else if (target.following === ME) {
                     stopFollowing(); // mutual follow — they are following us, so we step back
                 } else if (target.page && target.page !== window.location.pathname) {
-                    window.location.href = target.page;
+                    // If target is on a plain terminal page (no /follow/ yet), look up
+                    // their active session so we land on the read-only follower URL
+                    const plainTerminal = /^\/terminal\/\d+$/.test(target.page);
+                    if (plainTerminal) {
+                        const cached = (window._collabSessions || [])
+                            .find(s => s.owner_username === target.username);
+                        if (cached) {
+                            window.location.href = `/terminal/${cached.guest_id}/follow/${cached.session_id}`;
+                        } else {
+                            fetch('/api/collab/terminal-sessions', { cache: 'no-store' })
+                                .then(r => r.ok ? r.json() : null)
+                                .then(data => {
+                                    const sess = (data?.sessions || [])
+                                        .find(s => s.owner_username === target.username);
+                                    window.location.href = sess
+                                        ? `/terminal/${sess.guest_id}/follow/${sess.session_id}`
+                                        : target.page;
+                                }).catch(() => { window.location.href = target.page; });
+                        }
+                    } else {
+                        window.location.href = target.page;
+                    }
                 }
             }
 
@@ -529,15 +550,19 @@
 
         // ── Heartbeat ─────────────────────────────────────────────────────
         function sendPresence() {
+            // Pages can set data-collab-page on <body> to report a more specific URL
+            // (e.g. terminal_session sets the follow URL once the session ID is known)
+            const page = document.body.dataset.collabPage || window.location.pathname;
             fetch('/api/collab/presence', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    page: window.location.pathname,
+                    page: page,
                     following: _followingUser || null,
                 }),
             }).catch(() => {});
         }
+        window._collabSendPresence = sendPresence; // accessible to page-specific scripts
 
         startSSE();
         sendPresence();
