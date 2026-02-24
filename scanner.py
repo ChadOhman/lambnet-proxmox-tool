@@ -2004,3 +2004,268 @@ def apply_updates(guest, dist_upgrade=False):
             return False, str(e)
 
     return False, "No viable connection method"
+
+
+# --- Mastodon Overview Stats ---
+
+# Pure-Python3 Redis client script to collect INFO memory/stats/clients.
+# Same connection discovery pattern as _SIDEKIQ_REDIS_SCRIPT.
+_MASTODON_REDIS_INFO_SCRIPT = b"""\
+import socket, urllib.parse as up
+
+def rc(s, *args):
+    p = ["*{}\\r\\n".format(len(args))]
+    for a in args:
+        a = str(a)
+        p.append("${}\\r\\n{}\\r\\n".format(len(a.encode()), a))
+    s.sendall("".join(p).encode())
+
+def rr(s, bf):
+    while b"\\r\\n" not in bf[0]:
+        d = s.recv(65536)
+        if not d: break
+        bf[0] += d
+    if not bf[0]: return None
+    i = bf[0].index(b"\\r\\n")
+    ln = bf[0][:i].decode("utf-8", "replace")
+    bf[0] = bf[0][i+2:]
+    t, rest = ln[0], ln[1:]
+    if t == "+": return rest
+    if t == "-": return None
+    if t == ":": return int(rest) if rest.lstrip("-").isdigit() else 0
+    if t == "$":
+        n = int(rest)
+        if n < 0: return None
+        while len(bf[0]) < n + 2:
+            d = s.recv(65536)
+            if not d: break
+            bf[0] += d
+        v = bf[0][:n].decode("utf-8", "replace")
+        bf[0] = bf[0][n+2:]
+        return v
+    if t == "*":
+        n = int(rest)
+        return [rr(s, bf) for _ in range(max(n, 0))]
+    return None
+
+env = {}
+for f in ["/home/mastodon/live/.env.production", "/var/www/mastodon/.env.production", "/opt/mastodon/.env.production"]:
+    try:
+        for line in open(f):
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip().strip(chr(34)+chr(39))
+        break
+    except: pass
+
+url = env.get("REDIS_URL", "")
+if url:
+    u = up.urlparse(url)
+    host = u.hostname or "127.0.0.1"
+    port = u.port or 6379
+    pw = u.password or env.get("REDIS_PASSWORD", "")
+    db = int((u.path or "/0").lstrip("/") or "0")
+else:
+    host = env.get("REDIS_HOST", "127.0.0.1")
+    port = int(env.get("REDIS_PORT", "6379") or "6379")
+    pw = env.get("REDIS_PASSWORD", "")
+    db = int(env.get("REDIS_DB", "0") or "0")
+
+try:
+    s = socket.socket()
+    s.settimeout(5)
+    s.connect((host, port))
+    bf = [b""]
+    if pw:
+        rc(s, "AUTH", pw)
+        rr(s, bf)
+    rc(s, "SELECT", str(db))
+    rr(s, bf)
+    rc(s, "INFO", "memory")
+    rc(s, "INFO", "stats")
+    rc(s, "INFO", "clients")
+    mem_info = rr(s, bf) or ""
+    stats_info = rr(s, bf) or ""
+    clients_info = rr(s, bf) or ""
+    s.close()
+    for line in (mem_info + "\\n" + stats_info + "\\n" + clients_info).splitlines():
+        line = line.strip()
+        if ":" in line and not line.startswith("#"):
+            print(line)
+except Exception as e:
+    print("redis_error={}".format(str(e)[:120]))
+"""
+
+
+def _format_bytes(n):
+    """Return a human-readable byte count string."""
+    if n is None:
+        return "N/A"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024.0:
+            return f"{n:.1f} {unit}"
+        n /= 1024.0
+    return f"{n:.1f} PB"
+
+
+def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodon/live", user="mastodon"):
+    """Collect Mastodon instance overview statistics.
+
+    Makes up to 3 SSH calls:
+      1. grep .env.production on mastodon_guest for domain/db_name/registrations_mode
+      2. Batched PostgreSQL UNION ALL for 13 metrics on db_guest
+      3. Redis INFO (memory, stats, clients) on mastodon_guest
+
+    Returns a dict with all metrics; partial results on failure with errors list.
+    """
+    result = {
+        "domain": "",
+        "db_name": "",
+        "registrations_mode": "",
+        "local_users": None,
+        "active_users": None,
+        "mau": None,
+        "wau": None,
+        "new_users_month": None,
+        "local_statuses": None,
+        "statuses_7d": None,
+        "statuses_30d": None,
+        "media_count": None,
+        "media_size_bytes": None,
+        "media_size_human": "N/A",
+        "known_instances": None,
+        "remote_accounts": None,
+        "db_size_bytes": None,
+        "db_size_human": "N/A",
+        "redis_memory_human": "N/A",
+        "redis_memory_peak_human": "N/A",
+        "redis_clients": None,
+        "redis_hit_rate": "N/A",
+        "errors": [],
+    }
+
+    # --- Call 1: Parse .env.production ---
+    if mastodon_guest:
+        try:
+            stdout, error = _execute_command(
+                mastodon_guest,
+                f"grep -E '^(LOCAL_DOMAIN|DB_NAME|REGISTRATIONS_MODE|SINGLE_USER_MODE)=' "
+                f"{app_dir}/.env.production 2>/dev/null",
+                timeout=15,
+                sudo=True,
+            )
+            if stdout and not error:
+                for line in stdout.splitlines():
+                    line = line.strip()
+                    if "=" in line:
+                        k, _, v = line.partition("=")
+                        k = k.strip()
+                        v = v.strip().strip("\"'")
+                        if k == "LOCAL_DOMAIN":
+                            result["domain"] = v
+                        elif k == "DB_NAME":
+                            result["db_name"] = v
+                        elif k == "REGISTRATIONS_MODE":
+                            result["registrations_mode"] = v
+            elif error:
+                result["errors"].append(f"env parse: {error[:100]}")
+        except Exception as e:
+            result["errors"].append(f"env parse: {str(e)[:100]}")
+
+    db_name = result["db_name"] or "mastodon_production"
+
+    # --- Call 2: Batched PostgreSQL UNION ALL ---
+    if db_guest:
+        sql = (
+            "SELECT key || '=' || val FROM ("
+            "SELECT 'local_users',      count(*)::text FROM accounts WHERE domain IS NULL"
+            " UNION ALL "
+            "SELECT 'active_users',     count(*)::text FROM accounts WHERE domain IS NULL AND suspended_at IS NULL AND confirmed_at IS NOT NULL"
+            " UNION ALL "
+            "SELECT 'mau',              count(DISTINCT u.account_id)::text FROM users u WHERE u.current_sign_in_at > NOW() - INTERVAL '30 days'"
+            " UNION ALL "
+            "SELECT 'wau',              count(DISTINCT u.account_id)::text FROM users u WHERE u.current_sign_in_at > NOW() - INTERVAL '7 days'"
+            " UNION ALL "
+            "SELECT 'new_users_month',  count(*)::text FROM users WHERE created_at > NOW() - INTERVAL '30 days'"
+            " UNION ALL "
+            "SELECT 'local_statuses',   count(*)::text FROM statuses WHERE local = true"
+            " UNION ALL "
+            "SELECT 'statuses_7d',      count(*)::text FROM statuses WHERE local = true AND created_at > NOW() - INTERVAL '7 days'"
+            " UNION ALL "
+            "SELECT 'statuses_30d',     count(*)::text FROM statuses WHERE local = true AND created_at > NOW() - INTERVAL '30 days'"
+            " UNION ALL "
+            "SELECT 'known_instances',  count(*)::text FROM instances WHERE domain IS NOT NULL"
+            " UNION ALL "
+            "SELECT 'remote_accounts',  count(*)::text FROM accounts WHERE domain IS NOT NULL AND suspended_at IS NULL"
+            " UNION ALL "
+            "SELECT 'media_count',      count(*)::text FROM media_attachments WHERE account_id IN (SELECT id FROM accounts WHERE domain IS NULL) AND deleted_at IS NULL"
+            " UNION ALL "
+            "SELECT 'media_size_bytes', coalesce(sum(file_file_size + coalesce(thumbnail_file_size,0)),0)::text FROM media_attachments WHERE account_id IN (SELECT id FROM accounts WHERE domain IS NULL) AND deleted_at IS NULL"
+            " UNION ALL "
+            "SELECT 'db_size_bytes',    pg_database_size(current_database())::text"
+            ") t(key, val)"
+        )
+        sql_escaped = sql.replace("'", "'\\''")
+        cmd = f"sudo -u postgres psql -t -A -d {db_name} -c '{sql_escaped}'"
+        try:
+            stdout, error = _execute_command(db_guest, cmd, timeout=60)
+            if stdout and not error:
+                for line in stdout.splitlines():
+                    line = line.strip()
+                    if "=" in line:
+                        k, _, v = line.partition("=")
+                        k = k.strip()
+                        v = v.strip()
+                        if k in result and v.lstrip("-").isdigit():
+                            result[k] = int(v)
+                if result["media_size_bytes"] is not None:
+                    result["media_size_human"] = _format_bytes(result["media_size_bytes"])
+                if result["db_size_bytes"] is not None:
+                    result["db_size_human"] = _format_bytes(result["db_size_bytes"])
+            elif error:
+                result["errors"].append(f"db stats: {error[:100]}")
+        except Exception as e:
+            result["errors"].append(f"db stats: {str(e)[:100]}")
+
+    # --- Call 3: Redis INFO ---
+    if mastodon_guest:
+        try:
+            _py_b64 = base64.b64encode(_MASTODON_REDIS_INFO_SCRIPT).decode()
+            cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
+            stdout, error = _execute_command(mastodon_guest, cmd, timeout=20)
+            if stdout:
+                redis_data = {}
+                for line in stdout.splitlines():
+                    line = line.strip()
+                    if ":" in line and not line.startswith("#"):
+                        k, _, v = line.partition(":")
+                        redis_data[k.strip()] = v.strip()
+                    elif "=" in line:
+                        k, _, v = line.partition("=")
+                        redis_data[k.strip()] = v.strip()
+
+                used_mem = redis_data.get("used_memory")
+                peak_mem = redis_data.get("used_memory_peak")
+                if used_mem and used_mem.isdigit():
+                    result["redis_memory_human"] = _format_bytes(int(used_mem))
+                if peak_mem and peak_mem.isdigit():
+                    result["redis_memory_peak_human"] = _format_bytes(int(peak_mem))
+
+                clients = redis_data.get("connected_clients")
+                if clients and clients.isdigit():
+                    result["redis_clients"] = int(clients)
+
+                hits = redis_data.get("keyspace_hits")
+                misses = redis_data.get("keyspace_misses")
+                if hits and misses and hits.isdigit() and misses.isdigit():
+                    h, m = int(hits), int(misses)
+                    total = h + m
+                    result["redis_hit_rate"] = f"{h / total * 100:.1f}%" if total > 0 else "N/A"
+
+                if "redis_error" in redis_data:
+                    result["errors"].append(f"redis: {redis_data['redis_error']}")
+        except Exception as e:
+            result["errors"].append(f"redis: {str(e)[:100]}")
+
+    return result

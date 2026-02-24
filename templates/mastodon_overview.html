@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+{% block title %}Mastodon Instance Overview - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<!-- Header bar -->
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="mb-1">
+            <i class="bi bi-bar-chart-line"></i> Mastodon Instance Overview
+        </h2>
+        <div id="overview-domain" class="text-muted font-monospace small">
+            <span class="spinner-border spinner-border-sm me-1" role="status"></span> Loading&hellip;
+        </div>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+        <button class="btn btn-outline-secondary btn-sm" id="refresh-btn" onclick="loadStats()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <a href="/mastodon/upgrade" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-rocket-takeoff"></i> Manage Upgrades
+        </a>
+    </div>
+</div>
+
+{% if not settings.guest_id or not settings.db_guest_id %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    Mastodon guests are not fully configured.
+    <a href="/mastodon/upgrade" class="alert-link">Configure them here.</a>
+</div>
+{% endif %}
+
+<!-- Service Health -->
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-heart-pulse"></i> Service Health</h5>
+        <small class="text-muted">From last scan — <a href="/services" class="text-muted">all services</a></small>
+    </div>
+    <div class="card-body">
+        {% if mastodon_services %}
+        <div class="d-flex flex-wrap gap-2">
+            {% for svc in mastodon_services %}
+            {% set badge_class = 'bg-success' if svc.status == 'running' else ('bg-danger' if svc.status in ('stopped','failed') else 'bg-secondary') %}
+            {% set dot = '●' if svc.status == 'running' else ('●' if svc.status in ('stopped','failed') else '○') %}
+            <a href="/services/{{ svc.id }}" class="text-decoration-none">
+                <span class="badge {{ badge_class }} fs-6 px-3 py-2">
+                    {{ dot }} {{ svc.service_name }}
+                    {% if svc.status == 'running' and svc.stats and svc.stats.worker_count is defined %}
+                    &times;{{ svc.stats.worker_count }}
+                    {% endif %}
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No services found for configured guests. Run a scan to populate service data.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Stats grid (loaded via AJAX) -->
+<div id="stats-loading" class="text-center py-5" {% if not settings.guest_id or not settings.db_guest_id %}style="display:none!important"{% endif %}>
+    <div class="spinner-border text-secondary" role="status"></div>
+    <div class="text-muted mt-2">Fetching instance metrics&hellip;</div>
+</div>
+
+<div id="stats-error" class="alert alert-danger d-none"></div>
+
+<div id="stats-grid" class="d-none">
+    <!-- Version / summary bar -->
+    <div class="alert alert-dark border border-secondary mb-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <strong id="stat-domain" class="me-2"></strong>
+            <span id="stat-version-badge"></span>
+            <span id="stat-update-badge" class="ms-1"></span>
+        </div>
+        <div class="text-muted small" id="stat-registrations"></div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <!-- Users card -->
+        <div class="col-lg-6">
+            <div class="card bg-dark h-100">
+                <div class="card-header"><h5 class="mb-0"><i class="bi bi-people"></i> Users</h5></div>
+                <div class="card-body">
+                    <table class="table table-dark table-sm mb-0">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted">Local accounts</td>
+                                <td class="text-end fw-semibold" id="stat-local-users">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Active accounts <small>(not suspended, confirmed)</small></td>
+                                <td class="text-end fw-semibold" id="stat-active-users">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Monthly active <small>(MAU, 30d)</small></td>
+                                <td class="text-end fw-semibold" id="stat-mau">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Weekly active <small>(WAU, 7d)</small></td>
+                                <td class="text-end fw-semibold" id="stat-wau">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">New this month</td>
+                                <td class="text-end fw-semibold" id="stat-new-users-month">—</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content card -->
+        <div class="col-lg-6">
+            <div class="card bg-dark h-100">
+                <div class="card-header"><h5 class="mb-0"><i class="bi bi-chat-text"></i> Content</h5></div>
+                <div class="card-body">
+                    <table class="table table-dark table-sm mb-0">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted">Local posts (all time)</td>
+                                <td class="text-end fw-semibold" id="stat-local-statuses">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Posts this week</td>
+                                <td class="text-end fw-semibold" id="stat-statuses-7d">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Posts this month</td>
+                                <td class="text-end fw-semibold" id="stat-statuses-30d">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Media files</td>
+                                <td class="text-end fw-semibold" id="stat-media-count">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Media storage</td>
+                                <td class="text-end fw-semibold" id="stat-media-size">—</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <!-- Federation card -->
+        <div class="col-lg-6">
+            <div class="card bg-dark h-100">
+                <div class="card-header"><h5 class="mb-0"><i class="bi bi-globe2"></i> Federation</h5></div>
+                <div class="card-body">
+                    <table class="table table-dark table-sm mb-0">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted">Known instances</td>
+                                <td class="text-end fw-semibold" id="stat-known-instances">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Remote accounts</td>
+                                <td class="text-end fw-semibold" id="stat-remote-accounts">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Registrations</td>
+                                <td class="text-end fw-semibold" id="stat-registrations-mode">—</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Database card -->
+        <div class="col-lg-6">
+            <div class="card bg-dark h-100">
+                <div class="card-header"><h5 class="mb-0"><i class="bi bi-database"></i> Database</h5></div>
+                <div class="card-body">
+                    <table class="table table-dark table-sm mb-0">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted">Database size</td>
+                                <td class="text-end fw-semibold" id="stat-db-size">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">PostgreSQL version</td>
+                                <td class="text-end fw-semibold" id="stat-pg-version">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Database name</td>
+                                <td class="text-end fw-semibold font-monospace small" id="stat-db-name">—</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Redis card -->
+        <div class="col-lg-6">
+            <div class="card bg-dark h-100">
+                <div class="card-header"><h5 class="mb-0"><i class="bi bi-lightning-charge"></i> Redis</h5></div>
+                <div class="card-body">
+                    <table class="table table-dark table-sm mb-0">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted">Memory used</td>
+                                <td class="text-end fw-semibold" id="stat-redis-memory">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Memory peak</td>
+                                <td class="text-end fw-semibold" id="stat-redis-memory-peak">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Connected clients</td>
+                                <td class="text-end fw-semibold" id="stat-redis-clients">—</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Cache hit rate</td>
+                                <td class="text-end fw-semibold" id="stat-redis-hit-rate">—</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Errors / notes -->
+        <div class="col-lg-6" id="stat-errors-col" style="display:none">
+            <div class="card bg-dark border-warning h-100">
+                <div class="card-header text-warning"><h5 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Collection Warnings</h5></div>
+                <div class="card-body">
+                    <ul class="mb-0 small text-warning" id="stat-errors-list"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fmt(n) {
+    if (n === null || n === undefined) return 'N/A';
+    return n.toLocaleString();
+}
+
+function loadStats() {
+    const btn = document.getElementById('refresh-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    document.getElementById('stats-loading').classList.remove('d-none');
+    document.getElementById('stats-grid').classList.add('d-none');
+    document.getElementById('stats-error').classList.add('d-none');
+
+    fetch('/mastodon/stats')
+        .then(r => {
+            if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'HTTP ' + r.status); });
+            return r.json();
+        })
+        .then(d => {
+            // Domain / version header
+            const domain = d.domain || '(domain not detected)';
+            document.getElementById('stat-domain').textContent = domain;
+            document.getElementById('overview-domain').textContent = domain;
+
+            const verBadge = document.getElementById('stat-version-badge');
+            if (d.current_version) {
+                verBadge.innerHTML = '<span class="badge bg-primary">v' + d.current_version + '</span>';
+            } else {
+                verBadge.textContent = '';
+            }
+
+            const updBadge = document.getElementById('stat-update-badge');
+            if (d.current_version && d.latest_version && d.current_version !== d.latest_version) {
+                updBadge.innerHTML = '<span class="badge bg-warning text-dark"><i class="bi bi-arrow-up-circle"></i> v' + d.latest_version + ' available</span>';
+            } else if (d.current_version && d.latest_version) {
+                updBadge.innerHTML = '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Up to date</span>';
+            } else {
+                updBadge.textContent = '';
+            }
+
+            const regMode = d.registrations_mode || '';
+            document.getElementById('stat-registrations').textContent = regMode
+                ? 'Registrations: ' + (regMode === 'open' ? 'Open' : regMode === 'approved' ? 'Approval required' : regMode === 'none' ? 'Closed' : regMode)
+                : '';
+
+            // Users
+            document.getElementById('stat-local-users').textContent = fmt(d.local_users);
+            document.getElementById('stat-active-users').textContent = fmt(d.active_users);
+            document.getElementById('stat-mau').textContent = fmt(d.mau);
+            document.getElementById('stat-wau').textContent = fmt(d.wau);
+            document.getElementById('stat-new-users-month').textContent = fmt(d.new_users_month);
+
+            // Content
+            document.getElementById('stat-local-statuses').textContent = fmt(d.local_statuses);
+            document.getElementById('stat-statuses-7d').textContent = fmt(d.statuses_7d);
+            document.getElementById('stat-statuses-30d').textContent = fmt(d.statuses_30d);
+            document.getElementById('stat-media-count').textContent = fmt(d.media_count);
+            document.getElementById('stat-media-size').textContent = d.media_size_human || 'N/A';
+
+            // Federation
+            document.getElementById('stat-known-instances').textContent = fmt(d.known_instances);
+            document.getElementById('stat-remote-accounts').textContent = fmt(d.remote_accounts);
+            const regModeCell = document.getElementById('stat-registrations-mode');
+            if (regMode === 'open') regModeCell.innerHTML = '<span class="badge bg-success">Open</span>';
+            else if (regMode === 'approved') regModeCell.innerHTML = '<span class="badge bg-warning text-dark">Approval required</span>';
+            else if (regMode === 'none') regModeCell.innerHTML = '<span class="badge bg-danger">Closed</span>';
+            else regModeCell.textContent = regMode || '—';
+
+            // Database
+            document.getElementById('stat-db-size').textContent = d.db_size_human || 'N/A';
+            document.getElementById('stat-pg-version').textContent = d.pg_version || '—';
+            document.getElementById('stat-db-name').textContent = d.db_name || '—';
+
+            // Redis
+            document.getElementById('stat-redis-memory').textContent = d.redis_memory_human || 'N/A';
+            document.getElementById('stat-redis-memory-peak').textContent = d.redis_memory_peak_human || 'N/A';
+            document.getElementById('stat-redis-clients').textContent = fmt(d.redis_clients);
+            document.getElementById('stat-redis-hit-rate').textContent = d.redis_hit_rate || 'N/A';
+
+            // Errors
+            const errList = document.getElementById('stat-errors-list');
+            const errCol = document.getElementById('stat-errors-col');
+            errList.innerHTML = '';
+            if (d.errors && d.errors.length > 0) {
+                d.errors.forEach(e => {
+                    const li = document.createElement('li');
+                    li.textContent = e;
+                    errList.appendChild(li);
+                });
+                errCol.style.display = '';
+            } else {
+                errCol.style.display = 'none';
+            }
+
+            document.getElementById('stats-loading').classList.add('d-none');
+            document.getElementById('stats-grid').classList.remove('d-none');
+        })
+        .catch(err => {
+            document.getElementById('stats-loading').classList.add('d-none');
+            const errDiv = document.getElementById('stats-error');
+            errDiv.textContent = 'Could not load stats: ' + err.message;
+            errDiv.classList.remove('d-none');
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh';
+        });
+}
+
+{% if settings.guest_id and settings.db_guest_id %}
+document.addEventListener('DOMContentLoaded', loadStats);
+{% else %}
+document.getElementById('overview-domain').textContent = 'Not configured';
+{% endif %}
+</script>
+{% endblock %}

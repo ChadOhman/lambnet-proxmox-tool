@@ -1,5 +1,5 @@
 import logging
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required
 from models import db, Setting, Guest
 from audit import log_action
@@ -45,7 +45,28 @@ def _get_mastodon_settings():
 
 
 @bp.route("/")
-def index():
+def overview():
+    settings = _get_mastodon_settings()
+    guest_id = settings.get("guest_id", "")
+    db_guest_id = settings.get("db_guest_id", "")
+
+    mastodon_services = []
+    if guest_id:
+        from models import GuestService
+        mastodon_services += GuestService.query.filter_by(guest_id=int(guest_id)).all()
+    if db_guest_id:
+        from models import GuestService
+        mastodon_services += GuestService.query.filter_by(guest_id=int(db_guest_id)).all()
+
+    return render_template(
+        "mastodon_overview.html",
+        settings=settings,
+        mastodon_services=mastodon_services,
+    )
+
+
+@bp.route("/upgrade")
+def upgrade_page():
     settings = _get_mastodon_settings()
     guests = Guest.query.filter_by(enabled=True).order_by(Guest.name).all()
 
@@ -65,6 +86,30 @@ def index():
                 logger.warning(f"Could not fetch backup storages: {e}")
 
     return render_template("mastodon.html", settings=settings, guests=guests, backup_storages=backup_storages)
+
+
+@bp.route("/stats")
+def stats():
+    from scanner import get_mastodon_overview_stats
+    settings = _get_mastodon_settings()
+    guest_id = settings.get("guest_id", "")
+    db_guest_id = settings.get("db_guest_id", "")
+
+    if not guest_id or not db_guest_id:
+        return jsonify({"error": "Mastodon guests not configured"}), 400
+
+    mastodon_guest = Guest.query.get(int(guest_id))
+    db_guest = Guest.query.get(int(db_guest_id))
+
+    data = get_mastodon_overview_stats(
+        mastodon_guest, db_guest,
+        app_dir=settings.get("app_dir", "/home/mastodon/live"),
+        user=settings.get("user", "mastodon"),
+    )
+    data["current_version"] = settings.get("current_version", "")
+    data["latest_version"] = settings.get("latest_version", "")
+    data["pg_version"] = settings.get("pg_version", "")
+    return jsonify(data)
 
 
 @bp.route("/save", methods=["POST"])
@@ -90,7 +135,7 @@ def save():
     log_action("mastodon_config_save", "settings", resource_name="mastodon")
     db.session.commit()
     flash("Mastodon settings saved.", "success")
-    return redirect(url_for("mastodon.index"))
+    return redirect(url_for("mastodon.upgrade_page"))
 
 
 @bp.route("/check", methods=["POST"])
@@ -109,7 +154,7 @@ def check():
     else:
         flash(f"Latest Mastodon release: v{latest}. Set your current version to enable update detection.", "info")
 
-    return redirect(url_for("mastodon.index"))
+    return redirect(url_for("mastodon.upgrade_page"))
 
 
 @bp.route("/upgrade", methods=["POST"])
@@ -137,7 +182,7 @@ def upgrade():
         db.session.commit()
         flash("Mastodon upgrade failed. Check the log for details.", "error")
 
-    return redirect(url_for("mastodon.index"))
+    return redirect(url_for("mastodon.upgrade_page"))
 
 
 @bp.route("/detect-versions", methods=["POST"])
@@ -155,7 +200,7 @@ def detect_versions():
         _validate_shell_param(app_dir, "Mastodon app_dir")
     except ValueError as e:
         flash(str(e), "error")
-        return redirect(url_for("mastodon.index"))
+        return redirect(url_for("mastodon.upgrade_page"))
 
     detected = []
 
@@ -209,4 +254,4 @@ def detect_versions():
     if detected:
         flash(f"Detected: {', '.join(detected)}", "success")
 
-    return redirect(url_for("mastodon.index"))
+    return redirect(url_for("mastodon.upgrade_page"))
