@@ -13,8 +13,8 @@ bp = Blueprint("services", __name__)
 @bp.before_request
 @login_required
 def _require_login():
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_view_services:
+        flash("You don't have permission to view services.", "error")
         return redirect(url_for("dashboard.index"))
 
 
