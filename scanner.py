@@ -901,12 +901,48 @@ def _stats_postgresql(guest):
                 })
         stats["databases"] = databases
 
-    # Active queries
+    # Active query count
     out, _ = _execute_command(guest,
         "sudo -u postgres psql -t -A -c \"SELECT count(*) FROM pg_stat_activity WHERE state = 'active'\" 2>/dev/null",
         timeout=10, sudo=True)
     if out:
         stats["active_queries"] = out.strip()
+
+    # Active/non-idle query list with durations
+    out, _ = _execute_command(guest,
+        "sudo -u postgres psql -t -A -c \""
+        "SELECT datname, usename, state, "
+        "round(extract(epoch from (now() - query_start))::numeric, 1), "
+        "replace(replace(left(query, 200), chr(10), ' '), chr(13), ' ') "
+        "FROM pg_stat_activity WHERE pid != pg_backend_pid() "
+        "AND state IS NOT NULL AND state != 'idle' "
+        "ORDER BY (now() - query_start) DESC NULLS LAST"
+        "\" 2>/dev/null",
+        timeout=10, sudo=True)
+    if out:
+        query_list = []
+        for line in out.strip().split("\n"):
+            parts = line.strip().split("|", 4)
+            if len(parts) == 5:
+                try:
+                    secs = float(parts[3])
+                except ValueError:
+                    secs = 0.0
+                if secs >= 3600:
+                    duration = f"{int(secs // 3600)}h {int((secs % 3600) // 60)}m"
+                elif secs >= 60:
+                    duration = f"{int(secs // 60)}m {int(secs % 60)}s"
+                else:
+                    duration = f"{secs:.1f}s"
+                query_list.append({
+                    "datname": parts[0] or "—",
+                    "usename": parts[1] or "—",
+                    "state": parts[2],
+                    "duration": duration,
+                    "duration_secs": secs,
+                    "query": parts[4],
+                })
+        stats["active_query_list"] = query_list
 
     # Total connections
     out, _ = _execute_command(guest,

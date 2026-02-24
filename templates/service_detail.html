@@ -263,6 +263,36 @@
             </table>
         </div>
         {% endif %}
+
+        {% if stats.active_query_list %}
+        <h6 class="text-muted mt-3 mb-2">Active Queries</h6>
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0">
+                <thead>
+                    <tr><th>Database</th><th>User</th><th>State</th><th>Duration</th><th>Query</th></tr>
+                </thead>
+                <tbody>
+                {% for q in stats.active_query_list %}
+                <tr>
+                    <td class="font-monospace text-nowrap">{{ q.datname }}</td>
+                    <td class="font-monospace text-nowrap">{{ q.usename }}</td>
+                    <td>
+                        <span class="badge {% if q.state == 'active' %}bg-success{% elif 'transaction' in q.state %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                            {{ q.state }}
+                        </span>
+                    </td>
+                    <td class="text-nowrap {% if q.duration_secs >= 30 %}text-danger{% elif q.duration_secs >= 5 %}text-warning{% endif %}">
+                        {{ q.duration }}
+                    </td>
+                    <td class="font-monospace small text-truncate" style="max-width: 420px" title="{{ q.query | e }}">{{ q.query }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted small mt-3 mb-0"><i class="bi bi-check-circle"></i> No active queries</p>
+        {% endif %}
     </div>
 </div>
 
