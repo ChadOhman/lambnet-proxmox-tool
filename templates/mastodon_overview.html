@@ -256,12 +256,25 @@ function loadStats() {
     document.getElementById('stats-grid').classList.add('d-none');
     document.getElementById('stats-error').classList.add('d-none');
 
-    fetch('/mastodon/stats')
+    _pollStats('/mastodon/stats?force=1');
+}
+
+// Poll the stats endpoint until the background SSH collection finishes.
+// The server returns {"loading": true} while busy and the real payload once done.
+function _pollStats(url) {
+    fetch(url)
         .then(r => {
             if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'HTTP ' + r.status); });
             return r.json();
         })
         .then(d => {
+            if (d.loading) {
+                setTimeout(() => _pollStats('/mastodon/stats'), 2000);
+                return;
+            }
+
+            const btn = document.getElementById('refresh-btn');
+
             // Domain / version header
             const domain = d.domain || '(domain not detected)';
             document.getElementById('stat-domain').textContent = domain;
@@ -339,21 +352,22 @@ function loadStats() {
 
             document.getElementById('stats-loading').classList.add('d-none');
             document.getElementById('stats-grid').classList.remove('d-none');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh';
         })
         .catch(err => {
             document.getElementById('stats-loading').classList.add('d-none');
             const errDiv = document.getElementById('stats-error');
             errDiv.textContent = 'Could not load stats: ' + err.message;
             errDiv.classList.remove('d-none');
-        })
-        .finally(() => {
+            const btn = document.getElementById('refresh-btn');
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh';
         });
 }
 
 {% if settings.guest_id and settings.db_guest_id %}
-document.addEventListener('DOMContentLoaded', function() { setTimeout(loadStats, 2000); });
+document.addEventListener('DOMContentLoaded', loadStats);
 {% else %}
 document.getElementById('overview-domain').textContent = 'Not configured';
 {% endif %}
