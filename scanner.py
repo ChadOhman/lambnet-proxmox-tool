@@ -92,7 +92,10 @@ try:
     qs = rr(s, bf) or []
     _lat_dbg = ''
     def _parse_ea(ea):
-        try: return float(ea)
+        try:
+            ts = float(ea)
+            if ts > 1e11: ts /= 1000.0
+            return ts
         except (TypeError, ValueError): pass
         try:
             from datetime import datetime as _dt
