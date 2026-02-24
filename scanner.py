@@ -90,6 +90,14 @@ try:
     print("---queues---")
     rc(s, "SMEMBERS", "queues")
     qs = rr(s, bf) or []
+    _lat_dbg = ''
+    def _parse_ea(ea):
+        try: return float(ea)
+        except (TypeError, ValueError): pass
+        try:
+            from datetime import datetime as _dt
+            return _dt.fromisoformat(str(ea).replace('Z', '+00:00')).timestamp()
+        except Exception: return None
     for q in qs:
         rc(s, "LLEN", "queue:"+q)
         size = rr(s, bf) or 0
@@ -102,10 +110,17 @@ try:
                     try:
                         _job = json.loads(_item)
                         _ea = _job.get("enqueued_at") or _job.get("created_at")
-                        if _ea:
-                            _l = time.time() - float(_ea)
-                            if _l > lat: lat = _l
-                    except: pass
+                        if _ea is not None:
+                            _ts = _parse_ea(_ea)
+                            if _ts is not None:
+                                _l = time.time() - _ts
+                                if _l > lat: lat = _l
+                            if not _lat_dbg:
+                                _lat_dbg = '{}|{}|{}'.format(q, type(_ea).__name__, str(_ea)[:30])
+                        elif not _lat_dbg:
+                            _lat_dbg = '{}|no_ea|keys:{}'.format(q, ','.join(list(_job.keys())[:5]))
+                    except Exception as _ex:
+                        if not _lat_dbg: _lat_dbg = '{}|ex|{}'.format(q, str(_ex)[:60])
         print("{}={}|{:.2f}".format(q, size, lat))
     print("---stats---")
     for k, c in [("processed", ("GET", "stat:processed")), ("failed", ("GET", "stat:failed")),
@@ -120,6 +135,7 @@ try:
     print("db={}".format(db))
     print("auth_set={}".format("yes" if pw else "no"))
     print("redis_cli=python3-ok")
+    print("lat_dbg={}".format(_lat_dbg or 'none'))
 except Exception as e:
     print("---debug---")
     print("host={}".format(host))

@@ -391,6 +391,9 @@
             {% elif stats._debug.redis_cli %}
             <span class="badge bg-success ms-1">redis-cli ok</span>
             {% endif %}
+            {% if stats._debug.lat_dbg and stats._debug.lat_dbg != 'none' %}
+            <span class="badge bg-secondary ms-1 font-monospace" title="Latency debug (queue|ea_type|ea_value)">lat: {{ stats._debug.lat_dbg }}</span>
+            {% endif %}
         </div>
         {% endif %}
 
