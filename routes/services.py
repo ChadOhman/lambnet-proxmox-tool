@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from models import db, Guest, GuestService
-from scanner import check_service_statuses, service_action, get_service_logs, get_service_stats, sidekiq_clear_dead, sidekiq_retry_dead
+from scanner import check_service_statuses, service_action, get_service_logs, get_service_stats, sidekiq_clear_dead, sidekiq_retry_dead, sidekiq_list_jobs, sidekiq_delete_job, sidekiq_retry_job
 from audit import log_action
 
 bp = Blueprint("services", __name__)
@@ -169,6 +169,57 @@ def sidekiq_retry_dead_queue(service_id):
     if ok:
         log_action("sidekiq_retry_dead", "guest", resource_id=guest.id, resource_name=guest.name,
                    details={"service": svc.service_name, "result": msg})
+        db.session.commit()
+    return jsonify({"ok": ok, "message": msg})
+
+
+@bp.route("/<int:service_id>/sidekiq/<queue_type>/jobs")
+def sidekiq_jobs(service_id, queue_type):
+    if queue_type not in ("dead", "retry", "schedule"):
+        return jsonify({"error": "Invalid queue type"}), 400
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "sidekiq":
+        return jsonify({"error": "Not a Sidekiq service"}), 400
+    guest = svc.guest
+    try:
+        offset = max(0, int(request.args.get("offset", 0)))
+        limit = min(100, max(1, int(request.args.get("limit", 25))))
+    except (ValueError, TypeError):
+        offset, limit = 0, 25
+    jobs, total, err = sidekiq_list_jobs(guest, svc, queue_type, offset=offset, limit=limit)
+    if err:
+        return jsonify({"error": err}), 500
+    return jsonify({"jobs": jobs, "total": total, "offset": offset, "limit": limit})
+
+
+@bp.route("/<int:service_id>/sidekiq/<queue_type>/jobs/<jid>/delete", methods=["POST"])
+def sidekiq_delete_job_route(service_id, queue_type, jid):
+    if queue_type not in ("dead", "retry", "schedule"):
+        return jsonify({"ok": False, "message": "Invalid queue type"}), 400
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "sidekiq":
+        return jsonify({"ok": False, "message": "Not a Sidekiq service"}), 400
+    guest = svc.guest
+    ok, msg = sidekiq_delete_job(guest, svc, queue_type, jid)
+    if ok:
+        log_action("sidekiq_delete_job", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"service": svc.service_name, "queue_type": queue_type, "jid": jid})
+        db.session.commit()
+    return jsonify({"ok": ok, "message": msg})
+
+
+@bp.route("/<int:service_id>/sidekiq/<queue_type>/jobs/<jid>/retry", methods=["POST"])
+def sidekiq_retry_job_route(service_id, queue_type, jid):
+    if queue_type not in ("dead", "retry", "schedule"):
+        return jsonify({"ok": False, "message": "Invalid queue type"}), 400
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "sidekiq":
+        return jsonify({"ok": False, "message": "Not a Sidekiq service"}), 400
+    guest = svc.guest
+    ok, msg = sidekiq_retry_job(guest, svc, queue_type, jid)
+    if ok:
+        log_action("sidekiq_retry_job", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"service": svc.service_name, "queue_type": queue_type, "jid": jid})
         db.session.commit()
     return jsonify({"ok": ok, "message": msg})
 

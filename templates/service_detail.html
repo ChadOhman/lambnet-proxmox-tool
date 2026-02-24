@@ -340,11 +340,17 @@
             </div>
             <div class="col-md-2">
                 <div class="text-muted small">Retry Queue</div>
-                <div class="fs-5" id="stat-sq-retry">{{ stats.retry_size|default('0') }}</div>
+                <div class="fs-5">
+                    <a href="#" class="text-reset text-decoration-none" id="stat-sq-retry"
+                       onclick="openJobModal('retry'); return false;">{{ stats.retry_size|default('0') }}</a>
+                </div>
             </div>
             <div class="col-md-2">
                 <div class="text-muted small">Dead</div>
-                <div class="fs-5" id="stat-sq-dead">{{ stats.dead_size|default('0') }}</div>
+                <div class="fs-5">
+                    <a href="#" class="text-reset text-decoration-none" id="stat-sq-dead"
+                       onclick="openJobModal('dead'); return false;">{{ stats.dead_size|default('0') }}</a>
+                </div>
                 <button id="retryAllDeadBtn" class="btn btn-outline-warning btn-sm mt-1 me-1"
                         onclick="retryAllDead()"
                         {% if stats.dead_size|default(0)|int == 0 %}disabled{% endif %}>
@@ -358,7 +364,10 @@
             </div>
             <div class="col-md-2">
                 <div class="text-muted small">Scheduled</div>
-                <div class="fs-5" id="stat-sq-sched">{{ stats.scheduled_size|default('0') }}</div>
+                <div class="fs-5">
+                    <a href="#" class="text-reset text-decoration-none" id="stat-sq-sched"
+                       onclick="openJobModal('schedule'); return false;">{{ stats.scheduled_size|default('0') }}</a>
+                </div>
             </div>
             <div class="col-md-2">
                 <div class="text-muted small">Instances</div>
@@ -387,7 +396,7 @@
         <h6 class="text-muted mt-2 mb-2">Queues</h6>
         <div class="table-responsive">
             <table class="table table-dark table-sm mb-0">
-                <thead><tr><th>Queue</th><th>Size</th></tr></thead>
+                <thead><tr><th>Queue</th><th>Size</th><th>Latency</th></tr></thead>
                 <tbody id="sidekiq-queues-tbody">
                 {% for q in stats.queues|sort(attribute='size', reverse=True) %}
                 <tr>
@@ -395,6 +404,9 @@
                     <td>
                         {{ q.size }}
                         {% if q.size > 100 %}<span class="badge bg-warning text-dark ms-1">backlog</span>{% endif %}
+                    </td>
+                    <td class="{% if q.latency_secs >= 300 %}text-danger{% elif q.latency_secs >= 60 %}text-warning{% endif %}">
+                        {{ q.latency|default('—') }}
                     </td>
                 </tr>
                 {% endfor %}
@@ -465,6 +477,27 @@
 
 </div>
 
+<!-- Sidekiq Job Browser Modal -->
+<div class="modal fade" id="jobBrowserModal" tabindex="-1" aria-labelledby="jobBrowserTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="jobBrowserTitle">Jobs</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="jobBrowserContent">
+                <div class="text-center py-4">
+                    <span class="spinner-border text-secondary"></span>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <div class="d-flex gap-2 me-auto align-items-center" id="jobBrowserPager"></div>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Logs -->
 <div class="card bg-dark mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
@@ -523,9 +556,14 @@ function refreshStats() {
                 const tbody = document.getElementById('sidekiq-queues-tbody');
                 if (tbody && Array.isArray(data.queues)) {
                     const sorted = [...data.queues].sort((a, b) => b.size - a.size);
-                    tbody.innerHTML = sorted.map(q =>
-                        `<tr><td class="font-monospace">${escHtml(q.name)}</td><td>${escHtml(q.size)}${q.size > 100 ? ' <span class="badge bg-warning text-dark ms-1">backlog</span>' : ''}</td></tr>`
-                    ).join('');
+                    tbody.innerHTML = sorted.map(q => {
+                        const latCls = q.latency_secs >= 300 ? 'text-danger' : q.latency_secs >= 60 ? 'text-warning' : '';
+                        return `<tr>
+                            <td class="font-monospace">${escHtml(q.name)}</td>
+                            <td>${escHtml(q.size)}${q.size > 100 ? ' <span class="badge bg-warning text-dark ms-1">backlog</span>' : ''}</td>
+                            <td class="${latCls}">${escHtml(q.latency || '—')}</td>
+                        </tr>`;
+                    }).join('');
                 }
             }
 
@@ -651,6 +689,124 @@ function clearDeadQueue() {
             btn.innerHTML = '<i class="bi bi-trash"></i> Clear';
         });
 }
+
+// --- Sidekiq Job Browser ---
+let _jobModalQueueType = null;
+let _jobModalOffset = 0;
+const _JOB_PAGE_SIZE = 25;
+let _jobBrowserModal = null;
+
+function openJobModal(queueType) {
+    _jobModalQueueType = queueType;
+    _jobModalOffset = 0;
+    const titles = {dead: 'Dead Jobs', retry: 'Retry Queue', schedule: 'Scheduled Jobs'};
+    document.getElementById('jobBrowserTitle').textContent = titles[queueType] || queueType;
+    if (!_jobBrowserModal) {
+        _jobBrowserModal = new bootstrap.Modal(document.getElementById('jobBrowserModal'));
+    }
+    _jobBrowserModal.show();
+    loadJobPage();
+}
+
+function loadJobPage() {
+    const container = document.getElementById('jobBrowserContent');
+    container.innerHTML = '<div class="text-center py-4"><span class="spinner-border text-secondary"></span></div>';
+    fetch(`/services/{{ service.id }}/sidekiq/${_jobModalQueueType}/jobs?offset=${_jobModalOffset}&limit=${_JOB_PAGE_SIZE}`, {cache: 'no-store'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                container.innerHTML = `<div class="alert alert-danger">${escHtml(data.error)}</div>`;
+                document.getElementById('jobBrowserPager').innerHTML = '';
+                return;
+            }
+            renderJobTable(data);
+        })
+        .catch(e => {
+            container.innerHTML = `<div class="alert alert-danger">Request failed: ${escHtml(String(e))}</div>`;
+            document.getElementById('jobBrowserPager').innerHTML = '';
+        });
+}
+
+function renderJobTable(data) {
+    const container = document.getElementById('jobBrowserContent');
+    const total = data.total || 0;
+    const jobs = data.jobs || [];
+
+    if (jobs.length === 0) {
+        container.innerHTML = '<p class="text-muted py-2">No jobs found.</p>';
+        document.getElementById('jobBrowserPager').innerHTML = '';
+        return;
+    }
+
+    const isDead = _jobModalQueueType === 'dead';
+    const retryLabel = _jobModalQueueType === 'schedule' ? 'Run Now' : 'Retry Now';
+    const timeHeader = isDead ? 'Failed At / Error' : (_jobModalQueueType === 'schedule' ? 'Runs At' : 'Retry At');
+
+    const rows = jobs.map(j => {
+        const ts = j.score ? new Date(j.score * 1000).toLocaleString() : '';
+        const errHtml = j.error_message ? `<br><small class="text-danger">${escHtml(j.error_message)}</small>` : '';
+        return `<tr>
+            <td class="font-monospace small text-nowrap">${escHtml(j.jid)}</td>
+            <td class="small">${escHtml(j.class)}</td>
+            <td class="font-monospace small">${escHtml(j.queue)}</td>
+            <td class="small text-truncate" style="max-width:180px" title="${escHtml(j.args)}">${escHtml(j.args)}</td>
+            <td class="small text-nowrap">${escHtml(ts)}${errHtml}</td>
+            <td class="text-nowrap">
+                <button class="btn btn-outline-success btn-sm me-1 js-job-action" data-jid="${escHtml(j.jid)}" data-action="retry"
+                        title="${retryLabel}"><i class="bi bi-arrow-repeat"></i></button>
+                <button class="btn btn-outline-danger btn-sm js-job-action" data-jid="${escHtml(j.jid)}" data-action="delete"
+                        title="Delete"><i class="bi bi-trash"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0">
+                <thead><tr><th>JID</th><th>Class</th><th>Queue</th><th>Args</th><th>${escHtml(timeHeader)}</th><th></th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+        <p class="text-muted small mt-2 mb-0">${total.toLocaleString()} total</p>`;
+
+    const pager = document.getElementById('jobBrowserPager');
+    const prevDisabled = _jobModalOffset <= 0 ? 'disabled' : '';
+    const nextDisabled = _jobModalOffset + jobs.length >= total ? 'disabled' : '';
+    pager.innerHTML = `
+        <button class="btn btn-sm btn-outline-secondary ${prevDisabled}" onclick="jobPageNav(-1)">&#8592; Prev</button>
+        <span class="text-muted small mx-2">${(_jobModalOffset + 1).toLocaleString()}–${(_jobModalOffset + jobs.length).toLocaleString()} of ${total.toLocaleString()}</span>
+        <button class="btn btn-sm btn-outline-secondary ${nextDisabled}" onclick="jobPageNav(1)">Next &#8594;</button>`;
+}
+
+function jobPageNav(dir) {
+    _jobModalOffset = Math.max(0, _jobModalOffset + dir * _JOB_PAGE_SIZE);
+    loadJobPage();
+}
+
+// Event delegation for job action buttons inside the modal
+document.getElementById('jobBrowserModal').addEventListener('click', function(e) {
+    const btn = e.target.closest('.js-job-action');
+    if (!btn) return;
+    const jid = btn.dataset.jid;
+    const action = btn.dataset.action;
+    const labels = {retry: 'retry this job now?', delete: 'permanently delete this job?'};
+    if (!confirm(`Are you sure you want to ${labels[action] || action}`)) return;
+    btn.disabled = true;
+    fetch(`/services/{{ service.id }}/sidekiq/${_jobModalQueueType}/jobs/${encodeURIComponent(jid)}/${action}`, {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                loadJobPage();
+            } else {
+                alert('Error: ' + data.message);
+                btn.disabled = false;
+            }
+        })
+        .catch(err => {
+            alert('Request failed: ' + err);
+            btn.disabled = false;
+        });
+});
 
 function refreshLogs() {
     const btn = document.getElementById('refreshLogsBtn');

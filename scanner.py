@@ -1,5 +1,6 @@
 import re
 import base64
+import json
 import logging
 from datetime import datetime, timezone
 from models import db, Guest, UpdatePackage, ScanResult, GuestService
@@ -15,7 +16,7 @@ _VALID_UNIT_RE = re.compile(r'^[\w.\-@*]+$')
 # Uses only stdlib socket + urllib — no redis-cli required.
 # \\r\\n in this bytes literal → \r\n in the inner Python source → CR+LF at runtime.
 _SIDEKIQ_REDIS_SCRIPT = b"""\
-import socket, urllib.parse as up
+import socket, urllib.parse as up, json, time
 
 def rc(s, *args):
     p = ["*{}\\r\\n".format(len(args))]
@@ -91,7 +92,16 @@ try:
     qs = rr(s, bf) or []
     for q in qs:
         rc(s, "LLEN", "queue:"+q)
-        print("{}={}".format(q, rr(s, bf) or 0))
+        size = rr(s, bf) or 0
+        rc(s, "LINDEX", "queue:"+q, "-1")
+        oldest = rr(s, bf)
+        lat = 0.0
+        if oldest:
+            try:
+                ea = json.loads(oldest).get("enqueued_at")
+                if ea: lat = time.time() - float(ea)
+            except: pass
+        print("{}={}|{:.2f}".format(q, size, lat))
     print("---stats---")
     for k, c in [("processed", ("GET", "stat:processed")), ("failed", ("GET", "stat:failed")),
                  ("retry", ("ZCARD", "retry")), ("dead", ("ZCARD", "dead")),
@@ -328,6 +338,416 @@ def sidekiq_retry_dead(guest, service):
         if line.startswith("ok="):
             count = line.split("=", 1)[1]
             return True, f"Retried {count} job(s) from the dead queue"
+        if line.startswith("error="):
+            return False, line.split("=", 1)[1]
+    return False, "No response from Redis"
+
+
+_SIDEKIQ_JID_RE = re.compile(r'^[0-9a-f]{16,32}$')
+
+
+def _format_elapsed(secs):
+    """Format seconds as a human-readable elapsed time string for queue latency."""
+    try:
+        secs = float(secs)
+    except (TypeError, ValueError):
+        return "—"
+    if secs < 60:
+        return f"{secs:.0f}s"
+    elif secs < 3600:
+        m, s = int(secs // 60), int(secs % 60)
+        return f"{m}m {s}s"
+    else:
+        h = int(secs // 3600)
+        m = int((secs % 3600) // 60)
+        return f"{h}h {m}m"
+
+
+# Pure-Python3 Redis script template to list jobs from a Sidekiq sorted-set queue.
+# Placeholders __QUEUEKEY__, __OFFSET__, __ENDIDX__ are replaced at call time via bytes.replace().
+_SIDEKIQ_LIST_JOBS_TEMPLATE = b"""\
+import socket, urllib.parse as up, json
+
+def rc(s, *args):
+    p = ["*{}\\r\\n".format(len(args))]
+    for a in args:
+        a = str(a)
+        p.append("${}\\r\\n{}\\r\\n".format(len(a.encode()), a))
+    s.sendall("".join(p).encode())
+
+def rr(s, bf):
+    while b"\\r\\n" not in bf[0]:
+        d = s.recv(65536)
+        if not d: break
+        bf[0] += d
+    if not bf[0]: return None
+    i = bf[0].index(b"\\r\\n")
+    ln = bf[0][:i].decode("utf-8", "replace")
+    bf[0] = bf[0][i+2:]
+    t, rest = ln[0], ln[1:]
+    if t == "+": return rest
+    if t == "-": return None
+    if t == ":": return int(rest) if rest.lstrip("-").isdigit() else 0
+    if t == "$":
+        n = int(rest)
+        if n < 0: return None
+        while len(bf[0]) < n + 2:
+            d = s.recv(65536)
+            if not d: break
+            bf[0] += d
+        v = bf[0][:n].decode("utf-8", "replace")
+        bf[0] = bf[0][n+2:]
+        return v
+    if t == "*":
+        n = int(rest)
+        return [rr(s, bf) for _ in range(max(n, 0))]
+    return None
+
+env = {}
+for f in ["/home/mastodon/live/.env.production", "/var/www/mastodon/.env.production", "/opt/mastodon/.env.production"]:
+    try:
+        for line in open(f):
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip().strip(chr(34)+chr(39))
+        break
+    except: pass
+
+url = env.get("REDIS_URL", "")
+if url:
+    u = up.urlparse(url)
+    host = u.hostname or "127.0.0.1"
+    port = u.port or 6379
+    pw = u.password or env.get("REDIS_PASSWORD", "")
+    db = int((u.path or "/0").lstrip("/") or "0")
+else:
+    host = env.get("REDIS_HOST", "127.0.0.1")
+    port = int(env.get("REDIS_PORT", "6379") or "6379")
+    pw = env.get("REDIS_PASSWORD", "")
+    db = int(env.get("REDIS_DB", "0") or "0")
+
+try:
+    s = socket.socket()
+    s.settimeout(8)
+    s.connect((host, port))
+    bf = [b""]
+    if pw:
+        rc(s, "AUTH", pw)
+        rr(s, bf)
+    rc(s, "SELECT", str(db))
+    rr(s, bf)
+    q_key = __QUEUEKEY__
+    offset = __OFFSET__
+    end = __ENDIDX__
+    rc(s, "ZCARD", q_key)
+    total = rr(s, bf) or 0
+    if q_key == "dead":
+        rc(s, "ZREVRANGE", q_key, str(offset), str(end), "WITHSCORES")
+    else:
+        rc(s, "ZRANGE", q_key, str(offset), str(end), "WITHSCORES")
+    items = rr(s, bf) or []
+    jobs = []
+    for i in range(0, len(items), 2):
+        try:
+            job = json.loads(items[i])
+            score = float(items[i+1]) if i+1 < len(items) else 0.0
+            jobs.append({"jid": job.get("jid",""), "class": job.get("class",""), "queue": job.get("queue",""), "args": str(job.get("args",[]))[:80], "enqueued_at": job.get("enqueued_at",0), "failed_at": job.get("failed_at",0), "error_message": (job.get("error_message","") or "")[:100], "score": score})
+        except: pass
+    s.close()
+    print(json.dumps({"total": total, "jobs": jobs}))
+except Exception as e:
+    print(json.dumps({"error": str(e)[:120]}))
+"""
+
+
+def sidekiq_list_jobs(guest, service, queue_type, offset=0, limit=25):
+    """Fetch a page of jobs from a Sidekiq sorted-set queue (dead/retry/schedule).
+
+    Returns (jobs: list, total: int, error: str|None).
+    """
+    if queue_type not in ("dead", "retry", "schedule"):
+        return [], 0, "Invalid queue type"
+    script = _SIDEKIQ_LIST_JOBS_TEMPLATE
+    script = script.replace(b"__QUEUEKEY__", repr(str(queue_type)).encode())
+    script = script.replace(b"__OFFSET__", str(int(offset)).encode())
+    script = script.replace(b"__ENDIDX__", str(int(offset) + int(limit) - 1).encode())
+    _py_b64 = base64.b64encode(script).decode()
+    cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null || true"
+    out, err = _execute_command(guest, cmd, timeout=30)
+    if err and not out:
+        return [], 0, err
+    try:
+        data = json.loads((out or "").strip())
+        if "error" in data:
+            return [], 0, data["error"]
+        return data.get("jobs", []), int(data.get("total", 0)), None
+    except Exception:
+        return [], 0, f"Could not parse response: {(out or '')[:80]}"
+
+
+# Pure-Python3 Redis script template to delete a single Sidekiq job by JID.
+# Iterates the sorted set via ZSCAN to find and ZREM the matching member.
+# Placeholders __QUEUEKEY__ and __JID__ are replaced at call time.
+_SIDEKIQ_DELETE_JOB_TEMPLATE = b"""\
+import socket, urllib.parse as up, json
+
+def rc(s, *args):
+    p = ["*{}\\r\\n".format(len(args))]
+    for a in args:
+        a = str(a)
+        p.append("${}\\r\\n{}\\r\\n".format(len(a.encode()), a))
+    s.sendall("".join(p).encode())
+
+def rr(s, bf):
+    while b"\\r\\n" not in bf[0]:
+        d = s.recv(65536)
+        if not d: break
+        bf[0] += d
+    if not bf[0]: return None
+    i = bf[0].index(b"\\r\\n")
+    ln = bf[0][:i].decode("utf-8", "replace")
+    bf[0] = bf[0][i+2:]
+    t, rest = ln[0], ln[1:]
+    if t == "+": return rest
+    if t == "-": return None
+    if t == ":": return int(rest) if rest.lstrip("-").isdigit() else 0
+    if t == "$":
+        n = int(rest)
+        if n < 0: return None
+        while len(bf[0]) < n + 2:
+            d = s.recv(65536)
+            if not d: break
+            bf[0] += d
+        v = bf[0][:n].decode("utf-8", "replace")
+        bf[0] = bf[0][n+2:]
+        return v
+    if t == "*":
+        n = int(rest)
+        return [rr(s, bf) for _ in range(max(n, 0))]
+    return None
+
+env = {}
+for f in ["/home/mastodon/live/.env.production", "/var/www/mastodon/.env.production", "/opt/mastodon/.env.production"]:
+    try:
+        for line in open(f):
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip().strip(chr(34)+chr(39))
+        break
+    except: pass
+
+url = env.get("REDIS_URL", "")
+if url:
+    u = up.urlparse(url)
+    host = u.hostname or "127.0.0.1"
+    port = u.port or 6379
+    pw = u.password or env.get("REDIS_PASSWORD", "")
+    db = int((u.path or "/0").lstrip("/") or "0")
+else:
+    host = env.get("REDIS_HOST", "127.0.0.1")
+    port = int(env.get("REDIS_PORT", "6379") or "6379")
+    pw = env.get("REDIS_PASSWORD", "")
+    db = int(env.get("REDIS_DB", "0") or "0")
+
+try:
+    s = socket.socket()
+    s.settimeout(8)
+    s.connect((host, port))
+    bf = [b""]
+    if pw:
+        rc(s, "AUTH", pw)
+        rr(s, bf)
+    rc(s, "SELECT", str(db))
+    rr(s, bf)
+    q_key = __QUEUEKEY__
+    target_jid = __JID__
+    cursor = "0"
+    found = None
+    while True:
+        rc(s, "ZSCAN", q_key, cursor, "COUNT", "200")
+        result = rr(s, bf) or ["0", []]
+        cursor = result[0] if result[0] else "0"
+        items = result[1] or []
+        for i in range(0, len(items), 2):
+            try:
+                if json.loads(items[i]).get("jid") == target_jid:
+                    found = items[i]
+                    break
+            except: pass
+        if found is not None or cursor == "0":
+            break
+    if found is not None:
+        rc(s, "ZREM", q_key, found)
+        n = rr(s, bf) or 0
+        print("ok={}".format(n))
+    else:
+        print("error=job not found")
+    s.close()
+except Exception as e:
+    print("error={}".format(str(e)[:120]))
+"""
+
+
+def sidekiq_delete_job(guest, service, queue_type, jid):
+    """Remove a single job from a Sidekiq sorted-set queue by JID.
+
+    Returns (ok: bool, message: str).
+    """
+    if queue_type not in ("dead", "retry", "schedule"):
+        return False, "Invalid queue type"
+    if not _SIDEKIQ_JID_RE.match(jid):
+        return False, "Invalid JID"
+    script = _SIDEKIQ_DELETE_JOB_TEMPLATE
+    script = script.replace(b"__QUEUEKEY__", repr(str(queue_type)).encode())
+    script = script.replace(b"__JID__", repr(str(jid)).encode())
+    _py_b64 = base64.b64encode(script).decode()
+    cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null || true"
+    out, err = _execute_command(guest, cmd, timeout=30)
+    if err and not out:
+        return False, err
+    for line in (out or "").split("\n"):
+        line = line.strip()
+        if line.startswith("ok="):
+            return True, f"Job deleted"
+        if line.startswith("error="):
+            return False, line.split("=", 1)[1]
+    return False, "No response from Redis"
+
+
+# Pure-Python3 Redis script template to retry (re-enqueue) a single Sidekiq job by JID.
+# Finds the job via ZSCAN, LPUSHes it back to its queue, then ZREMs it from the set.
+# Placeholders __QUEUEKEY__ and __JID__ are replaced at call time.
+_SIDEKIQ_RETRY_JOB_TEMPLATE = b"""\
+import socket, urllib.parse as up, json
+
+def rc(s, *args):
+    p = ["*{}\\r\\n".format(len(args))]
+    for a in args:
+        a = str(a)
+        p.append("${}\\r\\n{}\\r\\n".format(len(a.encode()), a))
+    s.sendall("".join(p).encode())
+
+def rr(s, bf):
+    while b"\\r\\n" not in bf[0]:
+        d = s.recv(65536)
+        if not d: break
+        bf[0] += d
+    if not bf[0]: return None
+    i = bf[0].index(b"\\r\\n")
+    ln = bf[0][:i].decode("utf-8", "replace")
+    bf[0] = bf[0][i+2:]
+    t, rest = ln[0], ln[1:]
+    if t == "+": return rest
+    if t == "-": return None
+    if t == ":": return int(rest) if rest.lstrip("-").isdigit() else 0
+    if t == "$":
+        n = int(rest)
+        if n < 0: return None
+        while len(bf[0]) < n + 2:
+            d = s.recv(65536)
+            if not d: break
+            bf[0] += d
+        v = bf[0][:n].decode("utf-8", "replace")
+        bf[0] = bf[0][n+2:]
+        return v
+    if t == "*":
+        n = int(rest)
+        return [rr(s, bf) for _ in range(max(n, 0))]
+    return None
+
+env = {}
+for f in ["/home/mastodon/live/.env.production", "/var/www/mastodon/.env.production", "/opt/mastodon/.env.production"]:
+    try:
+        for line in open(f):
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip().strip(chr(34)+chr(39))
+        break
+    except: pass
+
+url = env.get("REDIS_URL", "")
+if url:
+    u = up.urlparse(url)
+    host = u.hostname or "127.0.0.1"
+    port = u.port or 6379
+    pw = u.password or env.get("REDIS_PASSWORD", "")
+    db = int((u.path or "/0").lstrip("/") or "0")
+else:
+    host = env.get("REDIS_HOST", "127.0.0.1")
+    port = int(env.get("REDIS_PORT", "6379") or "6379")
+    pw = env.get("REDIS_PASSWORD", "")
+    db = int(env.get("REDIS_DB", "0") or "0")
+
+try:
+    s = socket.socket()
+    s.settimeout(8)
+    s.connect((host, port))
+    bf = [b""]
+    if pw:
+        rc(s, "AUTH", pw)
+        rr(s, bf)
+    rc(s, "SELECT", str(db))
+    rr(s, bf)
+    q_key = __QUEUEKEY__
+    target_jid = __JID__
+    cursor = "0"
+    found_member = None
+    found_job = None
+    while True:
+        rc(s, "ZSCAN", q_key, cursor, "COUNT", "200")
+        result = rr(s, bf) or ["0", []]
+        cursor = result[0] if result[0] else "0"
+        items = result[1] or []
+        for i in range(0, len(items), 2):
+            try:
+                job = json.loads(items[i])
+                if job.get("jid") == target_jid:
+                    found_member = items[i]
+                    found_job = job
+                    break
+            except: pass
+        if found_member is not None or cursor == "0":
+            break
+    if found_member is not None:
+        queue = found_job.get("queue", "default")
+        rc(s, "LPUSH", "queue:" + queue, found_member)
+        rr(s, bf)
+        rc(s, "ZREM", q_key, found_member)
+        rr(s, bf)
+        s.close()
+        print("ok=1")
+    else:
+        s.close()
+        print("error=job not found")
+except Exception as e:
+    print("error={}".format(str(e)[:120]))
+"""
+
+
+def sidekiq_retry_job(guest, service, queue_type, jid):
+    """Re-enqueue a single job from a Sidekiq sorted-set queue for immediate processing.
+
+    Returns (ok: bool, message: str).
+    """
+    if queue_type not in ("dead", "retry", "schedule"):
+        return False, "Invalid queue type"
+    if not _SIDEKIQ_JID_RE.match(jid):
+        return False, "Invalid JID"
+    script = _SIDEKIQ_RETRY_JOB_TEMPLATE
+    script = script.replace(b"__QUEUEKEY__", repr(str(queue_type)).encode())
+    script = script.replace(b"__JID__", repr(str(jid)).encode())
+    _py_b64 = base64.b64encode(script).decode()
+    cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null || true"
+    out, err = _execute_command(guest, cmd, timeout=30)
+    if err and not out:
+        return False, err
+    for line in (out or "").split("\n"):
+        line = line.strip()
+        if line.startswith("ok="):
+            return True, "Job re-queued for immediate processing"
         if line.startswith("error="):
             return False, line.split("=", 1)[1]
     return False, "No response from Redis"
@@ -1060,11 +1480,18 @@ def _stats_sidekiq(guest, service):
         elif line == "---debug---":
             section = "debug"
         elif section == "queues" and "=" in line:
-            name, _, size_str = line.partition("=")
-            size_str = size_str.strip()
+            name, _, rest = line.partition("=")
+            size_str, _, lat_str = rest.strip().partition("|")
+            size = int(size_str) if size_str.isdigit() else 0
+            try:
+                lat_secs = float(lat_str) if lat_str else 0.0
+            except ValueError:
+                lat_secs = 0.0
             queues.append({
                 "name": name.strip(),
-                "size": int(size_str) if size_str.isdigit() else 0,
+                "size": size,
+                "latency_secs": lat_secs,
+                "latency": _format_elapsed(lat_secs) if size > 0 and lat_secs > 0 else "—",
             })
         elif section == "stats" and "=" in line:
             key, _, val = line.partition("=")
