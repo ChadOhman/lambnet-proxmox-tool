@@ -2157,6 +2157,7 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
     Returns a dict with all metrics; partial results on failure with errors list.
     """
     import concurrent.futures
+    from flask import copy_current_app_context
 
     # --- helper: parse .env.production ---
     def _fetch_env():
@@ -2284,9 +2285,9 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
     }
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        f_env = pool.submit(_fetch_env)
-        f_db = pool.submit(_fetch_db)
-        f_redis = pool.submit(_fetch_redis)
+        f_env = pool.submit(copy_current_app_context(_fetch_env))
+        f_db = pool.submit(copy_current_app_context(_fetch_db))
+        f_redis = pool.submit(copy_current_app_context(_fetch_redis))
 
         try:
             env_r = f_env.result(timeout=12)
