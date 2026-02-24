@@ -1643,14 +1643,49 @@ def _stats_libretranslate(guest, service):
 
 
 # --- LibreTranslate package management scripts ---
-# Each script adds common venv site-packages to sys.path so argostranslate
-# is found even when LibreTranslate is installed inside a virtualenv.
-
-_LT_LIST_INSTALLED_SCRIPT = b"""\
-import sys, glob, json
-for _v in ['/home/libretranslate/venv', '/opt/libretranslate/venv']:
-    for _p in glob.glob(_v + '/lib/python*/site-packages'):
+# _LT_PATH_SETUP is prepended to every script. It uses two strategies to add
+# the argostranslate site-packages to sys.path regardless of where the
+# LibreTranslate virtualenv lives:
+#   1. Broad glob covering all common installation patterns
+#   2. subprocess `find` fallback — only runs if the glob still can't locate
+#      argostranslate, so there's no overhead in the normal case.
+_LT_PATH_SETUP = b"""\
+import sys, os, glob, json
+for _pat in [
+    '/home/*/venv/lib/python*/site-packages',
+    '/home/*/.venv/lib/python*/site-packages',
+    '/home/*/.local/lib/python*/site-packages',
+    '/opt/*/venv/lib/python*/site-packages',
+    '/opt/*/lib/python*/site-packages',
+    '/root/.local/lib/python*/site-packages',
+    '/root/.local/pipx/venvs/*/lib/python*/site-packages',
+    '/srv/*/venv/lib/python*/site-packages',
+    '/var/*/venv/lib/python*/site-packages',
+    '/usr/local/lib/python*/dist-packages',
+    '/usr/local/lib/python*/site-packages',
+    '/usr/lib/python3/dist-packages',
+]:
+    for _p in glob.glob(_pat):
         if _p not in sys.path: sys.path.insert(0, _p)
+try:
+    import argostranslate as _at_probe
+    del _at_probe
+except ImportError:
+    import subprocess as _sp
+    try:
+        _r = _sp.run(
+            'find /home /opt /root /var /usr/local /usr/lib /srv -maxdepth 10 '
+            '-name "argostranslate" -type d 2>/dev/null | head -1',
+            shell=True, capture_output=True, text=True, timeout=15)
+        _d = _r.stdout.strip()
+        if _d and os.path.isfile(os.path.join(_d, '__init__.py')):
+            _site = os.path.dirname(_d)
+            if _site not in sys.path: sys.path.insert(0, _site)
+    except Exception:
+        pass
+"""
+
+_LT_LIST_INSTALLED_SCRIPT = _LT_PATH_SETUP + b"""\
 try:
     from argostranslate import package as _pkg
     print(json.dumps({'packages': [
@@ -1662,11 +1697,7 @@ except Exception as _e:
     print(json.dumps({'error': str(_e)}))
 """
 
-_LT_LIST_AVAILABLE_SCRIPT = b"""\
-import sys, glob, json
-for _v in ['/home/libretranslate/venv', '/opt/libretranslate/venv']:
-    for _p in glob.glob(_v + '/lib/python*/site-packages'):
-        if _p not in sys.path: sys.path.insert(0, _p)
+_LT_LIST_AVAILABLE_SCRIPT = _LT_PATH_SETUP + b"""\
 try:
     from argostranslate import package as _pkg
     _pkg.update_package_index()
@@ -1682,11 +1713,7 @@ except Exception as _e:
 """
 
 # Placeholders __FROM__ and __TO__ replaced at call time (validated as lang codes).
-_LT_INSTALL_PACKAGE_SCRIPT_TPL = b"""\
-import sys, glob, json
-for _v in ['/home/libretranslate/venv', '/opt/libretranslate/venv']:
-    for _p in glob.glob(_v + '/lib/python*/site-packages'):
-        if _p not in sys.path: sys.path.insert(0, _p)
+_LT_INSTALL_PACKAGE_SCRIPT_TPL = _LT_PATH_SETUP + b"""\
 try:
     from argostranslate import package as _pkg
     _pkg.update_package_index()
@@ -1703,11 +1730,7 @@ except Exception as _e:
     print(json.dumps({'ok': False, 'message': str(_e)}))
 """
 
-_LT_UPDATE_ALL_SCRIPT = b"""\
-import sys, glob, json
-for _v in ['/home/libretranslate/venv', '/opt/libretranslate/venv']:
-    for _p in glob.glob(_v + '/lib/python*/site-packages'):
-        if _p not in sys.path: sys.path.insert(0, _p)
+_LT_UPDATE_ALL_SCRIPT = _LT_PATH_SETUP + b"""\
 try:
     from argostranslate import package as _pkg
     _pkg.update_package_index()
@@ -1727,29 +1750,13 @@ _LANG_CODE_RE = re.compile(r'^[a-z]{2,8}$')
 
 
 def _lt_run(guest, script_bytes, timeout=60):
-    """Base64-encode a script and run it via SSH.
+    """Base64-encode a script and run it via SSH using system python3.
 
-    Tests common Python candidates in order and picks the first one that can
-    import argostranslate, so the script works regardless of virtualenv location.
+    argostranslate discovery is handled inside the script itself via
+    _LT_PATH_SETUP (broad glob + find fallback).
     """
     _py_b64 = base64.b64encode(script_bytes).decode()
-    cmd = (
-        "_PY=python3; "
-        "for _c in "
-        "python3 "
-        "/home/*/venv/bin/python3 "
-        "/home/*/venv/bin/python "
-        "/opt/*/venv/bin/python3 "
-        "/opt/*/venv/bin/python "
-        "/opt/venv/bin/python3 "
-        "/root/.local/pipx/venvs/*/bin/python3 "
-        "/srv/*/venv/bin/python3 "
-        "/usr/local/bin/python3; do "
-        '[ -x "$_c" ] || continue; '
-        '"$_c" -c \'import argostranslate\' 2>/dev/null && _PY="$_c" && break; '
-        "done; "
-        f"\"$_PY\" -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
-    )
+    cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
     out, err = _execute_command(guest, cmd, timeout=timeout)
     if err and not out:
         raise RuntimeError(err)
