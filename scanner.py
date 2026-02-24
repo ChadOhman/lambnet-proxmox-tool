@@ -1727,16 +1727,28 @@ _LANG_CODE_RE = re.compile(r'^[a-z]{2,8}$')
 
 
 def _lt_run(guest, script_bytes, timeout=60):
-    """Base64-encode a script and run it via SSH using LibreTranslate's own Python interpreter.
+    """Base64-encode a script and run it via SSH.
 
-    Discovers the Python binary from the running LibreTranslate process via
-    /proc/<PID>/exe so the script inherits the correct virtualenv and packages.
-    Falls back to python3 if the process isn't found.
+    Tests common Python candidates in order and picks the first one that can
+    import argostranslate, so the script works regardless of virtualenv location.
     """
     _py_b64 = base64.b64encode(script_bytes).decode()
     cmd = (
-        "_PY=$(readlink /proc/$(pgrep -f libretranslate | head -1)/exe 2>/dev/null); "
-        f"${{_PY:-python3}} -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
+        "_PY=python3; "
+        "for _c in "
+        "python3 "
+        "/home/*/venv/bin/python3 "
+        "/home/*/venv/bin/python "
+        "/opt/*/venv/bin/python3 "
+        "/opt/*/venv/bin/python "
+        "/opt/venv/bin/python3 "
+        "/root/.local/pipx/venvs/*/bin/python3 "
+        "/srv/*/venv/bin/python3 "
+        "/usr/local/bin/python3; do "
+        '[ -x "$_c" ] || continue; '
+        '"$_c" -c \'import argostranslate\' 2>/dev/null && _PY="$_c" && break; '
+        "done; "
+        f"\"$_PY\" -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
     )
     out, err = _execute_command(guest, cmd, timeout=timeout)
     if err and not out:
