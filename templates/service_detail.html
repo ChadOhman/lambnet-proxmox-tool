@@ -916,9 +916,9 @@ function ltShowAvailable() {
                 content.innerHTML = `<div class="alert alert-danger">${escHtml(data.error)}</div>`;
                 return;
             }
-            const pkgs = data.packages || [];
+            const pkgs = (data.packages || []).filter(p => !p.installed);
             if (pkgs.length === 0) {
-                content.innerHTML = '<p class="text-muted">No available packages found.</p>';
+                content.innerHTML = '<p class="text-muted">No additional packages available (all are already installed).</p>';
                 return;
             }
             const rows = pkgs.map(p => `<tr>
