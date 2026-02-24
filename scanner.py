@@ -2109,50 +2109,66 @@ def _format_bytes(n):
     return f"{n:.1f} PB"
 
 
+_MASTODON_DB_SQL = (
+    "SELECT key || '=' || val FROM ("
+    "SELECT 'local_users',      count(*)::text FROM accounts WHERE domain IS NULL"
+    " UNION ALL "
+    "SELECT 'active_users',     count(*)::text FROM accounts a JOIN users u ON u.account_id = a.id"
+    " WHERE a.domain IS NULL AND a.suspended_at IS NULL AND u.confirmed_at IS NOT NULL"
+    " UNION ALL "
+    "SELECT 'mau',              count(DISTINCT u.account_id)::text FROM users u"
+    " WHERE u.current_sign_in_at > NOW() - INTERVAL '30 days'"
+    " UNION ALL "
+    "SELECT 'wau',              count(DISTINCT u.account_id)::text FROM users u"
+    " WHERE u.current_sign_in_at > NOW() - INTERVAL '7 days'"
+    " UNION ALL "
+    "SELECT 'new_users_month',  count(*)::text FROM users WHERE created_at > NOW() - INTERVAL '30 days'"
+    " UNION ALL "
+    "SELECT 'local_statuses',   count(*)::text FROM statuses WHERE local = true"
+    " UNION ALL "
+    "SELECT 'statuses_7d',      count(*)::text FROM statuses WHERE local = true"
+    " AND created_at > NOW() - INTERVAL '7 days'"
+    " UNION ALL "
+    "SELECT 'statuses_30d',     count(*)::text FROM statuses WHERE local = true"
+    " AND created_at > NOW() - INTERVAL '30 days'"
+    " UNION ALL "
+    "SELECT 'known_instances',  count(*)::text FROM instances WHERE domain IS NOT NULL"
+    " UNION ALL "
+    "SELECT 'remote_accounts',  count(*)::text FROM accounts WHERE domain IS NOT NULL AND suspended_at IS NULL"
+    " UNION ALL "
+    "SELECT 'media_count',      count(*)::text FROM media_attachments"
+    " WHERE account_id IN (SELECT id FROM accounts WHERE domain IS NULL)"
+    " UNION ALL "
+    "SELECT 'media_size_bytes', coalesce(sum(file_file_size + coalesce(thumbnail_file_size,0)),0)::text"
+    " FROM media_attachments WHERE account_id IN (SELECT id FROM accounts WHERE domain IS NULL)"
+    " UNION ALL "
+    "SELECT 'db_size_bytes',    pg_database_size(current_database())::text"
+    ") t(key, val)"
+)
+
+
 def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodon/live", user="mastodon"):
     """Collect Mastodon instance overview statistics.
 
-    Makes up to 3 SSH calls:
-      1. grep .env.production on mastodon_guest for domain/db_name/registrations_mode
-      2. Batched PostgreSQL UNION ALL for 13 metrics on db_guest
-      3. Redis INFO (memory, stats, clients) on mastodon_guest
+    Runs up to 3 SSH calls concurrently in a ThreadPoolExecutor so total
+    wall time equals the slowest call (~20s) rather than their sum (~50s+).
+    This keeps the endpoint well within gunicorn's worker timeout.
 
     Returns a dict with all metrics; partial results on failure with errors list.
     """
-    result = {
-        "domain": "",
-        "db_name": "",
-        "registrations_mode": "",
-        "local_users": None,
-        "active_users": None,
-        "mau": None,
-        "wau": None,
-        "new_users_month": None,
-        "local_statuses": None,
-        "statuses_7d": None,
-        "statuses_30d": None,
-        "media_count": None,
-        "media_size_bytes": None,
-        "media_size_human": "N/A",
-        "known_instances": None,
-        "remote_accounts": None,
-        "db_size_bytes": None,
-        "db_size_human": "N/A",
-        "redis_memory_human": "N/A",
-        "redis_memory_peak_human": "N/A",
-        "redis_clients": None,
-        "redis_hit_rate": "N/A",
-        "errors": [],
-    }
+    import concurrent.futures
 
-    # --- Call 1: Parse .env.production ---
-    if mastodon_guest:
+    # --- helper: parse .env.production ---
+    def _fetch_env():
+        r = {"domain": "", "db_name": "", "registrations_mode": "", "errors": []}
+        if not mastodon_guest:
+            return r
         try:
             stdout, error = _execute_command(
                 mastodon_guest,
                 f"grep -E '^(LOCAL_DOMAIN|DB_NAME|REGISTRATIONS_MODE|SINGLE_USER_MODE)=' "
                 f"{app_dir}/.env.production 2>/dev/null",
-                timeout=15,
+                timeout=10,
                 sudo=True,
             )
             if stdout and not error:
@@ -2163,53 +2179,34 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
                         k = k.strip()
                         v = v.strip().strip("\"'")
                         if k == "LOCAL_DOMAIN":
-                            result["domain"] = v
+                            r["domain"] = v
                         elif k == "DB_NAME":
-                            result["db_name"] = v
+                            r["db_name"] = v
                         elif k == "REGISTRATIONS_MODE":
-                            result["registrations_mode"] = v
+                            r["registrations_mode"] = v
             elif error:
-                result["errors"].append(f"env parse: {error[:100]}")
+                r["errors"].append(f"env parse: {error[:100]}")
         except Exception as e:
-            result["errors"].append(f"env parse: {str(e)[:100]}")
+            r["errors"].append(f"env parse: {str(e)[:100]}")
+        return r
 
-    db_name = result["db_name"] or "mastodon_production"
-
-    # --- Call 2: Batched PostgreSQL UNION ALL ---
-    if db_guest:
-        sql = (
-            "SELECT key || '=' || val FROM ("
-            "SELECT 'local_users',      count(*)::text FROM accounts WHERE domain IS NULL"
-            " UNION ALL "
-            "SELECT 'active_users',     count(*)::text FROM accounts a JOIN users u ON u.account_id = a.id WHERE a.domain IS NULL AND a.suspended_at IS NULL AND u.confirmed_at IS NOT NULL"
-            " UNION ALL "
-            "SELECT 'mau',              count(DISTINCT u.account_id)::text FROM users u WHERE u.current_sign_in_at > NOW() - INTERVAL '30 days'"
-            " UNION ALL "
-            "SELECT 'wau',              count(DISTINCT u.account_id)::text FROM users u WHERE u.current_sign_in_at > NOW() - INTERVAL '7 days'"
-            " UNION ALL "
-            "SELECT 'new_users_month',  count(*)::text FROM users WHERE created_at > NOW() - INTERVAL '30 days'"
-            " UNION ALL "
-            "SELECT 'local_statuses',   count(*)::text FROM statuses WHERE local = true"
-            " UNION ALL "
-            "SELECT 'statuses_7d',      count(*)::text FROM statuses WHERE local = true AND created_at > NOW() - INTERVAL '7 days'"
-            " UNION ALL "
-            "SELECT 'statuses_30d',     count(*)::text FROM statuses WHERE local = true AND created_at > NOW() - INTERVAL '30 days'"
-            " UNION ALL "
-            "SELECT 'known_instances',  count(*)::text FROM instances WHERE domain IS NOT NULL"
-            " UNION ALL "
-            "SELECT 'remote_accounts',  count(*)::text FROM accounts WHERE domain IS NOT NULL AND suspended_at IS NULL"
-            " UNION ALL "
-            "SELECT 'media_count',      count(*)::text FROM media_attachments WHERE account_id IN (SELECT id FROM accounts WHERE domain IS NULL)"
-            " UNION ALL "
-            "SELECT 'media_size_bytes', coalesce(sum(file_file_size + coalesce(thumbnail_file_size,0)),0)::text FROM media_attachments WHERE account_id IN (SELECT id FROM accounts WHERE domain IS NULL)"
-            " UNION ALL "
-            "SELECT 'db_size_bytes',    pg_database_size(current_database())::text"
-            ") t(key, val)"
-        )
-        sql_escaped = sql.replace("'", "'\\''")
-        cmd = f"sudo -u postgres psql -t -A -d {db_name} -c '{sql_escaped}'"
+    # --- helper: batched PostgreSQL UNION ALL ---
+    def _fetch_db():
+        _db_keys = [
+            "local_users", "active_users", "mau", "wau", "new_users_month",
+            "local_statuses", "statuses_7d", "statuses_30d", "known_instances",
+            "remote_accounts", "media_count", "media_size_bytes", "db_size_bytes",
+        ]
+        r = {k: None for k in _db_keys}
+        r["media_size_human"] = "N/A"
+        r["db_size_human"] = "N/A"
+        r["errors"] = []
+        if not db_guest:
+            return r
+        sql_escaped = _MASTODON_DB_SQL.replace("'", "'\\''")
+        cmd = f"sudo -u postgres psql -t -A -d mastodon_production -c '{sql_escaped}'"
         try:
-            stdout, error = _execute_command(db_guest, cmd, timeout=60)
+            stdout, error = _execute_command(db_guest, cmd, timeout=20)
             if stdout and not error:
                 for line in stdout.splitlines():
                     line = line.strip()
@@ -2217,23 +2214,30 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
                         k, _, v = line.partition("=")
                         k = k.strip()
                         v = v.strip()
-                        if k in result and v.lstrip("-").isdigit():
-                            result[k] = int(v)
-                if result["media_size_bytes"] is not None:
-                    result["media_size_human"] = _format_bytes(result["media_size_bytes"])
-                if result["db_size_bytes"] is not None:
-                    result["db_size_human"] = _format_bytes(result["db_size_bytes"])
+                        if k in r and v.lstrip("-").isdigit():
+                            r[k] = int(v)
+                if r["media_size_bytes"] is not None:
+                    r["media_size_human"] = _format_bytes(r["media_size_bytes"])
+                if r["db_size_bytes"] is not None:
+                    r["db_size_human"] = _format_bytes(r["db_size_bytes"])
             elif error:
-                result["errors"].append(f"db stats: {error[:100]}")
+                r["errors"].append(f"db stats: {error[:100]}")
         except Exception as e:
-            result["errors"].append(f"db stats: {str(e)[:100]}")
+            r["errors"].append(f"db stats: {str(e)[:100]}")
+        return r
 
-    # --- Call 3: Redis INFO ---
-    if mastodon_guest:
+    # --- helper: Redis INFO ---
+    def _fetch_redis():
+        r = {
+            "redis_memory_human": "N/A", "redis_memory_peak_human": "N/A",
+            "redis_clients": None, "redis_hit_rate": "N/A", "errors": [],
+        }
+        if not mastodon_guest:
+            return r
         try:
             _py_b64 = base64.b64encode(_MASTODON_REDIS_INFO_SCRIPT).decode()
             cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
-            stdout, error = _execute_command(mastodon_guest, cmd, timeout=20)
+            stdout, _ = _execute_command(mastodon_guest, cmd, timeout=10)
             if stdout:
                 redis_data = {}
                 for line in stdout.splitlines():
@@ -2244,28 +2248,63 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
                     elif "=" in line:
                         k, _, v = line.partition("=")
                         redis_data[k.strip()] = v.strip()
-
                 used_mem = redis_data.get("used_memory")
                 peak_mem = redis_data.get("used_memory_peak")
                 if used_mem and used_mem.isdigit():
-                    result["redis_memory_human"] = _format_bytes(int(used_mem))
+                    r["redis_memory_human"] = _format_bytes(int(used_mem))
                 if peak_mem and peak_mem.isdigit():
-                    result["redis_memory_peak_human"] = _format_bytes(int(peak_mem))
-
+                    r["redis_memory_peak_human"] = _format_bytes(int(peak_mem))
                 clients = redis_data.get("connected_clients")
                 if clients and clients.isdigit():
-                    result["redis_clients"] = int(clients)
-
+                    r["redis_clients"] = int(clients)
                 hits = redis_data.get("keyspace_hits")
                 misses = redis_data.get("keyspace_misses")
                 if hits and misses and hits.isdigit() and misses.isdigit():
                     h, m = int(hits), int(misses)
                     total = h + m
-                    result["redis_hit_rate"] = f"{h / total * 100:.1f}%" if total > 0 else "N/A"
-
+                    r["redis_hit_rate"] = f"{h / total * 100:.1f}%" if total > 0 else "N/A"
                 if "redis_error" in redis_data:
-                    result["errors"].append(f"redis: {redis_data['redis_error']}")
+                    r["errors"].append(f"redis: {redis_data['redis_error']}")
         except Exception as e:
-            result["errors"].append(f"redis: {str(e)[:100]}")
+            r["errors"].append(f"redis: {str(e)[:100]}")
+        return r
 
+    # Run all 3 SSH calls concurrently. Wall time = max(10, 20, 10) ≈ 20s worst case.
+    _empty_env = {"domain": "", "db_name": "", "registrations_mode": "", "errors": []}
+    _empty_db = {
+        "local_users": None, "active_users": None, "mau": None, "wau": None,
+        "new_users_month": None, "local_statuses": None, "statuses_7d": None,
+        "statuses_30d": None, "known_instances": None, "remote_accounts": None,
+        "media_count": None, "media_size_bytes": None, "media_size_human": "N/A",
+        "db_size_bytes": None, "db_size_human": "N/A", "errors": [],
+    }
+    _empty_redis = {
+        "redis_memory_human": "N/A", "redis_memory_peak_human": "N/A",
+        "redis_clients": None, "redis_hit_rate": "N/A", "errors": [],
+    }
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        f_env = pool.submit(_fetch_env)
+        f_db = pool.submit(_fetch_db)
+        f_redis = pool.submit(_fetch_redis)
+
+        try:
+            env_r = f_env.result(timeout=12)
+        except Exception as e:
+            env_r = {**_empty_env, "errors": [f"env: {e}"]}
+
+        try:
+            db_r = f_db.result(timeout=22)
+        except Exception as e:
+            db_r = {**_empty_db, "errors": [f"db: {e}"]}
+
+        try:
+            redis_r = f_redis.result(timeout=12)
+        except Exception as e:
+            redis_r = {**_empty_redis, "errors": [f"redis: {e}"]}
+
+    result = {}
+    for r in (env_r, db_r, redis_r):
+        result.update({k: v for k, v in r.items() if k != "errors"})
+    result["errors"] = env_r["errors"] + db_r["errors"] + redis_r["errors"]
     return result
