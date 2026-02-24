@@ -2181,7 +2181,7 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
             "SELECT key || '=' || val FROM ("
             "SELECT 'local_users',      count(*)::text FROM accounts WHERE domain IS NULL"
             " UNION ALL "
-            "SELECT 'active_users',     count(*)::text FROM accounts WHERE domain IS NULL AND suspended_at IS NULL AND confirmed_at IS NOT NULL"
+            "SELECT 'active_users',     count(*)::text FROM accounts a JOIN users u ON u.account_id = a.id WHERE a.domain IS NULL AND a.suspended_at IS NULL AND u.confirmed_at IS NOT NULL"
             " UNION ALL "
             "SELECT 'mau',              count(DISTINCT u.account_id)::text FROM users u WHERE u.current_sign_in_at > NOW() - INTERVAL '30 days'"
             " UNION ALL "
