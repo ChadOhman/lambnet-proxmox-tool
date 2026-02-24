@@ -1688,11 +1688,25 @@ except ImportError:
 _LT_LIST_INSTALLED_SCRIPT = _LT_PATH_SETUP + b"""\
 try:
     from argostranslate import package as _pkg
-    print(json.dumps({'packages': [
-        {'from_code': p.from_code, 'to_code': p.to_code,
-         'from_name': p.from_name, 'to_name': p.to_name}
-        for p in _pkg.get_installed_packages()
-    ]}))
+    # Compare against locally-cached available packages (no network call) to
+    # detect outdated versions. If no local cache exists, outdated stays False.
+    _avail_ver = {}
+    try:
+        _avail_ver = {(p.from_code, p.to_code): p.package_version
+                      for p in _pkg.get_available_packages()}
+    except Exception:
+        pass
+    _pkgs = []
+    for p in _pkg.get_installed_packages():
+        _ver = getattr(p, 'package_version', None)
+        _avail = _avail_ver.get((p.from_code, p.to_code))
+        _pkgs.append({
+            'from_code': p.from_code, 'to_code': p.to_code,
+            'from_name': p.from_name, 'to_name': p.to_name,
+            'version': _ver,
+            'outdated': bool(_avail and _ver and _avail != _ver),
+        })
+    print(json.dumps({'packages': _pkgs}))
 except Exception as _e:
     print(json.dumps({'error': str(_e)}))
 """

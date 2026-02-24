@@ -879,14 +879,25 @@ function ltLoadInstalled() {
                 container.innerHTML = '<p class="text-muted p-3 mb-0">No language packages installed.</p>';
                 return;
             }
-            const rows = pkgs.map(p => `<tr>
+            const anyOutdated = pkgs.some(p => p.outdated);
+            const rows = pkgs.map(p => {
+                const verHtml = p.version
+                    ? (p.outdated
+                        ? `${escHtml(p.version)} <span class="badge bg-warning text-dark ms-1" title="Update available">update available</span>`
+                        : escHtml(p.version))
+                    : '<span class="text-muted">—</span>';
+                return `<tr>
                 <td>${escHtml(p.from_name || p.from_code)}</td>
                 <td><span class="badge bg-secondary font-monospace">${escHtml(p.from_code)}</span></td>
                 <td>${escHtml(p.to_name || p.to_code)}</td>
                 <td><span class="badge bg-secondary font-monospace">${escHtml(p.to_code)}</span></td>
-                <td class="text-muted small">${escHtml(p.version || '')}</td>
-            </tr>`).join('');
-            container.innerHTML = `<div class="table-responsive">
+                <td class="text-muted small">${verHtml}</td>
+            </tr>`;
+            }).join('');
+            const outdatedNote = anyOutdated
+                ? `<p class="text-warning small px-3 pt-2 mb-0"><i class="bi bi-exclamation-triangle"></i> Some packages have updates available. Use <strong>Update All</strong> to apply them.</p>`
+                : '';
+            container.innerHTML = `${outdatedNote}<div class="table-responsive">
                 <table class="table table-dark table-sm mb-0">
                     <thead><tr><th>From</th><th>Code</th><th>To</th><th>Code</th><th>Version</th></tr></thead>
                     <tbody>${rows}</tbody>
