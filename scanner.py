@@ -2159,7 +2159,6 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
 
     Returns a dict with all metrics; partial results on failure with errors list.
     """
-    import concurrent.futures
     from flask import current_app
 
     _app = current_app._get_current_object()
@@ -2297,26 +2296,35 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
                 r["errors"].append(f"redis: {str(e)[:100]}")
         return r
 
-    # Run all 3 SSH calls concurrently. Wall time = max(10, 20, 10) ≈ 20s worst case.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        f_env = pool.submit(_fetch_env)
-        f_db = pool.submit(_fetch_db)
-        f_redis = pool.submit(_fetch_redis)
-
-        try:
-            env_r = f_env.result(timeout=12)
-        except Exception as e:
-            env_r = {**_empty_env, "errors": [f"env: {e}"]}
-
-        try:
-            db_r = f_db.result(timeout=22)
-        except Exception as e:
-            db_r = {**_empty_db, "errors": [f"db: {e}"]}
-
-        try:
-            redis_r = f_redis.result(timeout=12)
-        except Exception as e:
-            redis_r = {**_empty_redis, "errors": [f"redis: {e}"]}
+    # Run all 3 SSH calls concurrently.  Prefer gevent.spawn() so the calls run
+    # as cooperative greenlets — they yield to the event loop during SSH I/O and
+    # don't starve long-lived connections like the SSE collab stream.
+    # Fall back to ThreadPoolExecutor when gevent is not installed (dev/test).
+    try:
+        import gevent as _gevent
+        _gs = [_gevent.spawn(_fetch_env), _gevent.spawn(_fetch_db), _gevent.spawn(_fetch_redis)]
+        _gevent.joinall(_gs, timeout=25)
+        env_r = _gs[0].value if _gs[0].successful() else {**_empty_env, "errors": [f"env: {_gs[0].exception or 'timed out'}"]}
+        db_r = _gs[1].value if _gs[1].successful() else {**_empty_db, "errors": [f"db: {_gs[1].exception or 'timed out'}"]}
+        redis_r = _gs[2].value if _gs[2].successful() else {**_empty_redis, "errors": [f"redis: {_gs[2].exception or 'timed out'}"]}
+    except ImportError:
+        import concurrent.futures as _cf
+        with _cf.ThreadPoolExecutor(max_workers=3) as pool:
+            f_env = pool.submit(_fetch_env)
+            f_db = pool.submit(_fetch_db)
+            f_redis = pool.submit(_fetch_redis)
+            try:
+                env_r = f_env.result(timeout=12)
+            except Exception as e:
+                env_r = {**_empty_env, "errors": [f"env: {e}"]}
+            try:
+                db_r = f_db.result(timeout=22)
+            except Exception as e:
+                db_r = {**_empty_db, "errors": [f"db: {e}"]}
+            try:
+                redis_r = f_redis.result(timeout=12)
+            except Exception as e:
+                redis_r = {**_empty_redis, "errors": [f"redis: {e}"]}
 
     result = {}
     for r in (env_r, db_r, redis_r):
