@@ -2154,123 +2154,18 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
     wall time equals the slowest call (~20s) rather than their sum (~50s+).
     This keeps the endpoint well within gunicorn's worker timeout.
 
+    Each thread reloads its guest object within a fresh app context to avoid
+    SQLAlchemy detached-instance / out-of-context errors.
+
     Returns a dict with all metrics; partial results on failure with errors list.
     """
     import concurrent.futures
-    from flask import copy_current_app_context
+    from flask import current_app
 
-    # --- helper: parse .env.production ---
-    def _fetch_env():
-        r = {"domain": "", "db_name": "", "registrations_mode": "", "errors": []}
-        if not mastodon_guest:
-            return r
-        try:
-            stdout, error = _execute_command(
-                mastodon_guest,
-                f"grep -E '^(LOCAL_DOMAIN|DB_NAME|REGISTRATIONS_MODE|SINGLE_USER_MODE)=' "
-                f"{app_dir}/.env.production 2>/dev/null",
-                timeout=10,
-                sudo=True,
-            )
-            if stdout and not error:
-                for line in stdout.splitlines():
-                    line = line.strip()
-                    if "=" in line:
-                        k, _, v = line.partition("=")
-                        k = k.strip()
-                        v = v.strip().strip("\"'")
-                        if k == "LOCAL_DOMAIN":
-                            r["domain"] = v
-                        elif k == "DB_NAME":
-                            r["db_name"] = v
-                        elif k == "REGISTRATIONS_MODE":
-                            r["registrations_mode"] = v
-            elif error:
-                r["errors"].append(f"env parse: {error[:100]}")
-        except Exception as e:
-            r["errors"].append(f"env parse: {str(e)[:100]}")
-        return r
+    _app = current_app._get_current_object()
+    mastodon_id = mastodon_guest.id if mastodon_guest else None
+    db_id = db_guest.id if db_guest else None
 
-    # --- helper: batched PostgreSQL UNION ALL ---
-    def _fetch_db():
-        _db_keys = [
-            "local_users", "active_users", "mau", "wau", "new_users_month",
-            "local_statuses", "statuses_7d", "statuses_30d", "known_instances",
-            "remote_accounts", "media_count", "media_size_bytes", "db_size_bytes",
-        ]
-        r = {k: None for k in _db_keys}
-        r["media_size_human"] = "N/A"
-        r["db_size_human"] = "N/A"
-        r["errors"] = []
-        if not db_guest:
-            return r
-        sql_escaped = _MASTODON_DB_SQL.replace("'", "'\\''")
-        cmd = f"sudo -u postgres psql -t -A -d mastodon_production -c '{sql_escaped}'"
-        try:
-            stdout, error = _execute_command(db_guest, cmd, timeout=20)
-            if stdout and not error:
-                for line in stdout.splitlines():
-                    line = line.strip()
-                    if "=" in line:
-                        k, _, v = line.partition("=")
-                        k = k.strip()
-                        v = v.strip()
-                        if k in r and v.lstrip("-").isdigit():
-                            r[k] = int(v)
-                if r["media_size_bytes"] is not None:
-                    r["media_size_human"] = _format_bytes(r["media_size_bytes"])
-                if r["db_size_bytes"] is not None:
-                    r["db_size_human"] = _format_bytes(r["db_size_bytes"])
-            elif error:
-                r["errors"].append(f"db stats: {error[:100]}")
-        except Exception as e:
-            r["errors"].append(f"db stats: {str(e)[:100]}")
-        return r
-
-    # --- helper: Redis INFO ---
-    def _fetch_redis():
-        r = {
-            "redis_memory_human": "N/A", "redis_memory_peak_human": "N/A",
-            "redis_clients": None, "redis_hit_rate": "N/A", "errors": [],
-        }
-        if not mastodon_guest:
-            return r
-        try:
-            _py_b64 = base64.b64encode(_MASTODON_REDIS_INFO_SCRIPT).decode()
-            cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
-            stdout, _ = _execute_command(mastodon_guest, cmd, timeout=10)
-            if stdout:
-                redis_data = {}
-                for line in stdout.splitlines():
-                    line = line.strip()
-                    if ":" in line and not line.startswith("#"):
-                        k, _, v = line.partition(":")
-                        redis_data[k.strip()] = v.strip()
-                    elif "=" in line:
-                        k, _, v = line.partition("=")
-                        redis_data[k.strip()] = v.strip()
-                used_mem = redis_data.get("used_memory")
-                peak_mem = redis_data.get("used_memory_peak")
-                if used_mem and used_mem.isdigit():
-                    r["redis_memory_human"] = _format_bytes(int(used_mem))
-                if peak_mem and peak_mem.isdigit():
-                    r["redis_memory_peak_human"] = _format_bytes(int(peak_mem))
-                clients = redis_data.get("connected_clients")
-                if clients and clients.isdigit():
-                    r["redis_clients"] = int(clients)
-                hits = redis_data.get("keyspace_hits")
-                misses = redis_data.get("keyspace_misses")
-                if hits and misses and hits.isdigit() and misses.isdigit():
-                    h, m = int(hits), int(misses)
-                    total = h + m
-                    r["redis_hit_rate"] = f"{h / total * 100:.1f}%" if total > 0 else "N/A"
-                if "redis_error" in redis_data:
-                    r["errors"].append(f"redis: {redis_data['redis_error']}")
-        except Exception as e:
-            r["errors"].append(f"redis: {str(e)[:100]}")
-        return r
-
-    # Run all 3 SSH calls concurrently. Wall time = max(10, 20, 10) ≈ 20s worst case.
     _empty_env = {"domain": "", "db_name": "", "registrations_mode": "", "errors": []}
     _empty_db = {
         "local_users": None, "active_users": None, "mau": None, "wau": None,
@@ -2284,10 +2179,129 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
         "redis_clients": None, "redis_hit_rate": "N/A", "errors": [],
     }
 
+    # --- helper: parse .env.production ---
+    def _fetch_env():
+        r = dict(_empty_env)
+        r["errors"] = []
+        if not mastodon_id:
+            return r
+        with _app.app_context():
+            from models import Guest as _Guest
+            guest = _Guest.query.get(mastodon_id)
+            if not guest:
+                return r
+            try:
+                stdout, error = _execute_command(
+                    guest,
+                    f"grep -E '^(LOCAL_DOMAIN|DB_NAME|REGISTRATIONS_MODE|SINGLE_USER_MODE)=' "
+                    f"{app_dir}/.env.production 2>/dev/null",
+                    timeout=10,
+                    sudo=True,
+                )
+                if stdout and not error:
+                    for line in stdout.splitlines():
+                        line = line.strip()
+                        if "=" in line:
+                            k, _, v = line.partition("=")
+                            k = k.strip()
+                            v = v.strip().strip("\"'")
+                            if k == "LOCAL_DOMAIN":
+                                r["domain"] = v
+                            elif k == "DB_NAME":
+                                r["db_name"] = v
+                            elif k == "REGISTRATIONS_MODE":
+                                r["registrations_mode"] = v
+                elif error:
+                    r["errors"].append(f"env parse: {error[:100]}")
+            except Exception as e:
+                r["errors"].append(f"env parse: {str(e)[:100]}")
+        return r
+
+    # --- helper: batched PostgreSQL UNION ALL ---
+    def _fetch_db():
+        r = dict(_empty_db)
+        r["errors"] = []
+        if not db_id:
+            return r
+        with _app.app_context():
+            from models import Guest as _Guest
+            guest = _Guest.query.get(db_id)
+            if not guest:
+                return r
+            sql_escaped = _MASTODON_DB_SQL.replace("'", "'\\''")
+            cmd = f"sudo -u postgres psql -t -A -d mastodon_production -c '{sql_escaped}'"
+            try:
+                stdout, error = _execute_command(guest, cmd, timeout=20)
+                if stdout and not error:
+                    for line in stdout.splitlines():
+                        line = line.strip()
+                        if "=" in line:
+                            k, _, v = line.partition("=")
+                            k = k.strip()
+                            v = v.strip()
+                            if k in r and v.lstrip("-").isdigit():
+                                r[k] = int(v)
+                    if r["media_size_bytes"] is not None:
+                        r["media_size_human"] = _format_bytes(r["media_size_bytes"])
+                    if r["db_size_bytes"] is not None:
+                        r["db_size_human"] = _format_bytes(r["db_size_bytes"])
+                elif error:
+                    r["errors"].append(f"db stats: {error[:100]}")
+            except Exception as e:
+                r["errors"].append(f"db stats: {str(e)[:100]}")
+        return r
+
+    # --- helper: Redis INFO ---
+    def _fetch_redis():
+        r = dict(_empty_redis)
+        r["errors"] = []
+        if not mastodon_id:
+            return r
+        with _app.app_context():
+            from models import Guest as _Guest
+            guest = _Guest.query.get(mastodon_id)
+            if not guest:
+                return r
+            try:
+                _py_b64 = base64.b64encode(_MASTODON_REDIS_INFO_SCRIPT).decode()
+                cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
+                stdout, _ = _execute_command(guest, cmd, timeout=10)
+                if stdout:
+                    redis_data = {}
+                    for line in stdout.splitlines():
+                        line = line.strip()
+                        if ":" in line and not line.startswith("#"):
+                            k, _, v = line.partition(":")
+                            redis_data[k.strip()] = v.strip()
+                        elif "=" in line:
+                            k, _, v = line.partition("=")
+                            redis_data[k.strip()] = v.strip()
+                    used_mem = redis_data.get("used_memory")
+                    peak_mem = redis_data.get("used_memory_peak")
+                    if used_mem and used_mem.isdigit():
+                        r["redis_memory_human"] = _format_bytes(int(used_mem))
+                    if peak_mem and peak_mem.isdigit():
+                        r["redis_memory_peak_human"] = _format_bytes(int(peak_mem))
+                    clients = redis_data.get("connected_clients")
+                    if clients and clients.isdigit():
+                        r["redis_clients"] = int(clients)
+                    hits = redis_data.get("keyspace_hits")
+                    misses = redis_data.get("keyspace_misses")
+                    if hits and misses and hits.isdigit() and misses.isdigit():
+                        h, m = int(hits), int(misses)
+                        total = h + m
+                        r["redis_hit_rate"] = f"{h / total * 100:.1f}%" if total > 0 else "N/A"
+                    if "redis_error" in redis_data:
+                        r["errors"].append(f"redis: {redis_data['redis_error']}")
+            except Exception as e:
+                r["errors"].append(f"redis: {str(e)[:100]}")
+        return r
+
+    # Run all 3 SSH calls concurrently. Wall time = max(10, 20, 10) ≈ 20s worst case.
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        f_env = pool.submit(copy_current_app_context(_fetch_env))
-        f_db = pool.submit(copy_current_app_context(_fetch_db))
-        f_redis = pool.submit(copy_current_app_context(_fetch_redis))
+        f_env = pool.submit(_fetch_env)
+        f_db = pool.submit(_fetch_db)
+        f_redis = pool.submit(_fetch_redis)
 
         try:
             env_r = f_env.result(timeout=12)
