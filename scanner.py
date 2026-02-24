@@ -1568,35 +1568,61 @@ def _stats_sidekiq(guest, service):
     return stats
 
 
+# Pure-Python3 script to health-check LibreTranslate.  Tries four candidate
+# URLs in order (localhost + configured port, localhost:80, guest-IP + configured
+# port, guest-IP:80) so it works regardless of whether a reverse proxy is in
+# front, and without requiring curl on the target host.
+# Placeholders __HOST__ and __PORT__ are replaced at call time.
+_LT_FETCH_SCRIPT_TPL = b"""\
+import urllib.request as _ur, sys as _sys
+_h = '__HOST__'
+_p = __PORT__
+_seen = set()
+for _url in [
+    'http://localhost:{}/languages'.format(_p),
+    'http://localhost:80/languages',
+    'http://{}:{}/languages'.format(_h, _p),
+    'http://{}:80/languages'.format(_h),
+]:
+    if _url in _seen:
+        continue
+    _seen.add(_url)
+    try:
+        _r = _ur.urlopen(_url, timeout=3)
+        print(str(_r.status))
+        print(_r.read().decode('utf-8', 'replace')[:16384])
+        _sys.exit(0)
+    except Exception:
+        pass
+print('0')
+print('')
+"""
+
+
 def _stats_libretranslate(guest, service):
     """Collect LibreTranslate stats.
 
-    SSHes to the guest and queries /languages using the guest's own IP.
-    Tries the configured port first (default 5000), then falls back to port
-    80 in the same shell call — covering the common case where LibreTranslate
-    is served via a reverse proxy on port 80.
+    Uses a base64-encoded Python3 script (no curl dependency) that tries
+    localhost and the guest's own IP on both the configured port and port 80.
     """
     import json as _json
     stats = {}
     port = service.port or 5000
     host = guest.ip_address or "127.0.0.1"
 
-    curl = f"curl -s --connect-timeout 5 -w '\\n%{{http_code}}'"
-    if port != 80:
-        cmd = (
-            f"{curl} {host}:{port}/languages 2>/dev/null"
-            f" || {curl} {host}:80/languages 2>/dev/null"
-        )
-    else:
-        cmd = f"{curl} {host}:80/languages 2>/dev/null"
+    script = _LT_FETCH_SCRIPT_TPL
+    script = script.replace(b"__HOST__", host.encode())
+    script = script.replace(b"__PORT__", str(port).encode())
+    _py_b64 = base64.b64encode(script).decode()
+    cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
 
-    out, _ = _execute_command(guest, cmd, timeout=15)
+    out, _ = _execute_command(guest, cmd, timeout=20)
     if out:
-        body, _, http_code = out.strip().rpartition('\n')
-        http_code = http_code.strip()
+        status_line, _, body = out.strip().partition('\n')
+        status = status_line.strip()
         body = body.strip()
 
-        stats["health_status"] = "OK" if http_code == "200" else f"HTTP {http_code}" if http_code else "unreachable"
+        stats["health_status"] = "OK" if status == "200" else f"HTTP {status}" if status not in ("", "0") else "unreachable"
 
         if body:
             try:
