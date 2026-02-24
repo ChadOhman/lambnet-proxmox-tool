@@ -313,6 +313,11 @@
             <div class="col-md-2">
                 <div class="text-muted small">Dead</div>
                 <div class="fs-5" id="stat-sq-dead">{{ stats.dead_size|default('0') }}</div>
+                <button id="retryAllDeadBtn" class="btn btn-outline-warning btn-sm mt-1 me-1"
+                        onclick="retryAllDead()"
+                        {% if stats.dead_size|default(0)|int == 0 %}disabled{% endif %}>
+                    <i class="bi bi-arrow-repeat"></i> Retry All
+                </button>
                 <button id="clearDeadBtn" class="btn btn-outline-danger btn-sm mt-1"
                         onclick="clearDeadQueue()"
                         {% if stats.dead_size|default(0)|int == 0 %}disabled{% endif %}>
@@ -475,6 +480,33 @@ function refreshStats() {
         });
 }
 
+function retryAllDead() {
+    if (!confirm('Retry all jobs in the Dead queue? They will be re-queued for processing.')) return;
+    const btn = document.getElementById('retryAllDeadBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    fetch('/services/{{ service.id }}/sidekiq/retry-dead', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                const deadEl = document.getElementById('stat-sq-dead');
+                if (deadEl) deadEl.textContent = '0';
+                btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Retry All';
+                document.getElementById('clearDeadBtn').disabled = true;
+            } else {
+                alert('Error: ' + data.message);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Retry All';
+            }
+        })
+        .catch(e => {
+            alert('Request failed: ' + e);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Retry All';
+        });
+}
+
 function clearDeadQueue() {
     if (!confirm('Clear all jobs from the Dead queue? This cannot be undone.')) return;
     const btn = document.getElementById('clearDeadBtn');
@@ -488,6 +520,7 @@ function clearDeadQueue() {
                 const deadEl = document.getElementById('stat-sq-dead');
                 if (deadEl) deadEl.textContent = '0';
                 btn.innerHTML = '<i class="bi bi-trash"></i> Clear';
+                document.getElementById('retryAllDeadBtn').disabled = true;
             } else {
                 alert('Error: ' + data.message);
                 btn.disabled = false;
