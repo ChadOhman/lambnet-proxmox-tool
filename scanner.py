@@ -1569,38 +1569,41 @@ def _stats_sidekiq(guest, service):
 
 
 def _stats_libretranslate(guest, service):
-    """Collect LibreTranslate stats."""
+    """Collect LibreTranslate stats via direct HTTP from the monitoring server.
+
+    Uses guest.ip_address so the request works even when LibreTranslate runs
+    on a different VM/CT from the one that owns the systemd service record.
+    """
     import json as _json
+    import urllib.request as _req
+    import urllib.error as _uerr
     stats = {}
     port = service.port or 5000
+    host = guest.ip_address
 
-    # Single call: body followed by a newline and the HTTP status code.
-    # -w '\n%{http_code}' appends "\n<code>" after the response body.
-    out, _ = _execute_command(
-        guest,
-        f"curl -s --connect-timeout 5 -w '\\n%{{http_code}}' localhost:{port}/languages 2>/dev/null",
-        timeout=12,
-    )
-    if out:
-        body, _, http_code = out.strip().rpartition('\n')
-        http_code = http_code.strip()
-        body = body.strip()
+    if not host:
+        stats["health_status"] = "unreachable"
+        return stats
 
-        stats["health_status"] = "OK" if http_code == "200" else f"HTTP {http_code}" if http_code else "unreachable"
-
-        if body:
-            try:
-                langs = _json.loads(body)
-                if isinstance(langs, list):
-                    stats["languages_count"] = len(langs)
-                    stats["languages"] = [
-                        lang.get("name", lang.get("code", ""))
-                        for lang in langs[:20]
-                        if isinstance(lang, dict)
-                    ]
-            except Exception:
-                pass
-    else:
+    url = f"http://{host}:{port}/languages"
+    try:
+        resp = _req.urlopen(url, timeout=8)
+        body = resp.read().decode("utf-8", "replace")
+        stats["health_status"] = "OK" if resp.status == 200 else f"HTTP {resp.status}"
+        try:
+            langs = _json.loads(body)
+            if isinstance(langs, list):
+                stats["languages_count"] = len(langs)
+                stats["languages"] = [
+                    lang.get("name", lang.get("code", ""))
+                    for lang in langs[:20]
+                    if isinstance(lang, dict)
+                ]
+        except Exception:
+            pass
+    except _uerr.HTTPError as e:
+        stats["health_status"] = f"HTTP {e.code}"
+    except Exception:
         stats["health_status"] = "unreachable"
 
     return stats
