@@ -154,7 +154,8 @@ def sidekiq_clear_dead_queue(service_id):
     ok, msg = sidekiq_clear_dead(guest, svc)
     if ok:
         log_action("sidekiq_clear_dead", "guest", resource_id=guest.id, resource_name=guest.name,
-                   details={"service": svc.service_name})
+                   details={"service": svc.service_name, "result": msg})
+        db.session.commit()
     return jsonify({"ok": ok, "message": msg})
 
 
@@ -167,7 +168,8 @@ def sidekiq_retry_dead_queue(service_id):
     ok, msg = sidekiq_retry_dead(guest, svc)
     if ok:
         log_action("sidekiq_retry_dead", "guest", resource_id=guest.id, resource_name=guest.name,
-                   details={"service": svc.service_name})
+                   details={"service": svc.service_name, "result": msg})
+        db.session.commit()
     return jsonify({"ok": ok, "message": msg})
 
 
