@@ -636,7 +636,7 @@ def sidekiq_delete_job(guest, service, queue_type, jid):
     for line in (out or "").split("\n"):
         line = line.strip()
         if line.startswith("ok="):
-            return True, f"Job deleted"
+            return True, "Job deleted"
         if line.startswith("error="):
             return False, line.split("=", 1)[1]
     return False, "No response from Redis"
