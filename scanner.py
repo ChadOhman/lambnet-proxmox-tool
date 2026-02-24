@@ -1727,9 +1727,17 @@ _LANG_CODE_RE = re.compile(r'^[a-z]{2,8}$')
 
 
 def _lt_run(guest, script_bytes, timeout=60):
-    """Base64-encode a script and run it via SSH. Returns parsed JSON or raises."""
+    """Base64-encode a script and run it via SSH using LibreTranslate's own Python interpreter.
+
+    Discovers the Python binary from the running LibreTranslate process via
+    /proc/<PID>/exe so the script inherits the correct virtualenv and packages.
+    Falls back to python3 if the process isn't found.
+    """
     _py_b64 = base64.b64encode(script_bytes).decode()
-    cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
+    cmd = (
+        "_PY=$(readlink /proc/$(pgrep -f libretranslate | head -1)/exe 2>/dev/null); "
+        f"${{_PY:-python3}} -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
+    )
     out, err = _execute_command(guest, cmd, timeout=timeout)
     if err and not out:
         raise RuntimeError(err)
