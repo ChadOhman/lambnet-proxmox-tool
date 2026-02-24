@@ -1574,20 +1574,34 @@ def _stats_libretranslate(guest, service):
     stats = {}
     port = service.port or 5000
 
-    # Health / languages
-    out, _ = _execute_command(guest, f"curl -s localhost:{port}/languages 2>/dev/null", timeout=10)
+    # Single call: body followed by a newline and the HTTP status code.
+    # -w '\n%{http_code}' appends "\n<code>" after the response body.
+    out, _ = _execute_command(
+        guest,
+        f"curl -s --connect-timeout 5 -w '\\n%{{http_code}}' localhost:{port}/languages 2>/dev/null",
+        timeout=12,
+    )
     if out:
-        try:
-            langs = _json.loads(out)
-            stats["languages_count"] = len(langs)
-            stats["languages"] = [lang.get("name", lang.get("code", "")) for lang in langs[:20]]
-        except _json.JSONDecodeError:
-            pass
+        body, _, http_code = out.strip().rpartition('\n')
+        http_code = http_code.strip()
+        body = body.strip()
 
-    # Simple health check
-    out, _ = _execute_command(guest, f"curl -s -o /dev/null -w '%{{http_code}}' localhost:{port}/languages 2>/dev/null", timeout=10)
-    if out:
-        stats["health_status"] = "OK" if out.strip() == "200" else f"HTTP {out.strip()}"
+        stats["health_status"] = "OK" if http_code == "200" else f"HTTP {http_code}" if http_code else "unreachable"
+
+        if body:
+            try:
+                langs = _json.loads(body)
+                if isinstance(langs, list):
+                    stats["languages_count"] = len(langs)
+                    stats["languages"] = [
+                        lang.get("name", lang.get("code", ""))
+                        for lang in langs[:20]
+                        if isinstance(lang, dict)
+                    ]
+            except Exception:
+                pass
+    else:
+        stats["health_status"] = "unreachable"
 
     return stats
 
