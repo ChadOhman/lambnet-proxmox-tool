@@ -353,7 +353,7 @@ function loadStats() {
 }
 
 {% if settings.guest_id and settings.db_guest_id %}
-document.addEventListener('DOMContentLoaded', loadStats);
+document.addEventListener('DOMContentLoaded', function() { setTimeout(loadStats, 2000); });
 {% else %}
 document.getElementById('overview-domain').textContent = 'Not configured';
 {% endif %}
