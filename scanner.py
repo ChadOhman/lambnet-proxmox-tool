@@ -93,14 +93,18 @@ try:
     for q in qs:
         rc(s, "LLEN", "queue:"+q)
         size = rr(s, bf) or 0
-        rc(s, "LINDEX", "queue:"+q, "-1")
-        oldest = rr(s, bf)
         lat = 0.0
-        if oldest:
-            try:
-                ea = json.loads(oldest).get("enqueued_at")
-                if ea: lat = time.time() - float(ea)
-            except: pass
+        if size > 0:
+            rc(s, "LINDEX", "queue:"+q, "-1")
+            item = rr(s, bf)
+            if item:
+                try:
+                    job = json.loads(item)
+                    ea = job.get("enqueued_at") or job.get("created_at")
+                    if ea:
+                        l = time.time() - float(ea)
+                        if l > 0: lat = l
+                except: pass
         print("{}={}|{:.2f}".format(q, size, lat))
     print("---stats---")
     for k, c in [("processed", ("GET", "stat:processed")), ("failed", ("GET", "stat:failed")),
@@ -352,7 +356,9 @@ def _format_elapsed(secs):
         secs = float(secs)
     except (TypeError, ValueError):
         return "—"
-    if secs < 60:
+    if secs < 1:
+        return "< 1s"
+    elif secs < 60:
         return f"{secs:.0f}s"
     elif secs < 3600:
         m, s = int(secs // 60), int(secs % 60)

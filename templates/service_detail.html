@@ -340,34 +340,36 @@
             </div>
             <div class="col-md-2">
                 <div class="text-muted small">Retry Queue</div>
-                <div class="fs-5">
-                    <a href="#" class="text-reset text-decoration-none" id="stat-sq-retry"
-                       onclick="openJobModal('retry'); return false;">{{ stats.retry_size|default('0') }}</a>
-                </div>
+                <div class="fs-5" id="stat-sq-retry">{{ stats.retry_size|default('0') }}</div>
+                <button class="btn btn-outline-secondary btn-sm mt-1" onclick="openJobModal('retry')">
+                    <i class="bi bi-card-list"></i> Browse
+                </button>
             </div>
             <div class="col-md-2">
                 <div class="text-muted small">Dead</div>
-                <div class="fs-5">
-                    <a href="#" class="text-reset text-decoration-none" id="stat-sq-dead"
-                       onclick="openJobModal('dead'); return false;">{{ stats.dead_size|default('0') }}</a>
+                <div class="fs-5 {% if stats.dead_size|default(0)|int > 0 %}text-danger{% endif %}" id="stat-sq-dead">{{ stats.dead_size|default('0') }}</div>
+                <div class="d-flex gap-1 mt-1 flex-wrap">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="openJobModal('dead')">
+                        <i class="bi bi-card-list"></i> Browse
+                    </button>
+                    <button id="retryAllDeadBtn" class="btn btn-outline-warning btn-sm"
+                            onclick="retryAllDead()" title="Retry all dead jobs"
+                            {% if stats.dead_size|default(0)|int == 0 %}disabled{% endif %}>
+                        <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                    <button id="clearDeadBtn" class="btn btn-outline-danger btn-sm"
+                            onclick="clearDeadQueue()" title="Clear dead queue"
+                            {% if stats.dead_size|default(0)|int == 0 %}disabled{% endif %}>
+                        <i class="bi bi-trash"></i>
+                    </button>
                 </div>
-                <button id="retryAllDeadBtn" class="btn btn-outline-warning btn-sm mt-1 me-1"
-                        onclick="retryAllDead()"
-                        {% if stats.dead_size|default(0)|int == 0 %}disabled{% endif %}>
-                    <i class="bi bi-arrow-repeat"></i> Retry All
-                </button>
-                <button id="clearDeadBtn" class="btn btn-outline-danger btn-sm mt-1"
-                        onclick="clearDeadQueue()"
-                        {% if stats.dead_size|default(0)|int == 0 %}disabled{% endif %}>
-                    <i class="bi bi-trash"></i> Clear
-                </button>
             </div>
             <div class="col-md-2">
                 <div class="text-muted small">Scheduled</div>
-                <div class="fs-5">
-                    <a href="#" class="text-reset text-decoration-none" id="stat-sq-sched"
-                       onclick="openJobModal('schedule'); return false;">{{ stats.scheduled_size|default('0') }}</a>
-                </div>
+                <div class="fs-5" id="stat-sq-sched">{{ stats.scheduled_size|default('0') }}</div>
+                <button class="btn btn-outline-secondary btn-sm mt-1" onclick="openJobModal('schedule')">
+                    <i class="bi bi-card-list"></i> Browse
+                </button>
             </div>
             <div class="col-md-2">
                 <div class="text-muted small">Instances</div>
@@ -738,20 +740,25 @@ function renderJobTable(data) {
         return;
     }
 
-    const isDead = _jobModalQueueType === 'dead';
     const retryLabel = _jobModalQueueType === 'schedule' ? 'Run Now' : 'Retry Now';
-    const timeHeader = isDead ? 'Failed At / Error' : (_jobModalQueueType === 'schedule' ? 'Runs At' : 'Retry At');
+    const timeHeader = _jobModalQueueType === 'dead' ? 'Failed At' : (_jobModalQueueType === 'schedule' ? 'Runs At' : 'Retry At');
 
     const rows = jobs.map(j => {
         const ts = j.score ? new Date(j.score * 1000).toLocaleString() : '';
-        const errHtml = j.error_message ? `<br><small class="text-danger">${escHtml(j.error_message)}</small>` : '';
+        const errHtml = j.error_message
+            ? `<div class="text-danger small mt-1 text-truncate" title="${escHtml(j.error_message)}">${escHtml(j.error_message)}</div>`
+            : '';
         return `<tr>
-            <td class="font-monospace small text-nowrap">${escHtml(j.jid)}</td>
-            <td class="small">${escHtml(j.class)}</td>
-            <td class="font-monospace small">${escHtml(j.queue)}</td>
-            <td class="small text-truncate" style="max-width:180px" title="${escHtml(j.args)}">${escHtml(j.args)}</td>
-            <td class="small text-nowrap">${escHtml(ts)}${errHtml}</td>
-            <td class="text-nowrap">
+            <td style="min-width:0;word-break:break-word">
+                <div class="font-monospace small fw-semibold" title="${escHtml(j.class)}">${escHtml(j.class)}</div>
+                <div class="d-flex align-items-baseline gap-2 mt-1 flex-wrap">
+                    <span class="badge bg-secondary font-monospace" style="white-space:nowrap">${escHtml(j.queue)}</span>
+                    <span class="text-muted small text-truncate" title="${escHtml(j.args)}">${escHtml(j.args)}</span>
+                </div>
+                ${errHtml}
+            </td>
+            <td class="small text-nowrap text-muted" style="width:160px;vertical-align:top;padding-top:0.4rem">${escHtml(ts)}</td>
+            <td class="text-nowrap" style="width:76px;vertical-align:top;padding-top:0.3rem">
                 <button class="btn btn-outline-success btn-sm me-1 js-job-action" data-jid="${escHtml(j.jid)}" data-action="retry"
                         title="${retryLabel}"><i class="bi bi-arrow-repeat"></i></button>
                 <button class="btn btn-outline-danger btn-sm js-job-action" data-jid="${escHtml(j.jid)}" data-action="delete"
@@ -761,12 +768,14 @@ function renderJobTable(data) {
     }).join('');
 
     container.innerHTML = `
-        <div class="table-responsive">
-            <table class="table table-dark table-sm mb-0">
-                <thead><tr><th>JID</th><th>Class</th><th>Queue</th><th>Args</th><th>${escHtml(timeHeader)}</th><th></th></tr></thead>
-                <tbody>${rows}</tbody>
-            </table>
-        </div>
+        <table class="table table-dark table-sm mb-0">
+            <thead><tr>
+                <th>Job</th>
+                <th style="width:160px">${escHtml(timeHeader)}</th>
+                <th style="width:76px"></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
         <p class="text-muted small mt-2 mb-0">${total.toLocaleString()} total</p>`;
 
     const pager = document.getElementById('jobBrowserPager');
