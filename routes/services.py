@@ -227,6 +227,32 @@ def sidekiq_retry_job_route(service_id, queue_type, jid):
     return jsonify({"ok": ok, "message": msg})
 
 
+@bp.route("/<int:service_id>/pg/kill-query/<int:pid>", methods=["POST"])
+def pg_kill_query(service_id, pid):
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "postgresql":
+        return jsonify({"ok": False, "message": "Not a PostgreSQL service"}), 400
+    guest = svc.guest
+    from scanner import _execute_command
+    stdout, error = _execute_command(
+        guest,
+        f"sudo -u postgres psql -t -A -c \"SELECT pg_terminate_backend({pid})\" 2>&1",
+        timeout=10,
+        sudo=True,
+    )
+    if error:
+        return jsonify({"ok": False, "message": f"SSH error: {error[:200]}"})
+    result = (stdout or "").strip()
+    if result == "t":
+        log_action("pg_kill_query", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"service": svc.service_name, "pid": pid})
+        db.session.commit()
+        return jsonify({"ok": True, "message": f"Backend {pid} terminated."})
+    if result == "f":
+        return jsonify({"ok": False, "message": f"Backend {pid} not found (already finished?)."})
+    return jsonify({"ok": False, "message": f"Unexpected result: {(result or error or '')[:100]}"})
+
+
 @bp.route("/<int:service_id>/stats")
 def stats(service_id):
     svc = GuestService.query.get_or_404(service_id)

@@ -270,7 +270,7 @@
         <div class="table-responsive">
             <table class="table table-dark table-sm mb-0">
                 <thead>
-                    <tr><th>Database</th><th>User</th><th>State</th><th>Duration</th><th>Query</th></tr>
+                    <tr><th>Database</th><th>User</th><th>State</th><th>Duration</th><th>Query</th><th></th></tr>
                 </thead>
                 <tbody>
                 {% for q in stats.active_query_list %}
@@ -286,6 +286,14 @@
                         {{ q.duration }}
                     </td>
                     <td class="font-monospace small text-truncate" style="max-width: 420px" title="{{ q.query | e }}">{{ q.query }}</td>
+                    <td class="text-end">
+                        <button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn"
+                                data-pid="{{ q.pid }}"
+                                data-service-id="{{ service.id }}"
+                                title="Kill backend {{ q.pid }}">
+                            <i class="bi bi-x-circle"></i> Kill
+                        </button>
+                    </td>
                 </tr>
                 {% endfor %}
                 </tbody>
@@ -627,6 +635,7 @@ function refreshStats() {
                 if (container) {
                     const list = data.active_query_list || [];
                     if (list.length > 0) {
+                        const svcId = {{ service.id }};
                         const rows = list.map(q => {
                             const badge = q.state === 'active' ? 'bg-success'
                                 : (q.state || '').includes('transaction') ? 'bg-warning text-dark' : 'bg-secondary';
@@ -638,12 +647,15 @@ function refreshStats() {
                                 <td><span class="badge ${badge}">${escHtml(q.state)}</span></td>
                                 <td class="text-nowrap ${durCls}">${escHtml(q.duration)}</td>
                                 <td class="font-monospace small text-truncate" style="max-width:420px" title="${escHtml(q.query)}">${escHtml(q.query)}</td>
+                                <td class="text-end"><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn"
+                                    data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}"
+                                    title="Kill backend ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i> Kill</button></td>
                             </tr>`;
                         }).join('');
                         container.innerHTML = `<h6 class="text-muted mt-3 mb-2">Active Queries</h6>
                             <div class="table-responsive">
                                 <table class="table table-dark table-sm mb-0">
-                                    <thead><tr><th>Database</th><th>User</th><th>State</th><th>Duration</th><th>Query</th></tr></thead>
+                                    <thead><tr><th>Database</th><th>User</th><th>State</th><th>Duration</th><th>Query</th><th></th></tr></thead>
                                     <tbody>${rows}</tbody>
                                 </table>
                             </div>`;
@@ -685,6 +697,34 @@ function refreshStats() {
             btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh';
         });
 }
+
+// PostgreSQL kill-query handler (event delegation — works for both server-rendered
+// and JS-refreshed rows)
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.pg-kill-btn');
+    if (!btn) return;
+    const pid = btn.dataset.pid;
+    const svcId = btn.dataset.serviceId;
+    if (!confirm(`Kill backend PID ${pid}? This will immediately terminate the connection.`)) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    fetch(`/services/${svcId}/pg/kill-query/${pid}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                btn.closest('tr').remove();
+            } else {
+                alert('Kill failed: ' + (data.message || 'unknown error'));
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-x-circle"></i> Kill';
+            }
+        })
+        .catch(() => {
+            alert('Request failed.');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-x-circle"></i> Kill';
+        });
+});
 
 function retryAllDead() {
     if (!confirm('Retry all jobs in the Dead queue? They will be re-queued for processing.')) return;
