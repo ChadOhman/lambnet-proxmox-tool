@@ -1642,6 +1642,145 @@ def _stats_libretranslate(guest, service):
     return stats
 
 
+# --- LibreTranslate package management scripts ---
+# Each script adds common venv site-packages to sys.path so argostranslate
+# is found even when LibreTranslate is installed inside a virtualenv.
+
+_LT_LIST_INSTALLED_SCRIPT = b"""\
+import sys, glob, json
+for _v in ['/home/libretranslate/venv', '/opt/libretranslate/venv']:
+    for _p in glob.glob(_v + '/lib/python*/site-packages'):
+        if _p not in sys.path: sys.path.insert(0, _p)
+try:
+    from argostranslate import package as _pkg
+    print(json.dumps({'packages': [
+        {'from_code': p.from_code, 'to_code': p.to_code,
+         'from_name': p.from_name, 'to_name': p.to_name}
+        for p in _pkg.get_installed_packages()
+    ]}))
+except Exception as _e:
+    print(json.dumps({'error': str(_e)}))
+"""
+
+_LT_LIST_AVAILABLE_SCRIPT = b"""\
+import sys, glob, json
+for _v in ['/home/libretranslate/venv', '/opt/libretranslate/venv']:
+    for _p in glob.glob(_v + '/lib/python*/site-packages'):
+        if _p not in sys.path: sys.path.insert(0, _p)
+try:
+    from argostranslate import package as _pkg
+    _pkg.update_package_index()
+    _installed = {(p.from_code, p.to_code) for p in _pkg.get_installed_packages()}
+    print(json.dumps({'packages': [
+        {'from_code': p.from_code, 'to_code': p.to_code,
+         'from_name': p.from_name, 'to_name': p.to_name,
+         'installed': (p.from_code, p.to_code) in _installed}
+        for p in _pkg.get_available_packages()
+    ]}))
+except Exception as _e:
+    print(json.dumps({'error': str(_e)}))
+"""
+
+# Placeholders __FROM__ and __TO__ replaced at call time (validated as lang codes).
+_LT_INSTALL_PACKAGE_SCRIPT_TPL = b"""\
+import sys, glob, json
+for _v in ['/home/libretranslate/venv', '/opt/libretranslate/venv']:
+    for _p in glob.glob(_v + '/lib/python*/site-packages'):
+        if _p not in sys.path: sys.path.insert(0, _p)
+try:
+    from argostranslate import package as _pkg
+    _pkg.update_package_index()
+    _from, _to = '__FROM__', '__TO__'
+    for _p in _pkg.get_available_packages():
+        if _p.from_code == _from and _p.to_code == _to:
+            _p.install()
+            print(json.dumps({'ok': True, 'message': 'Installed {}->{}'.format(_from, _to)}))
+            raise SystemExit
+    print(json.dumps({'ok': False, 'message': 'Package not found: {}->{}'.format(_from, _to)}))
+except SystemExit:
+    pass
+except Exception as _e:
+    print(json.dumps({'ok': False, 'message': str(_e)}))
+"""
+
+_LT_UPDATE_ALL_SCRIPT = b"""\
+import sys, glob, json
+for _v in ['/home/libretranslate/venv', '/opt/libretranslate/venv']:
+    for _p in glob.glob(_v + '/lib/python*/site-packages'):
+        if _p not in sys.path: sys.path.insert(0, _p)
+try:
+    from argostranslate import package as _pkg
+    _pkg.update_package_index()
+    _avail = {(p.from_code, p.to_code): p for p in _pkg.get_available_packages()}
+    _n = 0
+    for _inst in _pkg.get_installed_packages():
+        _key = (_inst.from_code, _inst.to_code)
+        if _key in _avail:
+            _avail[_key].install()
+            _n += 1
+    print(json.dumps({'ok': True, 'updated': _n, 'message': 'Updated {} package(s)'.format(_n)}))
+except Exception as _e:
+    print(json.dumps({'ok': False, 'updated': 0, 'message': str(_e)}))
+"""
+
+_LANG_CODE_RE = re.compile(r'^[a-z]{2,8}$')
+
+
+def _lt_run(guest, script_bytes, timeout=60):
+    """Base64-encode a script and run it via SSH. Returns parsed JSON or raises."""
+    _py_b64 = base64.b64encode(script_bytes).decode()
+    cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
+    out, err = _execute_command(guest, cmd, timeout=timeout)
+    if err and not out:
+        raise RuntimeError(err)
+    return json.loads((out or "").strip())
+
+
+def lt_list_installed(guest, service):
+    """List installed LibreTranslate language packages. Returns (packages, error)."""
+    try:
+        data = _lt_run(guest, _LT_LIST_INSTALLED_SCRIPT, timeout=30)
+        if "error" in data:
+            return [], data["error"]
+        return data.get("packages", []), None
+    except Exception as e:
+        return [], str(e)
+
+
+def lt_list_available(guest, service):
+    """Fetch available LibreTranslate packages from the Argos index. Returns (packages, error)."""
+    try:
+        data = _lt_run(guest, _LT_LIST_AVAILABLE_SCRIPT, timeout=60)
+        if "error" in data:
+            return [], data["error"]
+        return data.get("packages", []), None
+    except Exception as e:
+        return [], str(e)
+
+
+def lt_install_package(guest, service, from_code, to_code):
+    """Install a single LibreTranslate language pair. Returns (ok, message)."""
+    if not _LANG_CODE_RE.match(from_code) or not _LANG_CODE_RE.match(to_code):
+        return False, "Invalid language code"
+    script = _LT_INSTALL_PACKAGE_SCRIPT_TPL
+    script = script.replace(b"__FROM__", from_code.encode())
+    script = script.replace(b"__TO__", to_code.encode())
+    try:
+        data = _lt_run(guest, script, timeout=300)
+        return data.get("ok", False), data.get("message", "Unknown error")
+    except Exception as e:
+        return False, str(e)
+
+
+def lt_update_all_packages(guest, service):
+    """Re-install the latest version of every installed language package. Returns (ok, message, count)."""
+    try:
+        data = _lt_run(guest, _LT_UPDATE_ALL_SCRIPT, timeout=600)
+        return data.get("ok", False), data.get("message", "Unknown error"), data.get("updated", 0)
+    except Exception as e:
+        return False, str(e), 0
+
+
 def check_reboot_required(guest):
     """Check if a guest needs a reboot (Debian/Ubuntu: /var/run/reboot-required)."""
     stdout, error = _execute_command(guest, "[ -f /var/run/reboot-required ] && echo yes || echo no")

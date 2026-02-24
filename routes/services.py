@@ -1,7 +1,10 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from models import db, Guest, GuestService
-from scanner import check_service_statuses, service_action, get_service_logs, get_service_stats, sidekiq_clear_dead, sidekiq_retry_dead, sidekiq_list_jobs, sidekiq_delete_job, sidekiq_retry_job
+from scanner import (check_service_statuses, service_action, get_service_logs, get_service_stats,
+                     sidekiq_clear_dead, sidekiq_retry_dead, sidekiq_list_jobs,
+                     sidekiq_delete_job, sidekiq_retry_job,
+                     lt_list_installed, lt_list_available, lt_install_package, lt_update_all_packages)
 from audit import log_action
 
 bp = Blueprint("services", __name__)
@@ -230,3 +233,50 @@ def stats(service_id):
     guest = svc.guest
     data = get_service_stats(guest, svc)
     return jsonify(data)
+
+
+@bp.route("/<int:service_id>/libretranslate/packages")
+def lt_packages(service_id):
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "libretranslate":
+        return jsonify({"error": "Not a LibreTranslate service"}), 400
+    guest = svc.guest
+    pkg_type = request.args.get("type", "installed")
+    if pkg_type == "available":
+        packages, err = lt_list_available(guest, svc)
+    else:
+        packages, err = lt_list_installed(guest, svc)
+    if err:
+        return jsonify({"error": err}), 500
+    return jsonify({"packages": packages, "type": pkg_type})
+
+
+@bp.route("/<int:service_id>/libretranslate/install", methods=["POST"])
+def lt_install(service_id):
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "libretranslate":
+        return jsonify({"ok": False, "message": "Not a LibreTranslate service"}), 400
+    guest = svc.guest
+    data = request.get_json(silent=True) or {}
+    from_code = data.get("from_code", "")
+    to_code = data.get("to_code", "")
+    ok, msg = lt_install_package(guest, svc, from_code, to_code)
+    if ok:
+        log_action("lt_install_package", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"service": svc.service_name, "from": from_code, "to": to_code})
+        db.session.commit()
+    return jsonify({"ok": ok, "message": msg})
+
+
+@bp.route("/<int:service_id>/libretranslate/update", methods=["POST"])
+def lt_update(service_id):
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "libretranslate":
+        return jsonify({"ok": False, "message": "Not a LibreTranslate service"}), 400
+    guest = svc.guest
+    ok, msg, count = lt_update_all_packages(guest, svc)
+    if ok:
+        log_action("lt_update_packages", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"service": svc.service_name, "updated": count})
+        db.session.commit()
+    return jsonify({"ok": ok, "message": msg, "count": count})
