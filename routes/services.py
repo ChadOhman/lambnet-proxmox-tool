@@ -33,6 +33,9 @@ def index():
 
 @bp.route("/<int:service_id>/<action>", methods=["POST"])
 def control(service_id, action):
+    if not current_user.can_edit_services:
+        flash("You don't have permission to control services.", "error")
+        return redirect(url_for("services.index"))
     if action not in ("start", "stop", "restart"):
         flash("Invalid action.", "error")
         return redirect(url_for("services.index"))
@@ -68,6 +71,9 @@ def logs(service_id):
 
 @bp.route("/refresh", methods=["POST"])
 def refresh_all():
+    if not current_user.can_edit_services:
+        flash("You don't have permission to refresh service statuses.", "error")
+        return redirect(url_for("services.index"))
     guests = Guest.query.filter(Guest.enabled == True, Guest.services.any()).all()
     checked = 0
     for guest in guests:
@@ -90,6 +96,9 @@ def refresh_all():
 
 @bp.route("/<int:guest_id>/assign", methods=["POST"])
 def assign(guest_id):
+    if not current_user.can_edit_services:
+        flash("You don't have permission to assign services.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
     guest = Guest.query.get_or_404(guest_id)
     service_key = request.form.get("service_key", "").strip()
 
@@ -121,6 +130,9 @@ def assign(guest_id):
 
 @bp.route("/<int:service_id>/remove", methods=["POST"])
 def remove(service_id):
+    if not current_user.can_edit_services:
+        flash("You don't have permission to remove services.", "error")
+        return redirect(url_for("services.index"))
     svc = GuestService.query.get_or_404(service_id)
     guest_id = svc.guest_id
     name = svc.service_name
@@ -150,6 +162,8 @@ def detail(service_id):
 
 @bp.route("/<int:service_id>/sidekiq/clear-dead", methods=["POST"])
 def sidekiq_clear_dead_queue(service_id):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
     svc = GuestService.query.get_or_404(service_id)
     if svc.service_name != "sidekiq":
         return jsonify({"ok": False, "message": "Not a Sidekiq service"}), 400
@@ -164,6 +178,8 @@ def sidekiq_clear_dead_queue(service_id):
 
 @bp.route("/<int:service_id>/sidekiq/retry-dead", methods=["POST"])
 def sidekiq_retry_dead_queue(service_id):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
     svc = GuestService.query.get_or_404(service_id)
     if svc.service_name != "sidekiq":
         return jsonify({"ok": False, "message": "Not a Sidekiq service"}), 400
@@ -197,6 +213,8 @@ def sidekiq_jobs(service_id, queue_type):
 
 @bp.route("/<int:service_id>/sidekiq/<queue_type>/jobs/<jid>/delete", methods=["POST"])
 def sidekiq_delete_job_route(service_id, queue_type, jid):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
     if queue_type not in ("dead", "retry", "schedule"):
         return jsonify({"ok": False, "message": "Invalid queue type"}), 400
     svc = GuestService.query.get_or_404(service_id)
@@ -213,6 +231,8 @@ def sidekiq_delete_job_route(service_id, queue_type, jid):
 
 @bp.route("/<int:service_id>/sidekiq/<queue_type>/jobs/<jid>/retry", methods=["POST"])
 def sidekiq_retry_job_route(service_id, queue_type, jid):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
     if queue_type not in ("dead", "retry", "schedule"):
         return jsonify({"ok": False, "message": "Invalid queue type"}), 400
     svc = GuestService.query.get_or_404(service_id)
@@ -229,6 +249,8 @@ def sidekiq_retry_job_route(service_id, queue_type, jid):
 
 @bp.route("/<int:service_id>/pg/kill-query/<int:pid>", methods=["POST"])
 def pg_kill_query(service_id, pid):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
     svc = GuestService.query.get_or_404(service_id)
     if svc.service_name != "postgresql":
         return jsonify({"ok": False, "message": "Not a PostgreSQL service"}), 400
@@ -279,6 +301,8 @@ def lt_packages(service_id):
 
 @bp.route("/<int:service_id>/libretranslate/install", methods=["POST"])
 def lt_install(service_id):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
     svc = GuestService.query.get_or_404(service_id)
     if svc.service_name != "libretranslate":
         return jsonify({"ok": False, "message": "Not a LibreTranslate service"}), 400
@@ -296,6 +320,8 @@ def lt_install(service_id):
 
 @bp.route("/<int:service_id>/libretranslate/update", methods=["POST"])
 def lt_update(service_id):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
     svc = GuestService.query.get_or_404(service_id)
     if svc.service_name != "libretranslate":
         return jsonify({"ok": False, "message": "Not a LibreTranslate service"}), 400

@@ -28,6 +28,7 @@ class Role(db.Model):
         "can_manage_credentials", "can_view_hosts", "can_manage_hosts",
         "can_manage_guests", "can_restart_unifi", "can_view_audit_log",
         "can_view_services",
+        "can_edit_services",
     ]
 
     PERMISSION_LABELS = {
@@ -42,6 +43,7 @@ class Role(db.Model):
         "can_restart_unifi": "Restart UniFi Devices",
         "can_view_audit_log": "View Audit Log",
         "can_view_services": "View Services",
+        "can_edit_services": "Edit Services",
     }
 
     BASE_TIER_LEVELS = {"viewer": 1, "operator": 2, "admin": 3}
@@ -65,6 +67,7 @@ class Role(db.Model):
     can_restart_unifi = db.Column(db.Boolean, default=False)
     can_view_audit_log = db.Column(db.Boolean, default=False)
     can_view_services = db.Column(db.Boolean, default=False)
+    can_edit_services = db.Column(db.Boolean, default=False)
 
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -84,22 +87,22 @@ DEFAULT_ROLES = [
      "can_ssh": True, "can_update": True, "can_manage_users": True,
      "can_manage_settings": True, "can_manage_credentials": True,
      "can_view_hosts": True, "can_manage_hosts": True, "can_manage_guests": True,
-     "can_restart_unifi": True, "can_view_audit_log": True, "can_view_services": True},
+     "can_restart_unifi": True, "can_view_audit_log": True, "can_view_services": True, "can_edit_services": True},
     {"name": "admin", "display_name": "Admin", "level": 3, "is_builtin": True,
      "can_ssh": True, "can_update": True, "can_manage_users": True,
      "can_manage_settings": False, "can_manage_credentials": False,
      "can_view_hosts": True, "can_manage_hosts": True, "can_manage_guests": True,
-     "can_restart_unifi": True, "can_view_audit_log": True, "can_view_services": True},
+     "can_restart_unifi": True, "can_view_audit_log": True, "can_view_services": True, "can_edit_services": True},
     {"name": "operator", "display_name": "Operator", "level": 2, "is_builtin": True,
      "can_ssh": True, "can_update": True, "can_manage_users": False,
      "can_manage_settings": False, "can_manage_credentials": False,
      "can_view_hosts": True, "can_manage_hosts": False, "can_manage_guests": False,
-     "can_restart_unifi": False, "can_view_audit_log": False, "can_view_services": False},
+     "can_restart_unifi": False, "can_view_audit_log": False, "can_view_services": False, "can_edit_services": False},
     {"name": "viewer", "display_name": "Viewer", "level": 1, "is_builtin": True,
      "can_ssh": False, "can_update": False, "can_manage_users": False,
      "can_manage_settings": False, "can_manage_credentials": False,
      "can_view_hosts": False, "can_manage_hosts": False, "can_manage_guests": False,
-     "can_restart_unifi": False, "can_view_audit_log": False, "can_view_services": False},
+     "can_restart_unifi": False, "can_view_audit_log": False, "can_view_services": False, "can_edit_services": False},
 ]
 
 
@@ -211,6 +214,12 @@ class User(UserMixin, db.Model):
         if self.is_super_admin:
             return True
         return self.role_obj.can_view_services if self.role_obj else False
+
+    @property
+    def can_edit_services(self):
+        if self.is_super_admin:
+            return True
+        return self.role_obj.can_edit_services if self.role_obj else False
 
     @property
     def role_display(self):

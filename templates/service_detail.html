@@ -31,6 +31,7 @@
         <button class="btn btn-outline-primary btn-sm" id="refreshBtn" onclick="refreshStats()">
             <i class="bi bi-arrow-clockwise"></i> Refresh
         </button>
+        {% if current_user.can_edit_services %}
         {% if service.status != 'running' %}
         <form method="post" action="/services/{{ service.id }}/start" class="d-inline">
             <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-play-fill"></i> Start</button>
@@ -44,6 +45,7 @@
         <form method="post" action="/services/{{ service.id }}/restart" class="d-inline" onsubmit="return confirm('Restart {{ service.service_name }}?')">
             <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-arrow-clockwise"></i> Restart</button>
         </form>
+        {% endif %}
     </div>
 </div>
 
@@ -287,12 +289,14 @@
                     </td>
                     <td class="font-monospace small text-truncate" style="max-width: 420px" title="{{ q.query | e }}">{{ q.query }}</td>
                     <td class="text-end">
+                        {% if current_user.can_edit_services %}
                         <button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn"
                                 data-pid="{{ q.pid }}"
                                 data-service-id="{{ service.id }}"
                                 title="Kill backend {{ q.pid }}">
                             <i class="bi bi-x-circle"></i> Kill
                         </button>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -360,6 +364,7 @@
                     <button class="btn btn-outline-secondary btn-sm" onclick="openJobModal('dead')">
                         <i class="bi bi-card-list"></i> Browse
                     </button>
+                    {% if current_user.can_edit_services %}
                     <button id="retryAllDeadBtn" class="btn btn-outline-warning btn-sm"
                             onclick="retryAllDead()" title="Retry all dead jobs"
                             {% if stats.dead_size|default(0)|int == 0 %}disabled{% endif %}>
@@ -370,6 +375,7 @@
                             {% if stats.dead_size|default(0)|int == 0 %}disabled{% endif %}>
                         <i class="bi bi-trash"></i>
                     </button>
+                    {% endif %}
                 </div>
             </div>
             <div class="col-md-2">
@@ -497,9 +503,11 @@
             <button class="btn btn-outline-info btn-sm" onclick="ltShowAvailable()">
                 <i class="bi bi-cloud-download"></i> Browse Available
             </button>
+            {% if current_user.can_edit_services %}
             <button id="ltUpdateAllBtn" class="btn btn-outline-warning btn-sm" onclick="ltUpdateAll()">
                 <i class="bi bi-arrow-up-circle"></i> Update All
             </button>
+            {% endif %}
         </div>
     </div>
     <div class="card-body p-0">
@@ -573,6 +581,8 @@
 
 {% block scripts %}
 <script>
+const canEditServices = {{ 'true' if current_user.can_edit_services else 'false' }};
+
 function escHtml(str) {
     return String(str == null ? '' : str)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -647,9 +657,7 @@ function refreshStats() {
                                 <td><span class="badge ${badge}">${escHtml(q.state)}</span></td>
                                 <td class="text-nowrap ${durCls}">${escHtml(q.duration)}</td>
                                 <td class="font-monospace small text-truncate" style="max-width:420px" title="${escHtml(q.query)}">${escHtml(q.query)}</td>
-                                <td class="text-end"><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn"
-                                    data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}"
-                                    title="Kill backend ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i> Kill</button></td>
+                                <td class="text-end">${canEditServices ? `<button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill backend ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i> Kill</button>` : ''}</td>
                             </tr>`;
                         }).join('');
                         container.innerHTML = `<h6 class="text-muted mt-3 mb-2">Active Queries</h6>
@@ -847,10 +855,7 @@ function renderJobTable(data) {
             </td>
             <td class="small text-nowrap text-muted" style="width:160px;vertical-align:top;padding-top:0.4rem">${escHtml(ts)}</td>
             <td class="text-nowrap" style="width:76px;vertical-align:top;padding-top:0.3rem">
-                <button class="btn btn-outline-success btn-sm me-1 js-job-action" data-jid="${escHtml(j.jid)}" data-action="retry"
-                        title="${retryLabel}"><i class="bi bi-arrow-repeat"></i></button>
-                <button class="btn btn-outline-danger btn-sm js-job-action" data-jid="${escHtml(j.jid)}" data-action="delete"
-                        title="Delete"><i class="bi bi-trash"></i></button>
+                ${canEditServices ? `<button class="btn btn-outline-success btn-sm me-1 js-job-action" data-jid="${escHtml(j.jid)}" data-action="retry" title="${retryLabel}"><i class="bi bi-arrow-repeat"></i></button><button class="btn btn-outline-danger btn-sm js-job-action" data-jid="${escHtml(j.jid)}" data-action="delete" title="Delete"><i class="bi bi-trash"></i></button>` : ''}
             </td>
         </tr>`;
     }).join('');
@@ -982,10 +987,7 @@ function ltShowAvailable() {
                 <td><span class="badge bg-secondary font-monospace">${escHtml(p.to_code)}</span></td>
                 <td class="text-muted small">${escHtml(p.version || '')}</td>
                 <td style="width:80px">
-                    <button class="btn btn-outline-success btn-sm js-lt-install"
-                        data-from="${escHtml(p.from_code)}" data-to="${escHtml(p.to_code)}">
-                        <i class="bi bi-download"></i> Install
-                    </button>
+                    ${canEditServices ? `<button class="btn btn-outline-success btn-sm js-lt-install" data-from="${escHtml(p.from_code)}" data-to="${escHtml(p.to_code)}"><i class="bi bi-download"></i> Install</button>` : ''}
                 </td>
             </tr>`).join('');
             content.innerHTML = `<div class="table-responsive">

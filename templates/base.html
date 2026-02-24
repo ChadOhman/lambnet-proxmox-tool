@@ -91,6 +91,8 @@
                             <i class="bi bi-calendar-check"></i> Schedules
                         </a>
                     </li>
+                    {% endif %}
+                    {% if current_user.can_view_services %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {% if request.blueprint in ('services', 'mastodon') %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                             <i class="bi bi-gear-wide-connected"></i> Services
