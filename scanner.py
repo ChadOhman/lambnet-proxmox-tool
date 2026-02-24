@@ -1571,21 +1571,26 @@ def _stats_sidekiq(guest, service):
 def _stats_libretranslate(guest, service):
     """Collect LibreTranslate stats.
 
-    SSHes to the guest and makes the HTTP request using the guest's own IP
-    address rather than localhost. LibreTranslate may only bind to its
-    external interface (not loopback), and may run on a different VM/CT from
-    the one that owns the systemd service record.
+    SSHes to the guest and queries /languages using the guest's own IP.
+    Tries the configured port first (default 5000), then falls back to port
+    80 in the same shell call — covering the common case where LibreTranslate
+    is served via a reverse proxy on port 80.
     """
     import json as _json
     stats = {}
     port = service.port or 5000
     host = guest.ip_address or "127.0.0.1"
 
-    out, _ = _execute_command(
-        guest,
-        f"curl -s --connect-timeout 5 -w '\\n%{{http_code}}' {host}:{port}/languages 2>/dev/null",
-        timeout=12,
-    )
+    curl = f"curl -s --connect-timeout 5 -w '\\n%{{http_code}}'"
+    if port != 80:
+        cmd = (
+            f"{curl} {host}:{port}/languages 2>/dev/null"
+            f" || {curl} {host}:80/languages 2>/dev/null"
+        )
+    else:
+        cmd = f"{curl} {host}:80/languages 2>/dev/null"
+
+    out, _ = _execute_command(guest, cmd, timeout=15)
     if out:
         body, _, http_code = out.strip().rpartition('\n')
         http_code = http_code.strip()
