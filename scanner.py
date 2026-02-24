@@ -2227,10 +2227,15 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
             guest = _Guest.query.get(db_id)
             if not guest:
                 return r
-            sql_escaped = _MASTODON_DB_SQL.replace("'", "'\\''")
+            # Prepend statement_timeout so PostgreSQL self-cancels the query
+            # if it runs too long (e.g. very large tables). This is the only
+            # reliable way to enforce a wall-clock limit: paramiko's timeout
+            # only affects socket-level reads, not command execution time.
+            full_sql = "SET statement_timeout = '30000'; " + _MASTODON_DB_SQL
+            sql_escaped = full_sql.replace("'", "'\\''")
             cmd = f"sudo -u postgres psql -t -A -d mastodon_production -c '{sql_escaped}'"
             try:
-                stdout, error = _execute_command(guest, cmd, timeout=20)
+                stdout, error = _execute_command(guest, cmd, timeout=35)
                 if stdout and not error:
                     for line in stdout.splitlines():
                         line = line.strip()
@@ -2303,7 +2308,7 @@ def get_mastodon_overview_stats(mastodon_guest, db_guest, app_dir="/home/mastodo
     try:
         import gevent as _gevent
         _gs = [_gevent.spawn(_fetch_env), _gevent.spawn(_fetch_db), _gevent.spawn(_fetch_redis)]
-        _gevent.joinall(_gs, timeout=25)
+        _gevent.joinall(_gs, timeout=40)  # DB greenlet needs up to 35 s (30s PG timeout + 5s grace)
         env_r = _gs[0].value if _gs[0].successful() else {**_empty_env, "errors": [f"env: {_gs[0].exception or 'timed out'}"]}
         db_r = _gs[1].value if _gs[1].successful() else {**_empty_db, "errors": [f"db: {_gs[1].exception or 'timed out'}"]}
         redis_r = _gs[2].value if _gs[2].successful() else {**_empty_redis, "errors": [f"redis: {_gs[2].exception or 'timed out'}"]}
