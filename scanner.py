@@ -96,15 +96,16 @@ try:
         lat = 0.0
         if size > 0:
             rc(s, "LINDEX", "queue:"+q, "-1")
-            item = rr(s, bf)
-            if item:
-                try:
-                    job = json.loads(item)
-                    ea = job.get("enqueued_at") or job.get("created_at")
-                    if ea:
-                        l = time.time() - float(ea)
-                        if l > 0: lat = l
-                except: pass
+            rc(s, "LINDEX", "queue:"+q, "0")
+            for _item in [rr(s, bf), rr(s, bf)]:
+                if _item:
+                    try:
+                        _job = json.loads(_item)
+                        _ea = _job.get("enqueued_at") or _job.get("created_at")
+                        if _ea:
+                            _l = time.time() - float(_ea)
+                            if _l > lat: lat = _l
+                    except: pass
         print("{}={}|{:.2f}".format(q, size, lat))
     print("---stats---")
     for k, c in [("processed", ("GET", "stat:processed")), ("failed", ("GET", "stat:failed")),
@@ -1497,7 +1498,7 @@ def _stats_sidekiq(guest, service):
                 "name": name.strip(),
                 "size": size,
                 "latency_secs": lat_secs,
-                "latency": _format_elapsed(lat_secs) if size > 0 and lat_secs > 0 else "—",
+                "latency": _format_elapsed(lat_secs) if lat_secs > 0 else ("< 1s" if size > 0 else "—"),
             })
         elif section == "stats" and "=" in line:
             key, _, val = line.partition("=")
