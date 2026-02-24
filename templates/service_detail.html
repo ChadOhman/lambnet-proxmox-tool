@@ -264,6 +264,7 @@
         </div>
         {% endif %}
 
+        <div id="pg-active-queries-container">
         {% if stats.active_query_list %}
         <h6 class="text-muted mt-3 mb-2">Active Queries</h6>
         <div class="table-responsive">
@@ -293,6 +294,7 @@
         {% else %}
         <p class="text-muted small mt-3 mb-0"><i class="bi bi-check-circle"></i> No active queries</p>
         {% endif %}
+        </div>
     </div>
 </div>
 
@@ -386,7 +388,7 @@
         <div class="table-responsive">
             <table class="table table-dark table-sm mb-0">
                 <thead><tr><th>Queue</th><th>Size</th></tr></thead>
-                <tbody>
+                <tbody id="sidekiq-queues-tbody">
                 {% for q in stats.queues|sort(attribute='size', reverse=True) %}
                 <tr>
                     <td class="font-monospace">{{ q.name }}</td>
@@ -480,6 +482,12 @@
 
 {% block scripts %}
 <script>
+function escHtml(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function refreshStats() {
     const btn = document.getElementById('refreshBtn');
     btn.disabled = true;
@@ -488,19 +496,99 @@ function refreshStats() {
     fetch('/services/{{ service.id }}/stats', { cache: 'no-store' })
         .then(r => r.json())
         .then(data => {
-            // Update common stats
-            if (data.memory_human) {
-                const el = document.getElementById('stat-memory');
-                if (el) el.textContent = data.memory_human;
+            function setEl(id, val) {
+                const el = document.getElementById(id);
+                if (el && val != null) el.textContent = val;
             }
-            if (data.cpu_time) {
-                const el = document.getElementById('stat-cpu');
-                if (el) el.textContent = data.cpu_time;
+
+            // Common stats
+            setEl('stat-memory', data.memory_human || 'N/A');
+            setEl('stat-cpu',    data.cpu_time     || 'N/A');
+            setEl('stat-pid',    data.pid          || 'N/A');
+
+            // Sidekiq
+            if (data.type === 'sidekiq') {
+                setEl('stat-sq-processed', (data.processed || 0).toLocaleString());
+                setEl('stat-sq-failed',    (data.failed    || 0).toLocaleString());
+                setEl('stat-sq-retry',     data.retry_size     || '0');
+                setEl('stat-sq-dead',      data.dead_size      || '0');
+                setEl('stat-sq-sched',     data.scheduled_size || '0');
+
+                const deadCount = parseInt(data.dead_size) || 0;
+                const retryBtn  = document.getElementById('retryAllDeadBtn');
+                const clearBtn  = document.getElementById('clearDeadBtn');
+                if (retryBtn) retryBtn.disabled = deadCount === 0;
+                if (clearBtn) clearBtn.disabled = deadCount === 0;
+
+                const tbody = document.getElementById('sidekiq-queues-tbody');
+                if (tbody && Array.isArray(data.queues)) {
+                    const sorted = [...data.queues].sort((a, b) => b.size - a.size);
+                    tbody.innerHTML = sorted.map(q =>
+                        `<tr><td class="font-monospace">${escHtml(q.name)}</td><td>${escHtml(q.size)}${q.size > 100 ? ' <span class="badge bg-warning text-dark ms-1">backlog</span>' : ''}</td></tr>`
+                    ).join('');
+                }
             }
-            if (data.pid) {
-                const el = document.getElementById('stat-pid');
-                if (el) el.textContent = data.pid;
+
+            // PostgreSQL
+            if (data.type === 'postgresql') {
+                setEl('stat-pg-active', data.active_queries || 'N/A');
+                setEl('stat-pg-conn',   `${data.total_connections || '0'} / ${data.max_connections || '?'}`);
+                setEl('stat-pg-cache',  data.cache_hit_ratio || 'N/A');
+
+                const container = document.getElementById('pg-active-queries-container');
+                if (container) {
+                    const list = data.active_query_list || [];
+                    if (list.length > 0) {
+                        const rows = list.map(q => {
+                            const badge = q.state === 'active' ? 'bg-success'
+                                : (q.state || '').includes('transaction') ? 'bg-warning text-dark' : 'bg-secondary';
+                            const durCls = q.duration_secs >= 30 ? 'text-danger'
+                                : q.duration_secs >= 5 ? 'text-warning' : '';
+                            return `<tr>
+                                <td class="font-monospace text-nowrap">${escHtml(q.datname)}</td>
+                                <td class="font-monospace text-nowrap">${escHtml(q.usename)}</td>
+                                <td><span class="badge ${badge}">${escHtml(q.state)}</span></td>
+                                <td class="text-nowrap ${durCls}">${escHtml(q.duration)}</td>
+                                <td class="font-monospace small text-truncate" style="max-width:420px" title="${escHtml(q.query)}">${escHtml(q.query)}</td>
+                            </tr>`;
+                        }).join('');
+                        container.innerHTML = `<h6 class="text-muted mt-3 mb-2">Active Queries</h6>
+                            <div class="table-responsive">
+                                <table class="table table-dark table-sm mb-0">
+                                    <thead><tr><th>Database</th><th>User</th><th>State</th><th>Duration</th><th>Query</th></tr></thead>
+                                    <tbody>${rows}</tbody>
+                                </table>
+                            </div>`;
+                    } else {
+                        container.innerHTML = '<p class="text-muted small mt-3 mb-0"><i class="bi bi-check-circle"></i> No active queries</p>';
+                    }
+                }
             }
+
+            // Elasticsearch
+            if (data.type === 'elasticsearch') {
+                const statusEl = document.getElementById('stat-cluster-status');
+                if (statusEl && data.cluster_status) {
+                    statusEl.textContent = data.cluster_status.toUpperCase();
+                    statusEl.className = 'badge fs-6 ' + (
+                        data.cluster_status === 'green'  ? 'bg-success' :
+                        data.cluster_status === 'yellow' ? 'bg-warning text-dark' :
+                        data.cluster_status === 'red'    ? 'bg-danger' : 'bg-secondary');
+                }
+                setEl('stat-nodes',   data.node_count  || 0);
+                setEl('stat-indices', data.index_count || 0);
+                setEl('stat-docs',    (data.doc_count  || 0).toLocaleString());
+                setEl('stat-store',   data.store_size  || 'N/A');
+            }
+
+            // Redis
+            if (data.type === 'redis') {
+                setEl('stat-redis-mem',      data.used_memory       || 'N/A');
+                setEl('stat-redis-clients',  data.connected_clients || '0');
+                setEl('stat-redis-ops',      data.ops_per_sec       || '0');
+                setEl('stat-redis-hitratio', data.hit_ratio         || 'N/A');
+            }
+
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh';
         })
