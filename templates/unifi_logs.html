@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}Network Logs - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-journal-text"></i> Network Logs</h2>
+    <a href="{{ url_for('unifi.index') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back to Network
+    </a>
+</div>
+
+{% if access_restricted %}
+<div class="alert alert-info py-2 mb-3">
+    <i class="bi bi-shield-lock"></i> <strong>Access restricted:</strong>
+    Showing only traffic for VMs you have access to.
+</div>
+{% endif %}
+
+<!-- Filters -->
+<form method="get" action="{{ url_for('unifi.logs') }}" class="card bg-dark mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-end">
+            <div class="col-sm-3 col-lg-2">
+                <label class="form-label form-label-sm mb-1">Type</label>
+                <select name="type" class="form-select form-select-sm">
+                    <option value="">All types</option>
+                    <option value="firewall" {{ 'selected' if log_type == 'firewall' }}>Firewall</option>
+                    <option value="dhcp"     {{ 'selected' if log_type == 'dhcp'     }}>DHCP</option>
+                    <option value="wifi"     {{ 'selected' if log_type == 'wifi'     }}>Wi-Fi</option>
+                    <option value="system"   {{ 'selected' if log_type == 'system'   }}>System</option>
+                </select>
+            </div>
+            <div class="col-sm-3 col-lg-2">
+                <label class="form-label form-label-sm mb-1">Action</label>
+                <select name="action" class="form-select form-select-sm">
+                    <option value="">All actions</option>
+                    <option value="block" {{ 'selected' if action == 'block' }}>Block</option>
+                    <option value="allow" {{ 'selected' if action == 'allow' }}>Allow</option>
+                    <option value="drop"  {{ 'selected' if action == 'drop'  }}>Drop</option>
+                </select>
+            </div>
+            <div class="col-sm-3 col-lg-2">
+                <label class="form-label form-label-sm mb-1">Direction</label>
+                <select name="direction" class="form-select form-select-sm">
+                    <option value="">All directions</option>
+                    <option value="inbound"    {{ 'selected' if direction == 'inbound'    }}>Inbound</option>
+                    <option value="outbound"   {{ 'selected' if direction == 'outbound'   }}>Outbound</option>
+                    <option value="inter_vlan" {{ 'selected' if direction == 'inter_vlan' }}>Inter-VLAN</option>
+                    <option value="local"      {{ 'selected' if direction == 'local'      }}>Local</option>
+                </select>
+            </div>
+            <div class="col-sm-3 col-lg-2">
+                <label class="form-label form-label-sm mb-1">Time range</label>
+                <select name="hours" class="form-select form-select-sm">
+                    <option value="1"   {{ 'selected' if hours == 1   }}>Last 1h</option>
+                    <option value="6"   {{ 'selected' if hours == 6   }}>Last 6h</option>
+                    <option value="24"  {{ 'selected' if hours == 24  }}>Last 24h</option>
+                    <option value="48"  {{ 'selected' if hours == 48  }}>Last 48h</option>
+                    <option value="168" {{ 'selected' if hours == 168 }}>Last 7d</option>
+                </select>
+            </div>
+            <div class="col-lg-3">
+                <label class="form-label form-label-sm mb-1">Search</label>
+                <input type="text" name="q" class="form-control form-control-sm font-monospace"
+                       value="{{ search }}" placeholder="IP, MAC, rule, country…">
+            </div>
+            <div class="col-lg-1 d-flex gap-1">
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                    <i class="bi bi-funnel"></i>
+                </button>
+                <a href="{{ url_for('unifi.logs') }}" class="btn btn-outline-secondary btn-sm" title="Clear">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<!-- Results header -->
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <span class="text-muted small">
+        <strong>{{ total }}</strong> entr{{ 'y' if total == 1 else 'ies' }}
+        {% if log_type or action or direction or search %} (filtered){% endif %}
+    </span>
+    {% if entries.pages > 1 %}
+    <span class="text-muted small">Page {{ entries.page }} of {{ entries.pages }}</span>
+    {% endif %}
+</div>
+
+<!-- Log table -->
+<div class="card bg-dark">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0 align-middle">
+                <thead class="text-muted small">
+                    <tr>
+                        <th>Time</th>
+                        <th>Type</th>
+                        <th>Action</th>
+                        <th>Direction</th>
+                        <th>Source</th>
+                        <th>Destination</th>
+                        <th>Proto</th>
+                        <th>Country</th>
+                        <th>Info</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries.items %}
+                    <tr data-bs-toggle="collapse" data-bs-target="#detail-{{ entry.id }}"
+                        style="cursor:pointer" role="button">
+                        <td class="text-nowrap small">{{ entry.timestamp | local_dt("%m/%d %H:%M:%S") }}</td>
+                        <td>
+                            {% if entry.log_type == 'firewall' %}
+                            <span class="badge bg-secondary">FW</span>
+                            {% elif entry.log_type == 'dhcp' %}
+                            <span class="badge bg-info text-dark">DHCP</span>
+                            {% elif entry.log_type == 'wifi' %}
+                            <span class="badge bg-primary">Wi-Fi</span>
+                            {% else %}
+                            <span class="badge bg-dark border">{{ entry.log_type or '?' }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if entry.action == 'block' or entry.action == 'drop' %}
+                            <span class="badge bg-danger">{{ entry.action }}</span>
+                            {% elif entry.action == 'allow' %}
+                            <span class="badge bg-success">allow</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if entry.direction == 'inbound' %}
+                            <i class="bi bi-arrow-down-circle text-warning" title="Inbound"></i>
+                            {% elif entry.direction == 'outbound' %}
+                            <i class="bi bi-arrow-up-circle text-info" title="Outbound"></i>
+                            {% elif entry.direction == 'inter_vlan' %}
+                            <i class="bi bi-arrow-left-right text-secondary" title="Inter-VLAN"></i>
+                            {% elif entry.direction == 'local' %}
+                            <i class="bi bi-house text-muted" title="Local"></i>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                            <small class="text-muted ms-1">{{ entry.direction or '' }}</small>
+                        </td>
+                        <td class="font-monospace small">
+                            {% if safety_mode %}
+                            <span class="text-muted"><i class="bi bi-eye-slash"></i></span>
+                            {% else %}
+                            {{ entry.src_ip or '-' }}
+                            {% if entry.src_port %}<span class="text-muted">:{{ entry.src_port }}</span>{% endif %}
+                            {% endif %}
+                        </td>
+                        <td class="font-monospace small">
+                            {% if safety_mode %}
+                            <span class="text-muted"><i class="bi bi-eye-slash"></i></span>
+                            {% else %}
+                            {{ entry.dst_ip or '-' }}
+                            {% if entry.dst_port %}<span class="text-muted">:{{ entry.dst_port }}</span>{% endif %}
+                            {% endif %}
+                        </td>
+                        <td><small class="text-muted">{{ entry.protocol or '-' }}</small></td>
+                        <td>
+                            {% if entry.country_code %}
+                            <span title="{{ entry.country }}">{{ entry.country_code }}</span>
+                            {% elif entry.country %}
+                            <small class="text-muted">{{ entry.country }}</small>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="small text-truncate" style="max-width:200px">
+                            {{ entry.msg or entry.rule_id or '-' }}
+                        </td>
+                    </tr>
+                    <!-- Expanded detail row -->
+                    <tr class="collapse" id="detail-{{ entry.id }}">
+                        <td colspan="9" class="bg-dark border-top-0 pt-0 pb-2 px-3">
+                            <div class="row g-2 small text-muted py-1">
+                                {% if entry.rule_id %}
+                                <div class="col-auto"><strong>Rule:</strong> <code>{{ entry.rule_id }}</code></div>
+                                {% endif %}
+                                {% if entry.mac %}
+                                <div class="col-auto"><strong>MAC:</strong> <code>{{ entry.mac }}</code></div>
+                                {% endif %}
+                                {% if entry.interface %}
+                                <div class="col-auto"><strong>Interface:</strong> <code>{{ entry.interface }}</code></div>
+                                {% endif %}
+                                {% if entry.city %}
+                                <div class="col-auto"><strong>City:</strong> {{ entry.city }}</div>
+                                {% endif %}
+                                <div class="col-auto"><strong>Source:</strong> {{ entry.source or 'syslog' }}</div>
+                                {% if entry.raw and not safety_mode %}
+                                <div class="col-12 mt-1">
+                                    <code class="text-secondary" style="word-break:break-all;font-size:0.72em">{{ entry.raw }}</code>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-4">
+                            <i class="bi bi-journal-x display-6"></i>
+                            <p class="mt-2 mb-0">No log entries found for the selected filters.</p>
+                            {% if not (log_type or action or direction or search) %}
+                            <small>Enable syslog forwarding in UniFi and configure log collection in
+                                <a href="{{ url_for('settings.index') }}">Settings</a>.</small>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if entries.pages > 1 %}
+<nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center">
+        {% if entries.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('unifi.logs', page=entries.prev_num, type=log_type, action=action, direction=direction, q=search, hours=hours) }}">
+                &laquo; Prev
+            </a>
+        </li>
+        {% endif %}
+        {% for p in entries.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if p %}
+            <li class="page-item {{ 'active' if p == entries.page }}">
+                <a class="page-link" href="{{ url_for('unifi.logs', page=p, type=log_type, action=action, direction=direction, q=search, hours=hours) }}">{{ p }}</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+        {% endfor %}
+        {% if entries.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('unifi.logs', page=entries.next_num, type=log_type, action=action, direction=direction, q=search, hours=hours) }}">
+                Next &raquo;
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% endblock %}

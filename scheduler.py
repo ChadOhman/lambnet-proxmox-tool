@@ -288,6 +288,115 @@ def _purge_old_audit_logs(app):
             logger.info(f"Purged {deleted} audit log entries older than 90 days.")
 
 
+def _poll_unifi_events(app):
+    """Poll UniFi controller API for events and alarms and persist them."""
+    with app.app_context():
+        from models import Setting, db, UnifiLogEntry
+        from datetime import timezone
+
+        if Setting.get("unifi_api_poll_enabled", "true") == "false":
+            return
+        if Setting.get("unifi_enabled", "false") != "true":
+            return
+
+        from credential_store import decrypt
+        from unifi_client import UniFiClient
+
+        base_url = Setting.get("unifi_base_url", "")
+        username = Setting.get("unifi_username", "")
+        encrypted_pw = Setting.get("unifi_password", "")
+        site = Setting.get("unifi_site", "default")
+        is_udm = Setting.get("unifi_is_udm", "true") == "true"
+
+        if not base_url or not username or not encrypted_pw:
+            return
+
+        password = decrypt(encrypted_pw)
+        if not password:
+            return
+
+        client = UniFiClient(base_url, username, password, site=site, is_udm=is_udm)
+
+        geoip_enabled = Setting.get("unifi_geoip_enabled", "false") == "true"
+        geoip_db_path = Setting.get("unifi_geoip_db_path", "")
+
+        added = 0
+        for endpoint, log_type in [
+            (f"/api/s/{site}/stat/event", "system"),
+            (f"/api/s/{site}/stat/alarm", "firewall"),
+        ]:
+            raw = client._api_get(endpoint)
+            if not raw:
+                continue
+            for evt in raw:
+                # Use the event's _id as dedup key
+                event_key = str(evt.get("_id", ""))
+                if event_key and UnifiLogEntry.query.filter_by(rule_id=event_key, source="api").first():
+                    continue
+
+                # Parse timestamp
+                ts_str = evt.get("datetime", "")
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")) if ts_str else datetime.now(timezone.utc)
+                except ValueError:
+                    ts = datetime.now(timezone.utc)
+
+                src_ip = evt.get("src_ip") or evt.get("src") or None
+                dst_ip = evt.get("dst_ip") or evt.get("dst") or None
+                msg = evt.get("msg", "")
+
+                # GeoIP enrichment
+                geo = {}
+                if geoip_enabled and geoip_db_path:
+                    import unifi_geoip
+                    ext_ip = src_ip or dst_ip
+                    if ext_ip:
+                        geo = unifi_geoip.lookup(ext_ip, geoip_db_path)
+
+                entry = UnifiLogEntry(
+                    timestamp=ts,
+                    source="api",
+                    log_type=log_type,
+                    action="block" if evt.get("key", "").endswith("_Blocked") else "allow",
+                    direction=None,
+                    src_ip=src_ip,
+                    dst_ip=dst_ip,
+                    src_port=evt.get("sport"),
+                    dst_port=evt.get("dport"),
+                    protocol=evt.get("proto"),
+                    interface=evt.get("iface"),
+                    rule_id=event_key or None,
+                    mac=evt.get("host"),
+                    msg=msg[:512] if msg else None,
+                    raw=None,
+                    country=geo.get("country"),
+                    country_code=geo.get("country_code"),
+                    city=geo.get("city"),
+                )
+                db.session.add(entry)
+                added += 1
+
+        if added:
+            db.session.commit()
+            logger.info(f"UniFi API poll: added {added} new event(s).")
+
+
+def _purge_old_unifi_logs(app):
+    """Delete UniFi log entries older than the configured retention period."""
+    with app.app_context():
+        from models import db, Setting, UnifiLogEntry
+        from datetime import timezone
+        try:
+            days = int(Setting.get("unifi_log_retention_days", "60") or 60)
+        except ValueError:
+            days = 60
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        deleted = UnifiLogEntry.query.filter(UnifiLogEntry.timestamp < cutoff).delete()
+        db.session.commit()
+        if deleted:
+            logger.info(f"Purged {deleted} UniFi log entries older than {days} days.")
+
+
 def _run_service_health_checks(app):
     """Check status of all tracked services on all guests."""
     with app.app_context():
@@ -326,6 +435,7 @@ def init_scheduler(app):
         interval_hours = int(Setting.get("scan_interval", "6") or 6)
         discovery_hours = int(Setting.get("discovery_interval", "4") or 4)
         service_check_minutes = int(Setting.get("service_check_interval", "5") or 5)
+        unifi_poll_minutes = int(Setting.get("unifi_api_poll_interval", "5") or 5)
 
     # Discovery job - refresh hosts periodically
     _scheduler.add_job(
@@ -398,7 +508,27 @@ def init_scheduler(app):
         replace_existing=True,
     )
 
+    # UniFi API event poll - runs every N minutes
+    _scheduler.add_job(
+        _poll_unifi_events,
+        trigger=IntervalTrigger(minutes=unifi_poll_minutes),
+        args=[app],
+        id="unifi_event_poll",
+        name="Poll UniFi API for events and alarms",
+        replace_existing=True,
+    )
+
+    # UniFi log retention purge - runs daily
+    _scheduler.add_job(
+        _purge_old_unifi_logs,
+        trigger=IntervalTrigger(hours=24),
+        args=[app],
+        id="unifi_log_purge",
+        name="Purge UniFi log entries past retention period",
+        replace_existing=True,
+    )
+
     _scheduler.start()
-    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, app update check every 6h")
+    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
 
     return _scheduler

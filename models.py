@@ -472,3 +472,31 @@ class AuditLog(db.Model):
 
     def __repr__(self):
         return f"<AuditLog {self.action} by user_id={self.user_id}>"
+
+
+class UnifiLogEntry(db.Model):
+    __tablename__ = "unifi_log_entries"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    timestamp    = db.Column(db.DateTime, nullable=False, index=True)
+    source       = db.Column(db.String(16))                    # 'syslog' or 'api'
+    log_type     = db.Column(db.String(16), index=True)        # firewall|dhcp|wifi|dns|system
+    action       = db.Column(db.String(16))                    # allow|block|drop
+    direction    = db.Column(db.String(16))                    # inbound|outbound|inter_vlan|local
+    src_ip       = db.Column(db.String(64), index=True)
+    dst_ip       = db.Column(db.String(64), index=True)
+    src_port     = db.Column(db.Integer)
+    dst_port     = db.Column(db.Integer)
+    protocol     = db.Column(db.String(8))
+    interface    = db.Column(db.String(32))
+    rule_id      = db.Column(db.String(64))
+    mac          = db.Column(db.String(17))
+    country      = db.Column(db.String(64))                    # from GeoIP
+    country_code = db.Column(db.String(4))
+    city         = db.Column(db.String(64))
+    msg          = db.Column(db.String(512))                   # human-readable summary
+    raw          = db.Column(db.Text)                          # original syslog line
+    created_at   = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def __repr__(self):
+        return f"<UnifiLogEntry {self.log_type} {self.action} {self.src_ip}->{self.dst_ip}>"

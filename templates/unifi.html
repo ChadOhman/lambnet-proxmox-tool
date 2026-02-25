@@ -4,13 +4,18 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-router"></i> Network Devices</h2>
-    {% if enabled %}
-    <form method="post" action="/unifi/refresh" class="d-inline">
-        <button type="submit" class="btn btn-outline-light btn-sm">
-            <i class="bi bi-arrow-clockwise"></i> Refresh
-        </button>
-    </form>
-    {% endif %}
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('unifi.logs') }}" class="btn btn-outline-info btn-sm">
+            <i class="bi bi-journal-text"></i> Logs
+        </a>
+        {% if enabled %}
+        <form method="post" action="/unifi/refresh" class="d-inline">
+            <button type="submit" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+        </form>
+        {% endif %}
+    </div>
 </div>
 
 {% if not enabled %}
@@ -31,6 +36,72 @@
 
 {% if subnet_filter %}
 <p class="text-muted mb-3"><i class="bi bi-funnel"></i> Filtered to subnet: <code>{{ subnet_filter }}</code></p>
+{% endif %}
+
+<!-- Traffic overview charts (last 24h from log entries) -->
+{% if chart_direction or chart_blocked %}
+<div class="row g-3 mb-4">
+    {% if chart_direction %}
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-bar-chart"></i> Traffic by Direction (24h)</h6>
+            </div>
+            <div class="card-body" style="height:180px">
+                <canvas id="chartDirection"></canvas>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if chart_blocked %}
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-shield-x"></i> Top Blocked Sources (24h)</h6>
+            </div>
+            <div class="card-body" style="height:180px">
+                <canvas id="chartBlocked"></canvas>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+<script>
+(function () {
+    const chartDefaults = {
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { ticks: { color: '#adb5bd', font: { size: 11 } }, grid: { color: '#2d3035' } },
+            y: { ticks: { color: '#adb5bd', font: { size: 11 } }, grid: { color: '#2d3035' } },
+        },
+        responsive: true,
+        maintainAspectRatio: false,
+    };
+    {% if chart_direction %}
+    const dirData = {{ chart_direction | tojson }};
+    new Chart(document.getElementById('chartDirection'), {
+        type: 'bar',
+        data: {
+            labels: dirData.map(d => d.label),
+            datasets: [{ data: dirData.map(d => d.count), backgroundColor: ['#0dcaf0','#6c757d','#ffc107','#198754','#dc3545'] }]
+        },
+        options: chartDefaults,
+    });
+    {% endif %}
+    {% if chart_blocked %}
+    const blkData = {{ chart_blocked | tojson }};
+    const safetyMode = {{ safety_mode | tojson }};
+    new Chart(document.getElementById('chartBlocked'), {
+        type: 'bar',
+        data: {
+            labels: blkData.map(d => safetyMode ? '●●●.●' : d.ip),
+            datasets: [{ data: blkData.map(d => d.count), backgroundColor: '#dc3545' }]
+        },
+        options: chartDefaults,
+    });
+    {% endif %}
+})();
+</script>
 {% endif %}
 
 <div class="row g-4">

@@ -120,6 +120,12 @@ def create_app(test_config=None):
     from routes.terminal import init_websocket
     init_websocket(app)
 
+    # Start UniFi syslog receiver (daemon thread, if enabled in settings).
+    # Runs unconditionally in production (gunicorn calls create_app()); skip in test mode.
+    if not test_config:
+        from unifi_syslog import start_syslog_receiver
+        start_syslog_receiver(app)
+
     # Warn if running with multiple workers, which breaks in-process collaboration
     _web_concurrency = int(os.environ.get("WEB_CONCURRENCY", "1"))
     if _web_concurrency > 1:

@@ -126,6 +126,86 @@
                 </form>
             </div>
         </div>
+
+        <!-- UniFi Log Collection -->
+        <div class="card bg-dark mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-journal-text"></i> UniFi Log Collection
+                    {% if settings.unifi_syslog_enabled == 'true' or settings.unifi_api_poll_enabled != 'false' %}
+                    <span class="badge bg-success ms-2">Active</span>
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/settings/unifi-logging">
+                    <h6 class="text-muted mb-2">Syslog Receiver</h6>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" name="unifi_syslog_enabled" id="syslogEnabled"
+                               {{ 'checked' if settings.unifi_syslog_enabled == 'true' }}>
+                        <label class="form-check-label" for="syslogEnabled">
+                            <strong>Enable UDP syslog receiver</strong>
+                        </label>
+                        <div class="form-text">Configure your UniFi device to forward syslog to this host.
+                            <strong>Requires app restart to take effect.</strong></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">UDP Port</label>
+                        <input type="number" class="form-control" name="unifi_syslog_port"
+                               value="{{ settings.unifi_syslog_port or '5514' }}" min="1" max="65535"
+                               placeholder="5514">
+                        <div class="form-text">Use 5514 (no root required) or 514 (standard syslog).</div>
+                    </div>
+
+                    <h6 class="text-muted mb-2 mt-3">API Event Polling</h6>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" name="unifi_api_poll_enabled" id="apiPollEnabled"
+                               {{ 'checked' if settings.unifi_api_poll_enabled != 'false' }}>
+                        <label class="form-check-label" for="apiPollEnabled">
+                            <strong>Poll UniFi API for events</strong>
+                        </label>
+                        <div class="form-text">Fetches events and alarms from the UniFi controller on a schedule.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Poll interval (minutes)</label>
+                        <input type="number" class="form-control" name="unifi_api_poll_interval"
+                               value="{{ settings.unifi_api_poll_interval or '5' }}" min="1" max="1440"
+                               placeholder="5">
+                    </div>
+
+                    <h6 class="text-muted mb-2 mt-3">GeoIP Enrichment</h6>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" name="unifi_geoip_enabled" id="geoipEnabled"
+                               {{ 'checked' if settings.unifi_geoip_enabled == 'true' }}>
+                        <label class="form-check-label" for="geoipEnabled">
+                            <strong>Enable GeoIP lookups</strong>
+                        </label>
+                        <div class="form-text">Requires a free <a href="https://dev.maxmind.com/geoip/geolite2-free-geolocation-data" target="_blank" rel="noopener">MaxMind GeoLite2-City</a> database file.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">GeoLite2-City.mmdb path</label>
+                        {% if safety_mode %}
+                        <input type="hidden" name="unifi_geoip_db_path" value="{{ settings.unifi_geoip_db_path or '' }}">
+                        <input type="text" class="form-control text-muted" value="hidden" disabled>
+                        {% else %}
+                        <input type="text" class="form-control font-monospace" name="unifi_geoip_db_path"
+                               value="{{ settings.unifi_geoip_db_path or '' }}"
+                               placeholder="/etc/lambnet/GeoLite2-City.mmdb">
+                        {% endif %}
+                    </div>
+
+                    <h6 class="text-muted mb-2 mt-3">Retention</h6>
+                    <div class="mb-3">
+                        <label class="form-label">Keep logs for (days)</label>
+                        <input type="number" class="form-control" name="unifi_log_retention_days"
+                               value="{{ settings.unifi_log_retention_days or '60' }}" min="1" max="365"
+                               placeholder="60">
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Save Log Collection Settings</button>
+                </form>
+            </div>
+        </div>
     </div>
 
     <div class="col-lg-6">
