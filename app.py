@@ -301,6 +301,11 @@ def _migrate_schema():
             db.session.execute(text("ALTER TABLE roles ADD COLUMN can_edit_services BOOLEAN DEFAULT 0"))
             db.session.execute(text("UPDATE roles SET can_edit_services = 1 WHERE name IN ('super_admin', 'admin')"))
             db.session.commit()
+        if "can_view_unifi" not in role_columns:
+            logger.info("Adding can_view_unifi column to roles table...")
+            db.session.execute(text("ALTER TABLE roles ADD COLUMN can_view_unifi BOOLEAN DEFAULT 0"))
+            db.session.execute(text("UPDATE roles SET can_view_unifi = 1 WHERE name IN ('super_admin', 'admin')"))
+            db.session.commit()
 
     if "credentials" in table_names:
         cred_columns = [c["name"] for c in inspector.get_columns("credentials")]

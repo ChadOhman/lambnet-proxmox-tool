@@ -73,11 +73,13 @@
                         </a>
                     </li>
                     {% endif %}
+                    {% if current_user.can_view_unifi %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'unifi' %}active{% endif %}" href="/unifi">
                             <i class="bi bi-router"></i> Network
                         </a>
                     </li>
+                    {% endif %}
                     {% if current_user.is_super_admin %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'credentials' %}active{% endif %}" href="/credentials">

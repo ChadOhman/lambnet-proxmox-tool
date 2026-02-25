@@ -18,7 +18,7 @@ _LOGS_PER_PAGE = 50
 @bp.before_request
 @login_required
 def _require_login():
-    if not current_user.can_view_hosts:
+    if not current_user.can_view_unifi:
         flash("You don't have permission to view network devices.", "error")
         return redirect(url_for("dashboard.index"))
 
