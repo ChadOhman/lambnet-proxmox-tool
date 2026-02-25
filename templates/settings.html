@@ -209,14 +209,13 @@
 
                     <div class="mb-2">
                         <label class="form-label">Upload database file</label>
-                        <form id="geoip-upload-form" method="post" action="/settings/unifi-logging/upload-geoip"
-                              enctype="multipart/form-data" class="d-flex gap-2 align-items-center">
-                            <input type="file" id="geoip-file-input" class="form-control form-control-sm" name="geoip_db"
+                        <div class="d-flex gap-2 align-items-center">
+                            <input type="file" id="geoip-file-input" class="form-control form-control-sm"
                                    accept=".mmdb" style="max-width:300px">
-                            <button type="submit" id="geoip-upload-btn" class="btn btn-sm btn-outline-secondary text-nowrap">
+                            <button type="button" id="geoip-upload-btn" class="btn btn-sm btn-outline-secondary text-nowrap">
                                 <i class="bi bi-upload"></i> Upload .mmdb
                             </button>
-                        </form>
+                        </div>
                         <div id="geoip-progress-wrap" class="mt-2 d-none">
                             <div class="progress" style="height:6px">
                                 <div id="geoip-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
@@ -241,7 +240,6 @@
 
                     <script>
                     (function () {
-                        var form = document.getElementById('geoip-upload-form');
                         var fileInput = document.getElementById('geoip-file-input');
                         var btn = document.getElementById('geoip-upload-btn');
                         var progressWrap = document.getElementById('geoip-progress-wrap');
@@ -251,11 +249,15 @@
                         var badgeDiv = document.getElementById('geoip-db-badge');
                         var pathInput = document.getElementById('geoip-path-input');
 
-                        if (!form) return;
+                        if (!btn || !fileInput) return;
 
-                        form.addEventListener('submit', function (e) {
-                            if (!fileInput || !fileInput.files || !fileInput.files.length) return;
-                            e.preventDefault();
+                        btn.addEventListener('click', function () {
+                            if (!fileInput.files || !fileInput.files.length) {
+                                statusDiv.innerHTML =
+                                    '<div class="alert alert-warning py-2 small">' +
+                                    '<i class="bi bi-exclamation-circle me-1"></i>Please select a .mmdb file first.</div>';
+                                return;
+                            }
 
                             var file = fileInput.files[0];
                             var formData = new FormData();
