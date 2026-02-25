@@ -132,32 +132,14 @@
             <div class="card-header">
                 <h5 class="mb-0">
                     <i class="bi bi-journal-text"></i> UniFi Log Collection
-                    {% if settings.unifi_syslog_enabled == 'true' or settings.unifi_api_poll_enabled != 'false' %}
+                    {% if settings.unifi_api_poll_enabled != 'false' %}
                     <span class="badge bg-success ms-2">Active</span>
                     {% endif %}
                 </h5>
             </div>
             <div class="card-body">
                 <form method="post" action="/settings/unifi-logging">
-                    <h6 class="text-muted mb-2">Syslog Receiver</h6>
-                    <div class="form-check mb-2">
-                        <input type="checkbox" class="form-check-input" name="unifi_syslog_enabled" id="syslogEnabled"
-                               {{ 'checked' if settings.unifi_syslog_enabled == 'true' }}>
-                        <label class="form-check-label" for="syslogEnabled">
-                            <strong>Enable UDP syslog receiver</strong>
-                        </label>
-                        <div class="form-text">Configure your UniFi device to forward syslog to this host.
-                            <strong>Requires app restart to take effect.</strong></div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">UDP Port</label>
-                        <input type="number" class="form-control" name="unifi_syslog_port"
-                               value="{{ settings.unifi_syslog_port or '5514' }}" min="1" max="65535"
-                               placeholder="5514">
-                        <div class="form-text">Use 5514 (no root required) or 514 (standard syslog).</div>
-                    </div>
-
-                    <h6 class="text-muted mb-2 mt-3">API Event Polling</h6>
+                    <h6 class="text-muted mb-2">API Event Polling</h6>
                     <div class="form-check mb-2">
                         <input type="checkbox" class="form-check-input" name="unifi_api_poll_enabled" id="apiPollEnabled"
                                {{ 'checked' if settings.unifi_api_poll_enabled != 'false' }}>

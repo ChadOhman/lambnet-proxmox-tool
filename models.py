@@ -491,7 +491,7 @@ class UnifiLogEntry(db.Model):
 
     id           = db.Column(db.Integer, primary_key=True)
     timestamp    = db.Column(db.DateTime, nullable=False, index=True)
-    source       = db.Column(db.String(16))                    # 'syslog' or 'api'
+    source       = db.Column(db.String(16))                    # 'api'
     log_type     = db.Column(db.String(16), index=True)        # firewall|dhcp|wifi|dns|system
     action       = db.Column(db.String(16))                    # allow|block|drop
     direction    = db.Column(db.String(16))                    # inbound|outbound|inter_vlan|local
@@ -507,7 +507,7 @@ class UnifiLogEntry(db.Model):
     country_code = db.Column(db.String(4))
     city         = db.Column(db.String(64))
     msg          = db.Column(db.String(512))                   # human-readable summary
-    raw          = db.Column(db.Text)                          # original syslog line
+    raw          = db.Column(db.Text)                          # raw event data for debugging
     created_at   = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):

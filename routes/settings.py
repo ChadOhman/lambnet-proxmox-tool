@@ -37,8 +37,6 @@ def _get_settings_dict():
         "unifi_site": Setting.get("unifi_site", "default"),
         "unifi_is_udm": Setting.get("unifi_is_udm", "true"),
         "unifi_filter_subnet": Setting.get("unifi_filter_subnet", ""),
-        "unifi_syslog_enabled": Setting.get("unifi_syslog_enabled", "false"),
-        "unifi_syslog_port": Setting.get("unifi_syslog_port", "5514"),
         "unifi_geoip_enabled": Setting.get("unifi_geoip_enabled", "false"),
         "unifi_geoip_db_path": Setting.get("unifi_geoip_db_path", ""),
         "unifi_api_poll_enabled": Setting.get("unifi_api_poll_enabled", "true"),
@@ -240,21 +238,11 @@ def test_unifi():
 
 @bp.route("/unifi-logging", methods=["POST"])
 def save_unifi_logging():
-    syslog_enabled = "unifi_syslog_enabled" in request.form
-    syslog_port = request.form.get("unifi_syslog_port", "5514").strip()
     geoip_enabled = "unifi_geoip_enabled" in request.form
     geoip_db_path = request.form.get("unifi_geoip_db_path", "").strip()
     api_poll_enabled = "unifi_api_poll_enabled" in request.form
     api_poll_interval = request.form.get("unifi_api_poll_interval", "5").strip()
     retention_days = request.form.get("unifi_log_retention_days", "60").strip()
-
-    try:
-        port_int = int(syslog_port)
-        if not (1 <= port_int <= 65535):
-            raise ValueError
-    except ValueError:
-        flash("Syslog port must be a number between 1 and 65535.", "error")
-        return redirect(url_for("settings.index"))
 
     try:
         interval_int = int(api_poll_interval)
@@ -272,8 +260,6 @@ def save_unifi_logging():
         flash("Retention must be between 1 and 365 days.", "error")
         return redirect(url_for("settings.index"))
 
-    Setting.set("unifi_syslog_enabled", "true" if syslog_enabled else "false")
-    Setting.set("unifi_syslog_port", str(port_int))
     Setting.set("unifi_geoip_enabled", "true" if geoip_enabled else "false")
     Setting.set("unifi_geoip_db_path", geoip_db_path)
     Setting.set("unifi_api_poll_enabled", "true" if api_poll_enabled else "false")
@@ -282,7 +268,7 @@ def save_unifi_logging():
 
     log_action("settings_unifi_logging_save", "settings", resource_name="unifi_logging")
     db.session.commit()
-    flash("UniFi log collection settings saved. Restart the app for syslog changes to take effect.", "success")
+    flash("UniFi log collection settings saved.", "success")
     return redirect(url_for("settings.index"))
 
 
