@@ -199,6 +199,12 @@
                     {% endif %}
                     </div>
 
+                    {% if geoip_db_info %}
+                    <button type="button" id="geoip-verify-btn" class="btn btn-sm btn-outline-info mb-2">
+                        <i class="bi bi-shield-check"></i> Verify database
+                    </button>
+                    {% endif %}
+
                     <div id="geoip-status" class="mb-2"></div>
 
                     <div class="mb-2">
@@ -324,6 +330,46 @@
 
                             xhr.send(formData);
                         });
+
+                        // Verify button
+                        var verifyBtn = document.getElementById('geoip-verify-btn');
+                        if (verifyBtn) {
+                            verifyBtn.addEventListener('click', function () {
+                                statusDiv.innerHTML = '';
+                                verifyBtn.disabled = true;
+                                verifyBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Verifying…';
+
+                                var vxhr = new XMLHttpRequest();
+                                vxhr.open('GET', '/settings/unifi-logging/verify-geoip');
+                                vxhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                                vxhr.onload = function () {
+                                    verifyBtn.disabled = false;
+                                    verifyBtn.innerHTML = '<i class="bi bi-shield-check"></i> Verify database';
+                                    var data = {};
+                                    try { data = JSON.parse(vxhr.responseText); } catch (_) {}
+                                    if (data.ok) {
+                                        statusDiv.innerHTML =
+                                            '<div class="alert alert-success py-2 small">' +
+                                            '<i class="bi bi-check-circle-fill me-1"></i>' +
+                                            (data.message || 'Database OK') + '</div>';
+                                    } else {
+                                        statusDiv.innerHTML =
+                                            '<div class="alert alert-danger py-2 small">' +
+                                            '<i class="bi bi-exclamation-triangle-fill me-1"></i>' +
+                                            (data.message || 'Verification failed') + '</div>';
+                                    }
+                                };
+                                vxhr.onerror = function () {
+                                    verifyBtn.disabled = false;
+                                    verifyBtn.innerHTML = '<i class="bi bi-shield-check"></i> Verify database';
+                                    statusDiv.innerHTML =
+                                        '<div class="alert alert-danger py-2 small">' +
+                                        '<i class="bi bi-exclamation-triangle-fill me-1"></i>' +
+                                        'Network error — verification failed.</div>';
+                                };
+                                vxhr.send();
+                            });
+                        }
                     })();
                     </script>
 

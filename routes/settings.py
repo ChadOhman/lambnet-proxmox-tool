@@ -363,6 +363,46 @@ def upload_geoip_db():
     return redirect(url_for("settings.index") + _ANCHOR)
 
 
+@bp.route("/unifi-logging/verify-geoip")
+def verify_geoip_db():
+    """Check that the configured GeoIP database is readable and valid."""
+    db_path = Setting.get("unifi_geoip_db_path", "")
+    if not db_path:
+        return jsonify({"ok": False, "message": "No database path configured."})
+
+    if not os.path.exists(db_path):
+        size_mb = None
+        return jsonify({"ok": False, "message": f"File not found: {db_path}"})
+
+    try:
+        size_mb = round(os.stat(db_path).st_size / 1024 / 1024, 1)
+    except OSError:
+        size_mb = None
+
+    try:
+        import geoip2.database
+        reader = geoip2.database.Reader(db_path)
+        meta = reader.metadata()
+        db_type = meta.database_type
+        # Test lookup on a known public IP (Google DNS)
+        test_ip = "8.8.8.8"
+        try:
+            rec = reader.city(test_ip)
+            test_result = f"{rec.city.name or '—'}, {rec.country.iso_code or '—'}"
+        except Exception:
+            test_result = None
+        reader.close()
+    except ImportError:
+        return jsonify({"ok": True, "message": f"File exists ({size_mb} MB) — geoip2 library not installed, cannot validate contents.", "size_mb": size_mb, "path": db_path})
+    except Exception as e:
+        return jsonify({"ok": False, "message": f"Invalid database: {e}", "size_mb": size_mb, "path": db_path})
+
+    msg = f"Valid {db_type} — {size_mb} MB"
+    if test_result:
+        msg += f" — test lookup 8.8.8.8: {test_result}"
+    return jsonify({"ok": True, "message": msg, "size_mb": size_mb, "path": db_path})
+
+
 @bp.route("/app-update-mode", methods=["POST"])
 def save_app_update_mode():
     auto_update = "app_auto_update" in request.form
