@@ -13,6 +13,11 @@ def create_app(test_config=None):
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.from_object(Config)
 
+    # Trust one layer of reverse-proxy headers (nginx, Cloudflare, etc.).
+    # This makes request.remote_addr reflect the real client IP.
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
     if test_config:
         app.config.update(test_config)
 
@@ -115,6 +120,16 @@ def create_app(test_config=None):
     from routes.terminal import init_websocket
     init_websocket(app)
 
+    # Warn if running with multiple workers, which breaks in-process collaboration
+    _web_concurrency = int(os.environ.get("WEB_CONCURRENCY", "1"))
+    if _web_concurrency > 1:
+        logger.warning(
+            "WEB_CONCURRENCY=%d: the collaboration/presence system uses in-process state "
+            "and will NOT work correctly with multiple gunicorn workers. "
+            "Use a single worker (-w 1) or switch to threaded workers (--worker-class gthread).",
+            _web_concurrency,
+        )
+
     # Local network bypass (must run before CF Access so local IPs are already authed)
     from local_network import init_local_bypass
     init_local_bypass(app)
@@ -180,6 +195,18 @@ def create_app(test_config=None):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         if not app.debug:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # CSP: allows inline scripts/styles (used heavily in templates) and WebSocket connections.
+        # Tighten by migrating inline JS to nonces or external files in a future pass.
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "connect-src 'self' ws: wss:; "
+            "font-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self';"
+        )
         return response
 
     @app.context_processor
@@ -286,6 +313,35 @@ def _migrate_schema():
             logger.info("Adding ssh_credential_id column to proxmox_hosts table...")
             db.session.execute(text("ALTER TABLE proxmox_hosts ADD COLUMN ssh_credential_id INTEGER"))
             db.session.commit()
+
+    if "audit_logs" in table_names:
+        # Make audit_logs.user_id nullable so unauthenticated events (e.g. failed logins)
+        # can be recorded without a user_id.  SQLite requires table recreation to drop NOT NULL.
+        audit_col_info = {c["name"]: c for c in inspector.get_columns("audit_logs")}
+        user_id_col = audit_col_info.get("user_id", {})
+        if user_id_col.get("nullable") is False:
+            logger.info("Making audit_logs.user_id nullable (table recreation)...")
+            db.session.execute(text("""
+                CREATE TABLE audit_logs_new (
+                    id INTEGER PRIMARY KEY,
+                    timestamp DATETIME,
+                    user_id INTEGER REFERENCES users(id),
+                    action VARCHAR(64) NOT NULL,
+                    resource_type VARCHAR(32) NOT NULL,
+                    resource_id INTEGER,
+                    resource_name VARCHAR(256),
+                    details JSON,
+                    ip_address VARCHAR(45)
+                )
+            """))
+            db.session.execute(text(
+                "INSERT INTO audit_logs_new SELECT id, timestamp, user_id, action, "
+                "resource_type, resource_id, resource_name, details, ip_address FROM audit_logs"
+            ))
+            db.session.execute(text("DROP TABLE audit_logs"))
+            db.session.execute(text("ALTER TABLE audit_logs_new RENAME TO audit_logs"))
+            db.session.commit()
+            logger.info("audit_logs.user_id is now nullable.")
 
 
 def _migrate_roles():

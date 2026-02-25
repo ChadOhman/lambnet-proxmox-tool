@@ -11,7 +11,7 @@ def log_action(action, resource_type, resource_id=None, resource_name=None, deta
     collaboration hub so connected users see it instantly.
     """
     db.session.add(AuditLog(
-        user_id=current_user.id,
+        user_id=current_user.id if current_user.is_authenticated else None,
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
@@ -29,7 +29,7 @@ def log_action(action, resource_type, resource_id=None, resource_name=None, deta
             "action": action,
             "resource_type": resource_type,
             "resource_name": resource_name or "",
-            "username": current_user.display_name or current_user.username,
+            "username": (current_user.display_name or current_user.username) if current_user.is_authenticated else "anonymous",
             "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         })
     except Exception:

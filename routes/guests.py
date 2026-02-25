@@ -148,20 +148,37 @@ def add():
 
     host_id = request.form.get("proxmox_host_id")
     if host_id:
-        guest.proxmox_host_id = int(host_id)
+        try:
+            guest.proxmox_host_id = int(host_id)
+        except (TypeError, ValueError):
+            flash("Invalid host selection.", "error")
+            return redirect(url_for("guests.index"))
 
     vmid = request.form.get("vmid")
     if vmid:
-        guest.vmid = int(vmid)
+        try:
+            guest.vmid = int(vmid)
+        except (TypeError, ValueError):
+            flash("Invalid VM ID.", "error")
+            return redirect(url_for("guests.index"))
 
     cred_id = request.form.get("credential_id")
     if cred_id:
-        guest.credential_id = int(cred_id)
+        try:
+            guest.credential_id = int(cred_id)
+        except (TypeError, ValueError):
+            flash("Invalid credential selection.", "error")
+            return redirect(url_for("guests.index"))
 
     # Assign tags
     tag_ids = request.form.getlist("tag_ids")
     if tag_ids:
-        tags = Tag.query.filter(Tag.id.in_([int(t) for t in tag_ids])).all()
+        try:
+            tag_id_ints = [int(t) for t in tag_ids]
+        except (TypeError, ValueError):
+            flash("Invalid tag selection.", "error")
+            return redirect(url_for("guests.index"))
+        tags = Tag.query.filter(Tag.id.in_(tag_id_ints)).all()
         guest.tags = tags
 
     db.session.add(guest)
@@ -211,8 +228,8 @@ def detail(guest_id):
                     for st in backup_storages:
                         backups.extend(client.list_backups(node, guest.vmid, st.get("storage", "")))
                     backups.sort(key=lambda x: x.get("ctime", 0), reverse=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Could not fetch Proxmox detail data for guest {guest.name}: {e}")
 
     # Fetch UniFi client info by MAC address
     unifi_client = None

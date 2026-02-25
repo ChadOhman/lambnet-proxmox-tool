@@ -62,12 +62,14 @@ def overview():
     db_guest_id = settings.get("db_guest_id", "")
 
     mastodon_services = []
-    if guest_id:
-        from models import GuestService
-        mastodon_services += GuestService.query.filter_by(guest_id=int(guest_id)).all()
-    if db_guest_id:
-        from models import GuestService
-        mastodon_services += GuestService.query.filter_by(guest_id=int(db_guest_id)).all()
+    from models import GuestService
+    try:
+        if guest_id:
+            mastodon_services += GuestService.query.filter_by(guest_id=int(guest_id)).all()
+        if db_guest_id:
+            mastodon_services += GuestService.query.filter_by(guest_id=int(db_guest_id)).all()
+    except (TypeError, ValueError):
+        logger.warning("Mastodon guest_id setting is not a valid integer")
 
     return render_template(
         "mastodon_overview.html",

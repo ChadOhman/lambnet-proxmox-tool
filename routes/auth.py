@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required, current_user
 from models import db, User
+from audit import log_action
 
 bp = Blueprint("auth", __name__)
 
@@ -32,6 +33,15 @@ def _record_failed_login(ip: str) -> None:
         _failed_attempts[ip].append(time.time())
 
 
+def _get_client_ip() -> str:
+    """Return the real client IP, preferring Cloudflare's CF-Connecting-IP header."""
+    return (
+        request.headers.get("CF-Connecting-IP")
+        or request.remote_addr
+        or "unknown"
+    )
+
+
 def _is_safe_next_url(target):
     """Allow redirects only to local paths."""
     if not target:
@@ -46,7 +56,7 @@ def login():
         return redirect(url_for("dashboard.index"))
 
     if request.method == "POST":
-        ip = request.remote_addr or "unknown"
+        ip = _get_client_ip()
         if _check_rate_limit(ip):
             flash("Too many failed login attempts. Please try again later.", "error")
             return render_template("login.html")
@@ -57,12 +67,19 @@ def login():
         user = User.query.filter_by(username=username).first()
         if user and user.check_password(password) and user.is_active:
             login_user(user, remember="remember" in request.form)
+            log_action("login", "user", resource_id=user.id, resource_name=user.username)
+            db.session.commit()
             next_page = request.args.get("next")
             if _is_safe_next_url(next_page):
                 return redirect(next_page)
             return redirect(url_for("dashboard.index"))
 
         _record_failed_login(ip)
+        log_action("login_failed", "user",
+                   resource_id=user.id if user else None,
+                   resource_name=username,
+                   details={"reason": "inactive" if user and not user.is_active else "bad_credentials"})
+        db.session.commit()
         flash("Invalid username or password.", "error")
 
     return render_template("login.html")
@@ -71,6 +88,8 @@ def login():
 @bp.route("/logout", methods=["POST"])
 @login_required
 def logout():
+    log_action("logout", "user", resource_id=current_user.id, resource_name=current_user.username)
+    db.session.commit()
     logout_user()
     flash("You have been logged out.", "info")
     return redirect(url_for("auth.login"))
@@ -92,6 +111,7 @@ def change_password():
             flash("New password must be at least 8 characters.", "error")
         else:
             current_user.set_password(new_pw)
+            log_action("password_change", "user", resource_id=current_user.id, resource_name=current_user.username)
             db.session.commit()
             flash("Password changed successfully.", "success")
             return redirect(url_for("dashboard.index"))

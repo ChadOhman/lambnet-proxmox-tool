@@ -1,6 +1,9 @@
+import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from models import db, Guest, GuestService
+
+logger = logging.getLogger(__name__)
 from scanner import (check_service_statuses, service_action, get_service_logs, get_service_stats,
                      sidekiq_clear_dead, sidekiq_retry_dead, sidekiq_list_jobs,
                      sidekiq_delete_job, sidekiq_retry_job,
@@ -80,8 +83,8 @@ def refresh_all():
         try:
             check_service_statuses(guest)
             checked += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Service status check failed for {guest.name}: {e}")
     flash(f"Service statuses refreshed for {checked} guest(s).", "success")
 
     referrer = request.referrer

@@ -461,7 +461,7 @@ class AuditLog(db.Model):
 
     id            = db.Column(db.Integer, primary_key=True)
     timestamp     = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
-    user_id       = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    user_id       = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
     user          = db.relationship("User", backref="audit_logs")
     action        = db.Column(db.String(64),  nullable=False, index=True)
     resource_type = db.Column(db.String(32),  nullable=False, index=True)

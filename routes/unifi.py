@@ -14,7 +14,9 @@ bp = Blueprint("unifi", __name__)
 @bp.before_request
 @login_required
 def _require_login():
-    pass
+    if not current_user.can_view_hosts:
+        flash("You don't have permission to view network devices.", "error")
+        return redirect(url_for("dashboard.index"))
 
 
 def _get_unifi_client():

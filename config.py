@@ -43,6 +43,7 @@ class Config:
     # Session cookie hardening
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = os.environ.get("FLASK_DEBUG", "0") != "1"
 
     # Default scan interval in hours
     SCAN_INTERVAL_HOURS = int(os.environ.get("SCAN_INTERVAL_HOURS", "6"))

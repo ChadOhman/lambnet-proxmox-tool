@@ -1,8 +1,11 @@
 import json
 import queue as _queue
 import threading
+import time as _time
 import logging
 import paramiko
+
+_IDLE_TIMEOUT = 1800  # 30 minutes — close idle SSH terminals automatically
 import io
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
@@ -239,7 +242,8 @@ def connect_adhoc(guest_id):
         flash("Username is required.", "error")
         return redirect(url_for("terminal.connect", guest_id=guest_id))
 
-    session[f"terminal_cred_{guest_id}"] = {"username": username, "password": password}
+    from credential_store import encrypt as _encrypt
+    session[f"terminal_cred_{guest_id}"] = {"username": username, "password": _encrypt(password) if password else ""}
     return redirect(url_for("terminal.connect", guest_id=guest_id))
 
 
@@ -275,6 +279,8 @@ def _ws_primary(ws, guest_id):
     channel = None
     term_session = None
     send_q = None
+    _audit_guest_id = guest_id
+    _audit_guest_name = None
 
     try:
         # Auth checks
@@ -293,6 +299,8 @@ def _ws_primary(ws, guest_id):
             _ws_send(ws, "error", "Access denied")
             return
 
+        _audit_guest_name = guest.name
+
         # Resolve IP
         ssh_host = _resolve_guest_ip(guest)
         if not ssh_host:
@@ -302,7 +310,8 @@ def _ws_primary(ws, guest_id):
         # Resolve credentials — check session for ad-hoc creds first
         adhoc = session.pop(f"terminal_cred_{guest_id}", None)
         adhoc_username = adhoc.get("username") if adhoc else None
-        adhoc_password = adhoc.get("password") if adhoc else None
+        _adhoc_pw_enc = adhoc.get("password") if adhoc else None
+        adhoc_password = decrypt(_adhoc_pw_enc) if _adhoc_pw_enc else None
 
         credential = None
         if not adhoc_username:
@@ -410,12 +419,33 @@ def _ws_primary(ws, guest_id):
         read_thread = threading.Thread(target=read_from_ssh, daemon=True)
         read_thread.start()
 
+        # Idle-timeout watchdog: close the SSH channel if no input is received
+        # for _IDLE_TIMEOUT seconds, which gracefully ends the main loop.
+        _last_activity = [_time.monotonic()]
+
+        def _idle_watchdog():
+            while not channel.closed:
+                _time.sleep(60)
+                if channel.closed:
+                    break
+                if _time.monotonic() - _last_activity[0] >= _IDLE_TIMEOUT:
+                    logger.info(f"Terminal idle timeout for guest {guest_id} — closing channel")
+                    term_session.send_control({"type": "timeout", "data": "Session closed due to inactivity."})
+                    try:
+                        channel.close()
+                    except Exception:
+                        pass
+                    break
+
+        threading.Thread(target=_idle_watchdog, daemon=True).start()
+
         # Main loop: WebSocket → SSH (primary only)
         while not channel.closed:
             try:
                 message = ws.receive()
                 if message is None:
                     break
+                _last_activity[0] = _time.monotonic()
                 msg = json.loads(message)
                 if msg.get("type") == "input":
                     channel.send(msg["data"])
@@ -441,6 +471,14 @@ def _ws_primary(ws, guest_id):
         logger.error(f"Terminal error for guest {guest_id}: {e}", exc_info=True)
         _ws_send(ws, "error", f"Connection failed: {e}")
     finally:
+        if term_session and _audit_guest_name:
+            log_action("guest_ssh_disconnect", "guest",
+                       resource_id=_audit_guest_id, resource_name=_audit_guest_name,
+                       details={"session_id": term_session.session_id})
+            try:
+                db.session.commit()
+            except Exception:
+                pass
         if send_q is not None:
             try:
                 send_q.put_nowait(None)  # sentinel — stop _primary_sender

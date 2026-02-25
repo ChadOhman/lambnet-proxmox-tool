@@ -138,7 +138,11 @@ def add():
     if host_type not in ("pve", "pbs"):
         host_type = "pve"
     default_port = 8007 if host_type == "pbs" else 8006
-    port = int(request.form.get("port", default_port))
+    try:
+        port = int(request.form.get("port", default_port))
+    except (TypeError, ValueError):
+        flash("Invalid port number.", "error")
+        return redirect(url_for("hosts.index"))
     auth_type = request.form.get("auth_type", "token")
     default_user = "root@pbs" if host_type == "pbs" else "root@pam"
     username = request.form.get("username", default_user).strip()
