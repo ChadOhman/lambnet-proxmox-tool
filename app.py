@@ -126,6 +126,12 @@ def create_app(test_config=None):
         from unifi_syslog import start_syslog_receiver
         start_syslog_receiver(app)
 
+    # Start background scheduler (discovery, scans, UniFi event polling, etc.).
+    # Must run in create_app() so gunicorn picks it up; skip in test mode.
+    if not test_config:
+        from scheduler import init_scheduler
+        init_scheduler(app)
+
     # Warn if running with multiple workers, which breaks in-process collaboration
     _web_concurrency = int(os.environ.get("WEB_CONCURRENCY", "1"))
     if _web_concurrency > 1:
@@ -560,9 +566,4 @@ def _fix_cloudflare_created_via():
 
 if __name__ == "__main__":
     app = create_app()
-
-    # Start scheduler
-    from scheduler import init_scheduler
-    init_scheduler(app)
-
     app.run(host="0.0.0.0", port=5000, debug=os.environ.get("FLASK_DEBUG", "0") == "1")
