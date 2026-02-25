@@ -1,20 +1,21 @@
+import io
 import json
+import logging
 import queue as _queue
 import threading
 import time as _time
-import logging
-import paramiko
 
-_IDLE_TIMEOUT = 1800  # 30 minutes — close idle SSH terminals automatically
-import io
+import paramiko
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from flask_sock import Sock
-from models import db, Guest, Credential, Tag
-from credential_store import decrypt
 from audit import log_action
+from credential_store import decrypt
+from models import db, Guest, Credential, Tag
 
 logger = logging.getLogger(__name__)
+
+_IDLE_TIMEOUT = 1800  # 30 minutes — close idle SSH terminals automatically
 
 bp = Blueprint("terminal", __name__)
 sock = Sock()

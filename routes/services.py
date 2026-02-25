@@ -1,14 +1,15 @@
 import logging
+
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
+from audit import log_action
 from models import db, Guest, GuestService
-
-logger = logging.getLogger(__name__)
 from scanner import (check_service_statuses, service_action, get_service_logs, get_service_stats,
                      sidekiq_clear_dead, sidekiq_retry_dead, sidekiq_list_jobs,
                      sidekiq_delete_job, sidekiq_retry_job,
                      lt_list_installed, lt_list_available, lt_install_package, lt_update_all_packages)
-from audit import log_action
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("services", __name__)
 
