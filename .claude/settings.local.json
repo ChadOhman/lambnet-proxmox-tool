@@ -21,10 +21,25 @@
       "Bash(gh pr create:*)",
       "Bash(pip install:*)",
       "Bash(ruff check:*)",
-      "Bash(gh repo clone:*)"
+      "Bash(gh repo clone:*)",
+      "Bash(git merge:*)",
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(git -C \"c:/Users/ChadOhman/Documents/GitHub/lambnet-proxmox-tool/lambnet-proxmox-tool\" remote -v)",
+      "Bash(git -C \"c:/Users/ChadOhman/Documents/GitHub/lambnet-proxmox-tool/lambnet-proxmox-tool\" branch:*)",
+      "Bash(git -C \"c:/Users/ChadOhman/Documents/GitHub/lambnet-proxmox-tool/lambnet-proxmox-tool\" status)",
+      "Bash(git -C \"c:/Users/ChadOhman/Documents/GitHub/lambnet-proxmox-tool/lambnet-proxmox-tool\" diff routes/api.py tests/test_api_authorization.py)",
+      "Bash(git -C \"c:/Users/ChadOhman/Documents/GitHub/lambnet-proxmox-tool/lambnet-proxmox-tool\" log --oneline -3)",
+      "Bash(git -C \"c:/Users/ChadOhman/Documents/GitHub/lambnet-proxmox-tool/lambnet-proxmox-tool\" push origin security/code-review-fixes)",
+      "Bash(git -C \"c:/Users/ChadOhman/Documents/GitHub/lambnet-proxmox-tool/lambnet-proxmox-tool\" diff --stat HEAD)",
+      "Bash(git stash push:*)",
+      "Bash(git stash:*)",
+      "Bash(python3:*)",
+      "Bash(xargs grep -l \"DEFAULT_ROLES\\\\|seed\\\\|init_db\")"
     ],
     "additionalDirectories": [
-      "\\tmp"
+      "\\tmp",
+      "C:\\Users\\ChadOhman\\.claude\\projects\\c--Users-ChadOhman-Documents-GitHub-lambnet-proxmox-tool-lambnet-proxmox-tool"
     ]
   }
 }

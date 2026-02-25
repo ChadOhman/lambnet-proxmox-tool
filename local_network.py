@@ -11,7 +11,7 @@ Trusted subnets are configurable via the Settings UI.
 
 import ipaddress
 import logging
-from flask import request, g
+from flask import request, g, session
 from flask_login import login_user, current_user
 from models import User, Role, Setting
 
@@ -111,6 +111,7 @@ def init_local_bypass(app):
             Role.name.in_(("super_admin", "admin")),
         ).first()
         if admin and admin.is_active:
+            session.clear()
             login_user(admin)
             g.local_bypass = True
             logger.debug(f"Local bypass: auto-authenticated {client_ip} as admin")

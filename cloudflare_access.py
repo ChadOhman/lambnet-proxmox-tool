@@ -20,7 +20,7 @@ import time
 from urllib.request import urlopen, Request
 
 import jwt as pyjwt  # PyJWT library
-from flask import request, abort, g
+from flask import request, abort, g, session
 from flask_login import login_user
 
 from models import db, User, Role, Setting
@@ -191,6 +191,7 @@ def init_cf_access(app):
         if email:
             user = _get_or_create_cf_user(email, name)
             if user and user.is_active:
+                session.clear()
                 login_user(user)
                 g.cf_access_user = True
             elif not user:

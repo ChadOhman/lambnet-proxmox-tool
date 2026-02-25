@@ -519,8 +519,9 @@ def task_cancel(guest_id, job_type):
         from proxmox_api import ProxmoxClient
         client = ProxmoxClient(job.host_model)
         client.cancel_task(job.node, job.upid)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception:
+        logger.exception("Error cancelling task for guest %s", guest_id)
+        return jsonify({"ok": False, "error": "Failed to cancel task."})
     return jsonify({"ok": True})
 
 
@@ -553,9 +554,9 @@ def guest_rrd(guest_id):
             return jsonify({"error": "Guest not found on any node"}), 404
 
         raw = client.get_rrd_data(node, guest.vmid, guest.guest_type, timeframe=timeframe)
-    except Exception as e:
-        logger.error(f"RRD fetch error for guest {guest_id}: {e}")
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("RRD fetch error for guest %s", guest_id)
+        return jsonify({"error": "Failed to fetch performance data."}), 500
 
     if not raw:
         return jsonify({"labels": [], "cpu": [], "mem_percent": [], "mem_used_mb": [],
@@ -651,9 +652,9 @@ def host_rrd(host_id):
             return jsonify({"error": "Could not determine node name"}), 404
 
         raw = client.get_node_rrd_data(node_name, timeframe=timeframe)
-    except Exception as e:
-        logger.error(f"RRD fetch error for host {host_id}: {e}")
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("RRD fetch error for host %s", host_id)
+        return jsonify({"error": "Failed to fetch performance data."}), 500
 
     if not raw:
         return jsonify({"labels": [], "cpu": [], "mem_percent": [], "mem_used_mb": [],
@@ -910,9 +911,9 @@ def host_guest_stats(host_id):
         client = ProxmoxClient(host)
         node_name = client.get_local_node_name()
         raw = client.get_node_guests(node_name) if node_name else client.get_all_guests()
-    except Exception as e:
-        logger.error(f"Host guest stats error for host {host_id}: {e}")
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Host guest stats error for host %s", host_id)
+        return jsonify({"error": "Failed to fetch host guest statistics."}), 500
 
     stats = {}
     for g in raw:

@@ -1,3 +1,4 @@
+import logging
 import re
 import threading as _threading
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
@@ -10,6 +11,8 @@ from audit import log_action
 # In-memory state for SSH-based apt apply jobs
 _apply_jobs = {}   # host_id -> {"log": [], "running": bool, "success": bool|None, "cancelled": bool}
 _apply_lock = _threading.Lock()
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("hosts", __name__)
 
@@ -481,8 +484,9 @@ def get_updates(host_id):
         else:
             updates = client.get_apt_updates(node_name) if node_name else []
         return jsonify({"updates": updates, "count": len(updates), "node": node_name})
-    except Exception as e:
-        return jsonify({"error": str(e), "updates": [], "count": 0}), 500
+    except Exception:
+        logger.exception("Error fetching updates for host %s", host_id)
+        return jsonify({"error": "Failed to fetch updates.", "updates": [], "count": 0}), 500
 
 
 @bp.route("/<int:host_id>/updates/refresh", methods=["POST"])
@@ -500,8 +504,9 @@ def refresh_updates(host_id):
         log_action("host_refresh_updates", "host", resource_id=host.id, resource_name=host.name)
         db.session.commit()
         return jsonify({"upid": upid, "node": node_name})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Error refreshing apt cache for host %s", host_id)
+        return jsonify({"error": "Failed to refresh apt cache."}), 500
 
 
 @bp.route("/<int:host_id>/task/<path:upid>/status")
@@ -515,8 +520,9 @@ def task_status(host_id, upid):
         else:
             status = client.get_task_status(node_name, upid)
         return jsonify(status or {})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Error fetching task status for host %s upid %s", host_id, upid)
+        return jsonify({"error": "Failed to fetch task status."}), 500
 
 
 @bp.route("/<int:host_id>/task/<path:upid>/log")
@@ -535,8 +541,9 @@ def task_log(host_id, upid):
         else:
             lines = client.get_task_log(node_name, upid, start=start, limit=limit)
         return jsonify({"lines": lines or []})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Error fetching task log for host %s upid %s", host_id, upid)
+        return jsonify({"error": "Failed to fetch task log."}), 500
 
 
 def _run_apply(host_id, hostname, credential_model, app_ctx):
