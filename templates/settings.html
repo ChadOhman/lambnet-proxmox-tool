@@ -182,13 +182,41 @@
                         </label>
                         <div class="form-text">Requires a free <a href="https://dev.maxmind.com/geoip/geolite2-free-geolocation-data" target="_blank" rel="noopener">MaxMind GeoLite2-City</a> database file.</div>
                     </div>
+
+                    {% if geoip_db_info %}
+                    <div class="alert alert-dark border py-2 mb-2 small">
+                        {% if geoip_db_info.size_mb is not none %}
+                        <i class="bi bi-database-check text-success"></i>
+                        Database installed &mdash; <strong>{{ geoip_db_info.size_mb }} MB</strong>
+                        {% if not safety_mode %}<span class="text-muted ms-1 font-monospace">{{ geoip_db_info.path }}</span>{% endif %}
+                        {% else %}
+                        <i class="bi bi-database-exclamation text-warning"></i>
+                        <span class="text-warning">Path configured but file not found</span>
+                        {% if not safety_mode %}<span class="text-muted ms-1 font-monospace">{{ geoip_db_info.path }}</span>{% endif %}
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-2">
+                        <label class="form-label">Upload database file</label>
+                        <form method="post" action="/settings/unifi-logging/upload-geoip"
+                              enctype="multipart/form-data" class="d-flex gap-2 align-items-center">
+                            <input type="file" class="form-control form-control-sm" name="geoip_db"
+                                   accept=".mmdb" style="max-width:300px">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary text-nowrap">
+                                <i class="bi bi-upload"></i> Upload .mmdb
+                            </button>
+                        </form>
+                        <div class="form-text">Uploads to the data directory and sets the path automatically. Typically 60–80 MB.</div>
+                    </div>
+
                     <div class="mb-3">
-                        <label class="form-label">GeoLite2-City.mmdb path</label>
+                        <label class="form-label text-muted small">Or enter path manually</label>
                         {% if safety_mode %}
                         <input type="hidden" name="unifi_geoip_db_path" value="{{ settings.unifi_geoip_db_path or '' }}">
-                        <input type="text" class="form-control text-muted" value="hidden" disabled>
+                        <input type="text" class="form-control form-control-sm text-muted" value="hidden" disabled>
                         {% else %}
-                        <input type="text" class="form-control font-monospace" name="unifi_geoip_db_path"
+                        <input type="text" class="form-control form-control-sm font-monospace" name="unifi_geoip_db_path"
                                value="{{ settings.unifi_geoip_db_path or '' }}"
                                placeholder="/etc/lambnet/GeoLite2-City.mmdb">
                         {% endif %}

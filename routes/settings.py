@@ -96,7 +96,17 @@ def index():
     except Exception:
         pass
 
-    return render_template("settings.html", settings=settings, update_available=False, update_version=None, latest_release=latest_release, backup_storages=backup_storages)
+    # GeoIP file status for the upload widget
+    geoip_db_path = settings.get("unifi_geoip_db_path", "")
+    geoip_db_info = None
+    if geoip_db_path:
+        try:
+            stat = os.stat(geoip_db_path)
+            geoip_db_info = {"path": geoip_db_path, "size_mb": round(stat.st_size / 1024 / 1024, 1)}
+        except OSError:
+            geoip_db_info = {"path": geoip_db_path, "size_mb": None}
+
+    return render_template("settings.html", settings=settings, update_available=False, update_version=None, latest_release=latest_release, backup_storages=backup_storages, geoip_db_info=geoip_db_info)
 
 
 @bp.route("/email", methods=["POST"])
@@ -273,6 +283,77 @@ def save_unifi_logging():
     log_action("settings_unifi_logging_save", "settings", resource_name="unifi_logging")
     db.session.commit()
     flash("UniFi log collection settings saved. Restart the app for syslog changes to take effect.", "success")
+    return redirect(url_for("settings.index"))
+
+
+@bp.route("/unifi-logging/upload-geoip", methods=["POST"])
+def upload_geoip_db():
+    """Accept an uploaded MaxMind GeoLite2-City .mmdb file and save it to DATA_DIR."""
+    _MAX_BYTES = 150 * 1024 * 1024  # 150 MB
+
+    if "geoip_db" not in request.files:
+        flash("No file selected.", "error")
+        return redirect(url_for("settings.index"))
+
+    f = request.files["geoip_db"]
+    if not f or not f.filename:
+        flash("No file selected.", "error")
+        return redirect(url_for("settings.index"))
+
+    if not f.filename.lower().endswith(".mmdb"):
+        flash("Invalid file type — expected a .mmdb file.", "error")
+        return redirect(url_for("settings.index"))
+
+    dest_path = os.path.join(DATA_DIR, "GeoLite2-City.mmdb")
+
+    # Stream to disk to avoid large in-memory buffers
+    bytes_written = 0
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp_path = dest_path + ".tmp"
+        with open(tmp_path, "wb") as out:
+            while True:
+                chunk = f.stream.read(65536)
+                if not chunk:
+                    break
+                bytes_written += len(chunk)
+                if bytes_written > _MAX_BYTES:
+                    out.close()
+                    os.remove(tmp_path)
+                    flash("File too large (max 150 MB).", "error")
+                    return redirect(url_for("settings.index"))
+                out.write(chunk)
+    except OSError as e:
+        flash(f"Could not save file: {e}", "error")
+        return redirect(url_for("settings.index"))
+
+    # Validate: try opening with geoip2 if available
+    try:
+        import geoip2.database
+        reader = geoip2.database.Reader(tmp_path)
+        reader.close()
+    except ImportError:
+        pass  # geoip2 not installed yet — accept the file
+    except Exception as e:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        flash(f"File does not appear to be a valid MaxMind database: {e}", "error")
+        return redirect(url_for("settings.index"))
+
+    os.replace(tmp_path, dest_path)
+
+    # Reset the cached reader so the new file is used immediately
+    import unifi_geoip
+    unifi_geoip.close()
+
+    size_mb = round(bytes_written / 1024 / 1024, 1)
+    Setting.set("unifi_geoip_db_path", dest_path)
+    log_action("settings_geoip_upload", "settings", resource_name="geoip_db",
+               details={"path": dest_path, "size_mb": size_mb})
+    db.session.commit()
+    flash(f"GeoIP database uploaded ({size_mb} MB). Path set to {dest_path}.", "success")
     return redirect(url_for("settings.index"))
 
 
