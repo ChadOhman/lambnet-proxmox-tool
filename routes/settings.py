@@ -290,27 +290,32 @@ def save_unifi_logging():
 def upload_geoip_db():
     """Accept an uploaded MaxMind GeoLite2-City .mmdb file and save it to DATA_DIR."""
     _MAX_BYTES = 150 * 1024 * 1024  # 150 MB
+    _ANCHOR = "#geoip-section"
+    is_xhr = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+    def _err(msg, status=400):
+        if is_xhr:
+            return jsonify({"ok": False, "message": msg}), status
+        flash(msg, "error")
+        return redirect(url_for("settings.index") + _ANCHOR)
 
     if "geoip_db" not in request.files:
-        flash("No file selected.", "error")
-        return redirect(url_for("settings.index"))
+        return _err("No file selected.")
 
     f = request.files["geoip_db"]
     if not f or not f.filename:
-        flash("No file selected.", "error")
-        return redirect(url_for("settings.index"))
+        return _err("No file selected.")
 
     if not f.filename.lower().endswith(".mmdb"):
-        flash("Invalid file type — expected a .mmdb file.", "error")
-        return redirect(url_for("settings.index"))
+        return _err("Invalid file type — expected a .mmdb file.")
 
     dest_path = os.path.join(DATA_DIR, "GeoLite2-City.mmdb")
 
     # Stream to disk to avoid large in-memory buffers
     bytes_written = 0
+    tmp_path = dest_path + ".tmp"
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
-        tmp_path = dest_path + ".tmp"
         with open(tmp_path, "wb") as out:
             while True:
                 chunk = f.stream.read(65536)
@@ -320,12 +325,10 @@ def upload_geoip_db():
                 if bytes_written > _MAX_BYTES:
                     out.close()
                     os.remove(tmp_path)
-                    flash("File too large (max 150 MB).", "error")
-                    return redirect(url_for("settings.index"))
+                    return _err("File too large (max 150 MB).")
                 out.write(chunk)
     except OSError as e:
-        flash(f"Could not save file: {e}", "error")
-        return redirect(url_for("settings.index"))
+        return _err(f"Could not save file: {e}")
 
     # Validate: try opening with geoip2 if available
     try:
@@ -339,8 +342,7 @@ def upload_geoip_db():
             os.remove(tmp_path)
         except OSError:
             pass
-        flash(f"File does not appear to be a valid MaxMind database: {e}", "error")
-        return redirect(url_for("settings.index"))
+        return _err(f"File does not appear to be a valid MaxMind database: {e}")
 
     os.replace(tmp_path, dest_path)
 
@@ -353,8 +355,12 @@ def upload_geoip_db():
     log_action("settings_geoip_upload", "settings", resource_name="geoip_db",
                details={"path": dest_path, "size_mb": size_mb})
     db.session.commit()
-    flash(f"GeoIP database uploaded ({size_mb} MB). Path set to {dest_path}.", "success")
-    return redirect(url_for("settings.index"))
+
+    msg = f"GeoIP database uploaded ({size_mb} MB). Path set to {dest_path}."
+    if is_xhr:
+        return jsonify({"ok": True, "message": msg, "path": dest_path, "size_mb": size_mb})
+    flash(msg, "success")
+    return redirect(url_for("settings.index") + _ANCHOR)
 
 
 @bp.route("/app-update-mode", methods=["POST"])

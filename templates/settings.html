@@ -173,7 +173,7 @@
                                placeholder="5">
                     </div>
 
-                    <h6 class="text-muted mb-2 mt-3">GeoIP Enrichment</h6>
+                    <h6 class="text-muted mb-2 mt-3" id="geoip-section">GeoIP Enrichment</h6>
                     <div class="form-check mb-2">
                         <input type="checkbox" class="form-check-input" name="unifi_geoip_enabled" id="geoipEnabled"
                                {{ 'checked' if settings.unifi_geoip_enabled == 'true' }}>
@@ -183,6 +183,7 @@
                         <div class="form-text">Requires a free <a href="https://dev.maxmind.com/geoip/geolite2-free-geolocation-data" target="_blank" rel="noopener">MaxMind GeoLite2-City</a> database file.</div>
                     </div>
 
+                    <div id="geoip-db-badge">
                     {% if geoip_db_info %}
                     <div class="alert alert-dark border py-2 mb-2 small">
                         {% if geoip_db_info.size_mb is not none %}
@@ -196,17 +197,27 @@
                         {% endif %}
                     </div>
                     {% endif %}
+                    </div>
+
+                    <div id="geoip-status" class="mb-2"></div>
 
                     <div class="mb-2">
                         <label class="form-label">Upload database file</label>
-                        <form method="post" action="/settings/unifi-logging/upload-geoip"
+                        <form id="geoip-upload-form" method="post" action="/settings/unifi-logging/upload-geoip"
                               enctype="multipart/form-data" class="d-flex gap-2 align-items-center">
-                            <input type="file" class="form-control form-control-sm" name="geoip_db"
+                            <input type="file" id="geoip-file-input" class="form-control form-control-sm" name="geoip_db"
                                    accept=".mmdb" style="max-width:300px">
-                            <button type="submit" class="btn btn-sm btn-outline-secondary text-nowrap">
+                            <button type="submit" id="geoip-upload-btn" class="btn btn-sm btn-outline-secondary text-nowrap">
                                 <i class="bi bi-upload"></i> Upload .mmdb
                             </button>
                         </form>
+                        <div id="geoip-progress-wrap" class="mt-2 d-none">
+                            <div class="progress" style="height:6px">
+                                <div id="geoip-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                                     role="progressbar" style="width:0%"></div>
+                            </div>
+                            <small id="geoip-progress-label" class="text-muted mt-1 d-block"></small>
+                        </div>
                         <div class="form-text">Uploads to the data directory and sets the path automatically. Typically 60–80 MB.</div>
                     </div>
 
@@ -216,11 +227,105 @@
                         <input type="hidden" name="unifi_geoip_db_path" value="{{ settings.unifi_geoip_db_path or '' }}">
                         <input type="text" class="form-control form-control-sm text-muted" value="hidden" disabled>
                         {% else %}
-                        <input type="text" class="form-control form-control-sm font-monospace" name="unifi_geoip_db_path"
+                        <input type="text" id="geoip-path-input" class="form-control form-control-sm font-monospace" name="unifi_geoip_db_path"
                                value="{{ settings.unifi_geoip_db_path or '' }}"
                                placeholder="/etc/lambnet/GeoLite2-City.mmdb">
                         {% endif %}
                     </div>
+
+                    <script>
+                    (function () {
+                        var form = document.getElementById('geoip-upload-form');
+                        var fileInput = document.getElementById('geoip-file-input');
+                        var btn = document.getElementById('geoip-upload-btn');
+                        var progressWrap = document.getElementById('geoip-progress-wrap');
+                        var progressBar = document.getElementById('geoip-progress-bar');
+                        var progressLabel = document.getElementById('geoip-progress-label');
+                        var statusDiv = document.getElementById('geoip-status');
+                        var badgeDiv = document.getElementById('geoip-db-badge');
+                        var pathInput = document.getElementById('geoip-path-input');
+
+                        if (!form) return;
+
+                        form.addEventListener('submit', function (e) {
+                            if (!fileInput || !fileInput.files || !fileInput.files.length) return;
+                            e.preventDefault();
+
+                            var file = fileInput.files[0];
+                            var formData = new FormData();
+                            formData.append('geoip_db', file);
+
+                            // Reset UI
+                            statusDiv.innerHTML = '';
+                            progressWrap.classList.remove('d-none');
+                            progressBar.style.width = '0%';
+                            progressLabel.textContent = 'Starting upload…';
+                            btn.disabled = true;
+                            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Uploading…';
+
+                            var xhr = new XMLHttpRequest();
+                            xhr.open('POST', '/settings/unifi-logging/upload-geoip');
+                            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+                            xhr.upload.onprogress = function (evt) {
+                                if (!evt.lengthComputable) return;
+                                var pct = Math.round((evt.loaded / evt.total) * 100);
+                                var loadedMb = (evt.loaded / 1048576).toFixed(1);
+                                var totalMb  = (evt.total  / 1048576).toFixed(1);
+                                progressBar.style.width = pct + '%';
+                                progressLabel.textContent = loadedMb + ' MB / ' + totalMb + ' MB (' + pct + '%)';
+                            };
+
+                            xhr.onload = function () {
+                                progressWrap.classList.add('d-none');
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="bi bi-upload"></i> Upload .mmdb';
+                                fileInput.value = '';
+
+                                var data = {};
+                                try { data = JSON.parse(xhr.responseText); } catch (_) {}
+
+                                if (xhr.status >= 200 && xhr.status < 300 && data.ok) {
+                                    statusDiv.innerHTML =
+                                        '<div class="alert alert-success py-2 small">' +
+                                        '<i class="bi bi-check-circle-fill me-1"></i>' +
+                                        (data.message || 'Upload successful') + '</div>';
+                                    // Update the status badge inline
+                                    if (badgeDiv && data.path) {
+                                        var sizeTxt = data.size_mb ? '<strong>' + data.size_mb + ' MB</strong>' : '';
+                                        badgeDiv.innerHTML =
+                                            '<div class="alert alert-dark border py-2 mb-2 small">' +
+                                            '<i class="bi bi-database-check text-success"></i> ' +
+                                            'Database installed &mdash; ' + sizeTxt +
+                                            '<span class="text-muted ms-1 font-monospace">' + data.path + '</span>' +
+                                            '</div>';
+                                    }
+                                    // Auto-fill manual path field
+                                    if (pathInput && data.path) {
+                                        pathInput.value = data.path;
+                                    }
+                                } else {
+                                    statusDiv.innerHTML =
+                                        '<div class="alert alert-danger py-2 small">' +
+                                        '<i class="bi bi-exclamation-triangle-fill me-1"></i>' +
+                                        (data.message || 'Upload failed (HTTP ' + xhr.status + ')') + '</div>';
+                                }
+                            };
+
+                            xhr.onerror = function () {
+                                progressWrap.classList.add('d-none');
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="bi bi-upload"></i> Upload .mmdb';
+                                statusDiv.innerHTML =
+                                    '<div class="alert alert-danger py-2 small">' +
+                                    '<i class="bi bi-exclamation-triangle-fill me-1"></i>' +
+                                    'Network error — upload failed.</div>';
+                            };
+
+                            xhr.send(formData);
+                        });
+                    })();
+                    </script>
 
                     <h6 class="text-muted mb-2 mt-3">Retention</h6>
                     <div class="mb-3">
