@@ -47,6 +47,11 @@ def index():
     guests_with_updates = [g for g in filtered_guests if g.status == "updates-available"]
 
     total_hosts = ProxmoxHost.query.count()
+    hosts_for_updates = (
+        ProxmoxHost.query.order_by(ProxmoxHost.name).all()
+        if (current_user.can_view_hosts or current_user.can_manage_hosts)
+        else []
+    )
 
     if filtered_guest_ids:
         total_updates = UpdatePackage.query.filter(
@@ -141,4 +146,5 @@ def index():
         tags=tags,
         current_tag=tag_filter,
         user_tag_names=user_tag_names,
+        hosts_for_updates=hosts_for_updates,
     )
