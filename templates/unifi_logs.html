@@ -4,9 +4,14 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2><i class="bi bi-journal-text"></i> Network Logs</h2>
-    <a href="{{ url_for('unifi.index') }}" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-arrow-left"></i> Back to Network
-    </a>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="location.reload()" title="Refresh">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <a href="{{ url_for('unifi.index') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Back to Network
+        </a>
+    </div>
 </div>
 
 {% if access_restricted %}
@@ -190,7 +195,7 @@
                                 {% if entry.city %}
                                 <div class="col-auto"><strong>City:</strong> {{ entry.city }}</div>
                                 {% endif %}
-                                <div class="col-auto"><strong>Source:</strong> {{ entry.source or 'syslog' }}</div>
+                                <div class="col-auto"><strong>Source:</strong> {{ entry.source or 'api' }}</div>
                                 {% if entry.raw and not safety_mode %}
                                 <div class="col-12 mt-1">
                                     <code class="text-secondary" style="word-break:break-all;font-size:0.72em">{{ entry.raw }}</code>
@@ -205,8 +210,8 @@
                             <i class="bi bi-journal-x display-6"></i>
                             <p class="mt-2 mb-0">No log entries found for the selected filters.</p>
                             {% if not (log_type or action or direction or search) %}
-                            <small>Enable syslog forwarding in UniFi and configure log collection in
-                                <a href="{{ url_for('settings.index') }}">Settings</a>.</small>
+                            <small>Enable API event polling in
+                                <a href="{{ url_for('settings.index') }}">Settings → UniFi Log Collection</a>.</small>
                             {% endif %}
                         </td>
                     </tr>
