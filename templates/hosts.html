@@ -30,6 +30,7 @@
                     {% else %}
                     <span class="badge bg-primary ms-2" title="Proxmox VE">PVE</span>
                     {% endif %}
+                    <span id="upd-{{ host.id }}" class="d-none ms-1"></span>
                 </h5>
                 <div class="dropdown">
                     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
@@ -187,5 +188,26 @@ function onHostTypeChange() {
 
 // Hide hint initially (PVE selected by default)
 document.getElementById('hostUsernameHint').classList.add('d-none');
+
+// ── Update badges ─────────────────────────────────────────────────────────────
+(function() {
+    const ids = [{% for host in hosts %}{{ host.id }},{% endfor %}];
+    ids.forEach(id => {
+        fetch('/hosts/' + id + '/updates', { cache: 'no-store' })
+            .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+            .then(data => {
+                const el = document.getElementById('upd-' + id);
+                if (!el) return;
+                const count = (data.updates || []).length;
+                if (count > 0) {
+                    el.innerHTML = '<span class="badge bg-warning text-dark" title="' + count + ' pending update' + (count !== 1 ? 's' : '') + '"><i class="bi bi-arrow-up-circle-fill"></i> ' + count + '</span>';
+                } else if (data.updates) {
+                    el.innerHTML = '<span class="badge bg-success" title="System is up to date"><i class="bi bi-check-circle-fill"></i></span>';
+                }
+                el.classList.remove('d-none');
+            })
+            .catch(() => {});  // silently fail
+    });
+})();
 </script>
 {% endblock %}
