@@ -70,6 +70,26 @@ def _get_accessible_ips(user):
     return {g.ip_address for g in guests if g.ip_address}
 
 
+def _get_accessible_networks(user):
+    """Return set of UniFi network names accessible to user, or None if unrestricted.
+
+    Returns None for super admins and for users whose tags have no network links
+    configured (backwards compatible — no filtering until links are set up).
+    Returns a set (possibly empty) once any tag-network links exist for the user.
+    """
+    if user.is_super_admin:
+        return None
+    networks = set()
+    has_links = False
+    for tag in user.allowed_tags:
+        for n in tag.unifi_networks:
+            networks.add(n.network_name)
+            has_links = True
+    if not has_links:
+        return None  # No links configured yet: don't filter (backwards compatible)
+    return networks
+
+
 @bp.route("/")
 def index():
     enabled = Setting.get("unifi_enabled", "false") == "true"
@@ -91,6 +111,12 @@ def index():
     if subnet_filter:
         devices = _filter_by_subnet(devices, "ip", subnet_filter)
         clients = _filter_by_subnet(clients, "ip", subnet_filter)
+
+    # Network-based access control: filter clients to networks linked to user's tags
+    accessible_networks = _get_accessible_networks(current_user)
+    network_restricted = accessible_networks is not None
+    if accessible_networks is not None:
+        clients = [c for c in clients if c.get("network", "") in accessible_networks]
 
     # Sort
     devices.sort(key=lambda d: d.get("name", "").lower())
@@ -137,6 +163,8 @@ def index():
         subnet_filter=subnet_filter,
         chart_direction=chart_direction,
         chart_blocked=chart_blocked,
+        network_restricted=network_restricted,
+        accessible_networks=sorted(accessible_networks) if accessible_networks is not None else None,
     )
 
 

@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
-from models import db, User, Role, Tag, Setting, AuditLog
+from models import db, User, Role, Tag, TagUnifiNetwork, Setting, AuditLog
 from audit import log_action
 
 bp = Blueprint("security", __name__)
@@ -56,7 +56,7 @@ def _get_access_settings():
 def index():
     users = User.query.options(db.joinedload(User.role_obj)).order_by(User.username).all()
     roles = Role.query.order_by(Role.level.desc(), Role.name).all()
-    tags = Tag.query.order_by(Tag.name).all()
+    tags = Tag.query.options(db.joinedload(Tag.unifi_networks)).order_by(Tag.name).all()
     settings = _get_access_settings() if current_user.is_super_admin else {}
 
     audit_pagination = None
@@ -66,8 +66,20 @@ def index():
                             .order_by(AuditLog.timestamp.desc())
                             .paginate(page=page, per_page=50, error_out=False))
 
+    # Fetch available UniFi networks for the tag-network link UI (super_admin only)
+    unifi_networks_available = []
+    if current_user.is_super_admin and Setting.get("unifi_enabled", "false") == "true":
+        try:
+            from routes.unifi import _get_unifi_client
+            client = _get_unifi_client()
+            if client:
+                unifi_networks_available = client.get_networks()
+        except Exception:
+            pass
+
     return render_template("security.html", users=users, roles=roles, tags=tags,
-                           settings=settings, audit_pagination=audit_pagination)
+                           settings=settings, audit_pagination=audit_pagination,
+                           unifi_networks_available=unifi_networks_available)
 
 
 # --- User management ---
@@ -322,6 +334,24 @@ def delete_tag(tag_id):
     db.session.delete(tag)
     db.session.commit()
     flash(f"Tag '{name}' deleted.", "warning")
+    return redirect(url_for("security.index"))
+
+
+@bp.route("/tags/<int:tag_id>/networks", methods=["POST"])
+def set_tag_networks(tag_id):
+    tag = Tag.query.get_or_404(tag_id)
+    network_names = request.form.getlist("network_names")
+    # Validate: names must be non-empty strings, no SQL injection via ORM
+    network_names = [n.strip() for n in network_names if n.strip()]
+
+    TagUnifiNetwork.query.filter_by(tag_id=tag_id).delete()
+    for name in network_names:
+        db.session.add(TagUnifiNetwork(tag_id=tag_id, network_name=name))
+
+    log_action("tag_networks_update", "tag", resource_id=tag.id, resource_name=tag.name,
+               details={"networks": network_names})
+    db.session.commit()
+    flash(f"Network links updated for tag '{tag.name}'.", "success")
     return redirect(url_for("security.index"))
 
 

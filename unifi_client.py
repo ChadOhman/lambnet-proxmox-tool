@@ -151,6 +151,24 @@ class UniFiClient:
             {"cmd": "restart", "mac": mac},
         )
 
+    def get_networks(self):
+        """List network configurations (VLANs/SSIDs) from the UniFi controller."""
+        raw = self._api_get(f"/api/s/{self.site}/rest/networkconf")
+        if raw is None:
+            return []
+        networks = []
+        for n in raw:
+            purpose = n.get("purpose", "")
+            if purpose in ("wan", "wan2"):
+                continue  # Skip WAN interfaces
+            networks.append({
+                "id": n.get("_id", ""),
+                "name": n.get("name", ""),
+                "purpose": purpose,
+                "vlan": n.get("vlan", None),
+            })
+        return sorted(networks, key=lambda x: x["name"].lower())
+
     def test_connection(self):
         if not self.login():
             return False, "Login failed"

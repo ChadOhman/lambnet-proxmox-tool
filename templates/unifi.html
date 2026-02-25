@@ -34,6 +34,14 @@
 </div>
 {% else %}
 
+{% if network_restricted %}
+<div class="alert alert-info py-2 mb-3">
+    <i class="bi bi-shield-lock"></i> <strong>Access restricted:</strong>
+    Showing clients on networks linked to your access tags
+    {% if accessible_networks %}— <strong>{{ accessible_networks | join(', ') }}</strong>{% endif %}.
+</div>
+{% endif %}
+
 {% if subnet_filter %}
 <p class="text-muted mb-3"><i class="bi bi-funnel"></i> Filtered to subnet: <code>{{ subnet_filter }}</code></p>
 {% endif %}

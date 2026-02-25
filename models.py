@@ -268,8 +268,20 @@ class Tag(db.Model):
     color = db.Column(db.String(7), default="#6c757d")  # hex color for UI
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
+    unifi_networks = db.relationship(
+        "TagUnifiNetwork", backref="tag", cascade="all, delete-orphan", passive_deletes=True
+    )
+
     def __repr__(self):
         return f"<Tag {self.name}>"
+
+
+class TagUnifiNetwork(db.Model):
+    """Links a tag to one or more UniFi network names for access control filtering."""
+    __tablename__ = "tag_unifi_networks"
+
+    tag_id = db.Column(db.Integer, db.ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    network_name = db.Column(db.String(64), primary_key=True)
 
 
 class ProxmoxHost(db.Model):
