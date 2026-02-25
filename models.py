@@ -286,9 +286,11 @@ class ProxmoxHost(db.Model):
     api_token_secret = db.Column(db.Text)  # encrypted
     verify_ssl = db.Column(db.Boolean, default=False)
     host_type = db.Column(db.String(16), default="pve")  # "pve" or "pbs"
+    ssh_credential_id = db.Column(db.Integer, db.ForeignKey("credentials.id"), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     guests = db.relationship("Guest", backref="proxmox_host", lazy=True, cascade="all, delete-orphan")
+    ssh_credential = db.relationship("Credential", foreign_keys=[ssh_credential_id])
 
     @property
     def is_pbs(self):

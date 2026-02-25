@@ -282,6 +282,10 @@ def _migrate_schema():
             logger.info("Adding host_type column to proxmox_hosts table...")
             db.session.execute(text("ALTER TABLE proxmox_hosts ADD COLUMN host_type VARCHAR(16) DEFAULT 'pve'"))
             db.session.commit()
+        if "ssh_credential_id" not in host_columns:
+            logger.info("Adding ssh_credential_id column to proxmox_hosts table...")
+            db.session.execute(text("ALTER TABLE proxmox_hosts ADD COLUMN ssh_credential_id INTEGER"))
+            db.session.commit()
 
 
 def _migrate_roles():

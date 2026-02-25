@@ -643,6 +643,22 @@ class ProxmoxClient:
             logger.error(f"Failed to get RRD data for {guest_type}/{vmid}: {e}")
             return []
 
+    # ------------------------------------------------------------------
+    # apt update management
+    # ------------------------------------------------------------------
+
+    def get_apt_updates(self, node):
+        """List pending apt packages. Each item has: Package, Title, Version, OldVersion, Priority."""
+        try:
+            return self.api.nodes(node).apt.update.get()
+        except Exception as e:
+            logger.error(f"Failed to get apt updates for {node}: {e}")
+            return []
+
+    def refresh_apt_cache(self, node):
+        """Run apt-get update on node. Returns UPID string."""
+        return self.api.nodes(node).apt.update.post()
+
     def test_connection(self):
         """Test API connectivity and return version info."""
         try:

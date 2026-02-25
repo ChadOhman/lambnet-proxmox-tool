@@ -405,6 +405,98 @@
 </div>
 {% endif %}
 
+<!-- SSH Credential for Updates -->
+<div class="card bg-dark mb-4 mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-key"></i> SSH Credential <small class="text-muted fw-normal">(for applying updates)</small></h5>
+        {% if host.ssh_credential %}
+        <span class="badge bg-success">{{ host.ssh_credential.name }}</span>
+        {% else %}
+        <span class="badge bg-secondary">Not set</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <form method="post" action="/hosts/{{ host.id }}/ssh-credential" class="d-flex gap-2 align-items-center">
+            <select name="credential_id" class="form-select form-select-sm bg-dark text-light border-secondary" style="max-width: 350px;">
+                <option value="">— None (disables Apply Updates) —</option>
+                {% for cred in credentials %}
+                <option value="{{ cred.id }}" {% if host.ssh_credential_id == cred.id %}selected{% endif %}>
+                    {{ cred.name }} ({{ cred.username }})
+                </option>
+                {% endfor %}
+            </select>
+            {% if current_user.can_manage_hosts %}
+            <button type="submit" class="btn btn-secondary btn-sm">Save</button>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<!-- Pending Updates -->
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+            <i class="bi bi-arrow-up-circle"></i> Pending Updates
+            <span id="updateCountBadge" class="badge bg-secondary ms-2 d-none">0</span>
+        </h5>
+        <div class="d-flex gap-2">
+            {% if current_user.can_manage_hosts %}
+            <button id="refreshCacheBtn" class="btn btn-outline-secondary btn-sm" title="Run apt-get update">
+                <i class="bi bi-arrow-clockwise"></i> Refresh Cache
+            </button>
+            <button id="applyUpdatesBtn" class="btn btn-outline-success btn-sm"
+                    {% if not host.ssh_credential %}disabled title="Set an SSH credential above to enable"{% endif %}>
+                <i class="bi bi-play-fill"></i> Apply All
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div id="updatesLoading" class="text-center text-muted py-4">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading updates...
+        </div>
+        <div id="updatesEmpty" class="text-center text-success py-4 d-none">
+            <i class="bi bi-check-circle-fill me-2"></i>System is up to date
+        </div>
+        <div id="updatesError" class="text-center text-muted py-4 d-none"></div>
+        <div id="updatesTableWrap" class="table-responsive d-none">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>Package</th>
+                        <th>Current Version</th>
+                        <th>Available Version</th>
+                        <th>Priority</th>
+                    </tr>
+                </thead>
+                <tbody id="updatesTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Refresh Cache Modal -->
+<div class="modal fade" id="refreshCacheModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">
+                    <div class="spinner-border spinner-border-sm me-2" id="refreshSpinner" role="status"></div>
+                    Refreshing Package Cache
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <pre id="refreshLogOutput" style="background:#1a1a2e;color:#e0e0e0;padding:1rem;margin:0;min-height:200px;max-height:400px;overflow-y:auto;font-size:0.82rem;white-space:pre-wrap;word-wrap:break-word;border-radius:0;"></pre>
+            </div>
+            <div class="modal-footer border-secondary">
+                <span id="refreshStatus" class="text-muted me-auto small"></span>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" id="refreshCloseBtn">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% if current_user.can_view_audit_log %}
 <div class="card bg-dark mb-4">
     <div class="card-header" style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#recentActivityCollapse" aria-expanded="false" aria-controls="recentActivityCollapse">
@@ -641,6 +733,145 @@
 
     fetchGuestStats();
     setInterval(fetchGuestStats, 30000);
+})();
+
+// ── Pending updates ───────────────────────────────────────────────────────────
+(function() {
+    const hostId = {{ host.id }};
+    const updatesLoading   = document.getElementById('updatesLoading');
+    const updatesEmpty     = document.getElementById('updatesEmpty');
+    const updatesError     = document.getElementById('updatesError');
+    const updatesTableWrap = document.getElementById('updatesTableWrap');
+    const updatesTableBody = document.getElementById('updatesTableBody');
+    const updateCountBadge = document.getElementById('updateCountBadge');
+    const refreshCacheBtn  = document.getElementById('refreshCacheBtn');
+    const applyUpdatesBtn  = document.getElementById('applyUpdatesBtn');
+
+    function escHtml(s) {
+        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function loadUpdates() {
+        updatesLoading.classList.remove('d-none');
+        updatesEmpty.classList.add('d-none');
+        updatesError.classList.add('d-none');
+        updatesTableWrap.classList.add('d-none');
+        updateCountBadge.classList.add('d-none');
+        fetch('/hosts/' + hostId + '/updates', { cache: 'no-store' })
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(data => {
+                updatesLoading.classList.add('d-none');
+                if (data.error) {
+                    updatesError.textContent = data.error;
+                    updatesError.classList.remove('d-none');
+                    return;
+                }
+                const pkgs = data.updates || [];
+                if (pkgs.length === 0) {
+                    updatesEmpty.classList.remove('d-none');
+                    updateCountBadge.textContent = '0';
+                    updateCountBadge.className = 'badge bg-success ms-2';
+                    updateCountBadge.classList.remove('d-none');
+                    return;
+                }
+                updatesTableBody.innerHTML = pkgs.map(p =>
+                    '<tr><td><code>' + escHtml(p.Package || p.package) + '</code></td>' +
+                    '<td><small class="text-muted">' + escHtml(p.OldVersion || p.old_version || '—') + '</small></td>' +
+                    '<td><small class="text-success">' + escHtml(p.Version || p.version || '—') + '</small></td>' +
+                    '<td><small class="text-muted">' + escHtml(p.Priority || p.priority || '—') + '</small></td></tr>'
+                ).join('');
+                updatesTableWrap.classList.remove('d-none');
+                updateCountBadge.textContent = pkgs.length;
+                updateCountBadge.className = 'badge bg-warning text-dark ms-2';
+                updateCountBadge.classList.remove('d-none');
+            })
+            .catch(() => {
+                updatesLoading.classList.add('d-none');
+                updatesError.textContent = 'Could not load updates.';
+                updatesError.classList.remove('d-none');
+            });
+    }
+
+    if (refreshCacheBtn) {
+        const modalEl = document.getElementById('refreshCacheModal');
+        const refreshModal = new bootstrap.Modal(modalEl);
+        const refreshLog     = document.getElementById('refreshLogOutput');
+        const refreshStatus  = document.getElementById('refreshStatus');
+        const refreshSpinner = document.getElementById('refreshSpinner');
+        const refreshCloseBtn = document.getElementById('refreshCloseBtn');
+
+        refreshCacheBtn.addEventListener('click', function() {
+            refreshLog.textContent = '';
+            refreshStatus.textContent = 'Starting apt-get update\u2026';
+            refreshSpinner.classList.remove('d-none');
+            refreshCloseBtn.disabled = true;
+            refreshModal.show();
+            fetch('/hosts/' + hostId + '/updates/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.upid) {
+                        refreshLog.textContent = data.error || 'Failed to start refresh.';
+                        refreshSpinner.classList.add('d-none');
+                        refreshCloseBtn.disabled = false;
+                        return;
+                    }
+                    pollRefreshTask(data.upid);
+                })
+                .catch(err => {
+                    refreshLog.textContent = 'Error: ' + err.message;
+                    refreshSpinner.classList.add('d-none');
+                    refreshCloseBtn.disabled = false;
+                });
+        });
+
+        function pollRefreshTask(upid) {
+            let logStart = 0;
+            function tick() {
+                Promise.all([
+                    fetch('/hosts/' + hostId + '/task/' + encodeURIComponent(upid) + '/log?start=' + logStart, { cache: 'no-store' })
+                        .then(r => r.json()).catch(() => ({})),
+                    fetch('/hosts/' + hostId + '/task/' + encodeURIComponent(upid) + '/status', { cache: 'no-store' })
+                        .then(r => r.json()).catch(() => ({}))
+                ]).then(([logData, statusData]) => {
+                    if (logData.lines && logData.lines.length) {
+                        logData.lines.forEach(l => { refreshLog.textContent += (l.t || '') + '\n'; });
+                        logStart += logData.lines.length;
+                        refreshLog.scrollTop = refreshLog.scrollHeight;
+                    }
+                    const running = !statusData.status || statusData.status === 'running';
+                    if (running) {
+                        refreshStatus.textContent = 'Running\u2026';
+                        setTimeout(tick, 2000);
+                    } else {
+                        refreshSpinner.classList.add('d-none');
+                        refreshCloseBtn.disabled = false;
+                        const exitOk = statusData.exitstatus === 'OK';
+                        refreshStatus.textContent = exitOk
+                            ? 'Cache refreshed successfully.'
+                            : ('Finished: ' + (statusData.exitstatus || 'unknown'));
+                        if (exitOk) loadUpdates();
+                    }
+                });
+            }
+            setTimeout(tick, 1000);
+        }
+    }
+
+    if (applyUpdatesBtn && !applyUpdatesBtn.disabled) {
+        applyUpdatesBtn.addEventListener('click', function() {
+            if (!confirm('Apply all pending updates to this host via SSH?\nThis may take several minutes.')) return;
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/hosts/' + hostId + '/updates/apply';
+            document.body.appendChild(form);
+            form.submit();
+        });
+    }
+
+    loadUpdates();
 })();
 </script>
 {% endblock %}

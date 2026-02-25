@@ -1,10 +1,15 @@
 import re
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+import threading as _threading
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
-from models import db, ProxmoxHost, Guest, Tag, AuditLog
+from models import db, ProxmoxHost, Guest, Tag, AuditLog, Credential
 from credential_store import encrypt
 from proxmox_api import ProxmoxClient
 from audit import log_action
+
+# In-memory state for SSH-based apt apply jobs
+_apply_jobs = {}   # host_id -> {"log": [], "running": bool, "success": bool|None, "cancelled": bool}
+_apply_lock = _threading.Lock()
 
 bp = Blueprint("hosts", __name__)
 
@@ -12,10 +17,15 @@ bp = Blueprint("hosts", __name__)
 @bp.before_request
 @login_required
 def _require_login():
-    # Read-only routes (index, detail) require can_view_hosts
+    # Read-only routes require can_view_hosts (or can_manage_hosts)
     # Discover routes require super_admin
-    # Other write routes (add, delete, test) require can_manage_hosts
-    read_only_endpoints = {"hosts.index", "hosts.detail"}
+    # Update management read routes require can_view_hosts
+    # Update management write routes require can_manage_hosts
+    read_only_endpoints = {
+        "hosts.index", "hosts.detail",
+        "hosts.get_updates", "hosts.task_status", "hosts.task_log",
+        "hosts.apply_progress", "hosts.apply_status",
+    }
     discover_endpoints = {"hosts.discover", "hosts.discover_all"}
     if request.endpoint in read_only_endpoints:
         if not current_user.can_view_hosts and not current_user.can_manage_hosts:
@@ -64,6 +74,7 @@ def detail(host_id):
                                    AuditLog.timestamp >= cutoff)
                            .order_by(AuditLog.timestamp.desc())
                            .limit(25).all())
+        credentials = Credential.query.order_by(Credential.name).all()
         return render_template(
             "host_detail.html",
             host=host,
@@ -74,6 +85,7 @@ def detail(host_id):
             datastores=datastores,
             error=error,
             recent_logs=pbs_recent_logs,
+            credentials=credentials,
         )
 
     # PVE host
@@ -103,6 +115,7 @@ def detail(host_id):
                    .order_by(AuditLog.timestamp.desc())
                    .limit(25).all())
 
+    credentials = Credential.query.order_by(Credential.name).all()
     return render_template(
         "host_detail.html",
         host=host,
@@ -113,6 +126,7 @@ def detail(host_id):
         datastores=[],
         error=error,
         recent_logs=recent_logs,
+        credentials=credentials,
     )
 
 
@@ -434,3 +448,206 @@ def delete(host_id):
     db.session.commit()
     flash(f"Host '{name}' deleted.", "warning")
     return redirect(url_for("hosts.index"))
+
+
+# ---------------------------------------------------------------------------
+# Update management
+# ---------------------------------------------------------------------------
+
+def _get_client_and_node(host):
+    """Return (client, node_name) for PVE or PBS host."""
+    if host.is_pbs:
+        from pbs_client import PBSClient
+        client = PBSClient(host)
+        return client, client.get_node_name()
+    else:
+        client = ProxmoxClient(host)
+        node_name = client.get_local_node_name()
+        return client, node_name
+
+
+@bp.route("/<int:host_id>/updates")
+def get_updates(host_id):
+    """JSON: list of pending apt packages for this host."""
+    host = ProxmoxHost.query.get_or_404(host_id)
+    try:
+        client, node_name = _get_client_and_node(host)
+        if host.is_pbs:
+            updates = client.get_apt_updates()
+        else:
+            updates = client.get_apt_updates(node_name) if node_name else []
+        return jsonify({"updates": updates, "count": len(updates), "node": node_name})
+    except Exception as e:
+        return jsonify({"error": str(e), "updates": [], "count": 0}), 500
+
+
+@bp.route("/<int:host_id>/updates/refresh", methods=["POST"])
+def refresh_updates(host_id):
+    """Trigger apt-get update via API. Returns UPID + node_name for task polling."""
+    host = ProxmoxHost.query.get_or_404(host_id)
+    try:
+        client, node_name = _get_client_and_node(host)
+        if host.is_pbs:
+            upid = client.refresh_apt_cache()
+        else:
+            if not node_name:
+                return jsonify({"error": "Could not determine node name"}), 500
+            upid = client.refresh_apt_cache(node_name)
+        log_action("host_refresh_updates", "host", resource_id=host.id, resource_name=host.name)
+        db.session.commit()
+        return jsonify({"upid": upid, "node": node_name})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/<int:host_id>/task/<path:upid>/status")
+def task_status(host_id, upid):
+    """JSON: poll a Proxmox task status by UPID."""
+    host = ProxmoxHost.query.get_or_404(host_id)
+    try:
+        client, node_name = _get_client_and_node(host)
+        if host.is_pbs:
+            status = client.get_task_status(upid)
+        else:
+            status = client.get_task_status(node_name, upid)
+        return jsonify(status or {})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/<int:host_id>/task/<path:upid>/log")
+def task_log(host_id, upid):
+    """JSON: get log lines for a Proxmox task."""
+    host = ProxmoxHost.query.get_or_404(host_id)
+    try:
+        start = max(0, int(request.args.get("start", 0)))
+        limit = min(1000, max(1, int(request.args.get("limit", 500))))
+    except (ValueError, TypeError):
+        start, limit = 0, 500
+    try:
+        client, node_name = _get_client_and_node(host)
+        if host.is_pbs:
+            lines = client.get_task_log(upid, start=start, limit=limit)
+        else:
+            lines = client.get_task_log(node_name, upid, start=start, limit=limit)
+        return jsonify({"lines": lines or []})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _run_apply(host_id, hostname, credential_model, app_ctx):
+    """Background thread: SSH to host and run apt-get dist-upgrade."""
+    from ssh_client import SSHClient
+
+    def _append(chunk):
+        with _apply_lock:
+            job = _apply_jobs.get(host_id)
+            if job:
+                job["log"].append(chunk)
+
+    def _stop_fn():
+        with _apply_lock:
+            job = _apply_jobs.get(host_id)
+            return bool(job and job.get("cancelled"))
+
+    with app_ctx.app_context():
+        try:
+            client = SSHClient.from_credential(hostname, credential_model)
+            cmd = "DEBIAN_FRONTEND=noninteractive apt-get -y dist-upgrade 2>&1"
+            exit_code = client.execute_streaming(cmd, _append, timeout=1800, stop_fn=_stop_fn)
+            success = exit_code == 0
+        except Exception as e:
+            _append(f"\n[Error: {e}]\n")
+            success = False
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+        with _apply_lock:
+            job = _apply_jobs.get(host_id)
+            if job:
+                job["running"] = False
+                job["success"] = success
+
+
+@bp.route("/<int:host_id>/updates/apply", methods=["POST"])
+def apply_updates(host_id):
+    """Start SSH-based apt upgrade job and redirect to progress page."""
+    host = ProxmoxHost.query.get_or_404(host_id)
+
+    if not host.ssh_credential:
+        flash("No SSH credential configured for this host. Set one below to enable applying updates.", "error")
+        return redirect(url_for("hosts.detail", host_id=host_id))
+
+    with _apply_lock:
+        existing = _apply_jobs.get(host_id)
+        if existing and existing.get("running"):
+            flash("An update job is already running for this host.", "warning")
+            return redirect(url_for("hosts.apply_progress", host_id=host_id))
+        _apply_jobs[host_id] = {"log": [], "running": True, "success": None, "cancelled": False}
+
+    from flask import current_app
+    t = _threading.Thread(
+        target=_run_apply,
+        args=(host_id, host.hostname, host.ssh_credential, current_app._get_current_object()),
+        daemon=True,
+    )
+    t.start()
+
+    log_action("host_apply_updates", "host", resource_id=host.id, resource_name=host.name)
+    db.session.commit()
+    return redirect(url_for("hosts.apply_progress", host_id=host_id))
+
+
+@bp.route("/<int:host_id>/updates/apply/progress")
+def apply_progress(host_id):
+    """Render the SSH update progress page."""
+    host = ProxmoxHost.query.get_or_404(host_id)
+    return render_template("host_update_progress.html", host=host)
+
+
+@bp.route("/<int:host_id>/updates/apply/status")
+def apply_status(host_id):
+    """JSON: current state of the SSH apply job."""
+    with _apply_lock:
+        job = _apply_jobs.get(host_id, {})
+        return jsonify({
+            "running": job.get("running", False),
+            "success": job.get("success"),
+            "cancelled": job.get("cancelled", False),
+            "log": job.get("log", []),
+        })
+
+
+@bp.route("/<int:host_id>/updates/apply/cancel", methods=["POST"])
+def apply_cancel(host_id):
+    """Signal the running SSH apply job to stop."""
+    with _apply_lock:
+        job = _apply_jobs.get(host_id)
+        if job and job.get("running"):
+            job["cancelled"] = True
+            return jsonify({"ok": True})
+    return jsonify({"ok": False, "message": "No running job found."})
+
+
+@bp.route("/<int:host_id>/ssh-credential", methods=["POST"])
+def set_ssh_credential(host_id):
+    """Save (or clear) the SSH credential linked to this host."""
+    host = ProxmoxHost.query.get_or_404(host_id)
+    credential_id = request.form.get("credential_id", "").strip()
+    if credential_id:
+        cred = Credential.query.get(int(credential_id))
+        if not cred:
+            flash("Credential not found.", "error")
+            return redirect(url_for("hosts.detail", host_id=host_id))
+        host.ssh_credential_id = cred.id
+        log_action("host_set_ssh_credential", "host", resource_id=host.id, resource_name=host.name,
+                   details={"credential": cred.name})
+    else:
+        host.ssh_credential_id = None
+        log_action("host_clear_ssh_credential", "host", resource_id=host.id, resource_name=host.name)
+    db.session.commit()
+    flash("SSH credential updated.", "success")
+    return redirect(url_for("hosts.detail", host_id=host_id))

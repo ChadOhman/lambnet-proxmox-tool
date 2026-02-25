@@ -186,3 +186,31 @@ class PBSClient:
     def run_gc(self, store):
         """Trigger garbage collection on a datastore."""
         return self._post(f"/admin/datastore/{store}/gc")
+
+    # ── apt update management ─────────────────────────────────────────────────
+
+    def get_apt_updates(self):
+        """List pending apt packages for the PBS node."""
+        node = self.get_node_name()
+        return self._get(f"/nodes/{node}/apt/update") or []
+
+    def refresh_apt_cache(self):
+        """Run apt-get update on PBS node. Returns UPID string."""
+        node = self.get_node_name()
+        ok, data = self._post(f"/nodes/{node}/apt/update")
+        if not ok:
+            raise RuntimeError(data)
+        return data  # UPID string
+
+    def get_task_status(self, upid):
+        """Get task status by UPID. Returns dict or None."""
+        from urllib.parse import quote
+        node = self.get_node_name()
+        return self._get(f"/nodes/{node}/tasks/{quote(upid, safe='')}/status")
+
+    def get_task_log(self, upid, start=0, limit=500):
+        """Get task log lines by UPID. Returns list of dicts with 'n' (line no) and 't' (text)."""
+        from urllib.parse import quote
+        node = self.get_node_name()
+        return self._get(f"/nodes/{node}/tasks/{quote(upid, safe='')}/log",
+                         params={"start": start, "limit": limit}) or []
