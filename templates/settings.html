@@ -232,9 +232,20 @@
                         <input type="hidden" name="unifi_geoip_db_path" value="{{ settings.unifi_geoip_db_path or '' }}">
                         <input type="text" class="form-control form-control-sm text-muted" value="hidden" disabled>
                         {% else %}
-                        <input type="text" id="geoip-path-input" class="form-control form-control-sm font-monospace" name="unifi_geoip_db_path"
-                               value="{{ settings.unifi_geoip_db_path or '' }}"
-                               placeholder="/etc/lambnet/GeoLite2-City.mmdb">
+                        <div class="input-group input-group-sm">
+                            <input type="text" id="geoip-path-input" class="form-control form-control-sm font-monospace" name="unifi_geoip_db_path"
+                                   value="{{ settings.unifi_geoip_db_path or '' }}"
+                                   placeholder="/etc/lambnet/GeoLite2-City.mmdb">
+                            <span class="input-group-text" id="geoip-path-icon">
+                                {% if geoip_db_info and geoip_db_info.size_mb is not none %}
+                                <i class="bi bi-check-circle-fill text-success" title="File found ({{ geoip_db_info.size_mb }} MB)"></i>
+                                {% elif geoip_db_info %}
+                                <i class="bi bi-exclamation-triangle-fill text-warning" title="Path configured but file not found"></i>
+                                {% else %}
+                                <i class="bi bi-dash text-muted"></i>
+                                {% endif %}
+                            </span>
+                        </div>
                         {% endif %}
                     </div>
 
@@ -248,6 +259,17 @@
                         var statusDiv = document.getElementById('geoip-status');
                         var badgeDiv = document.getElementById('geoip-db-badge');
                         var pathInput = document.getElementById('geoip-path-input');
+                        var pathIcon = document.getElementById('geoip-path-icon');
+
+                        function setPathIcon(state, title) {
+                            if (!pathIcon) return;
+                            var icons = {
+                                ok:      '<i class="bi bi-check-circle-fill text-success" title="' + title + '"></i>',
+                                warn:    '<i class="bi bi-exclamation-triangle-fill text-warning" title="' + title + '"></i>',
+                                none:    '<i class="bi bi-dash text-muted"></i>',
+                            };
+                            pathIcon.innerHTML = icons[state] || icons.none;
+                        }
 
                         if (!btn || !fileInput) return;
 
@@ -308,10 +330,11 @@
                                             '<span class="text-muted ms-1 font-monospace">' + data.path + '</span>' +
                                             '</div>';
                                     }
-                                    // Auto-fill manual path field
+                                    // Auto-fill manual path field and update icon
                                     if (pathInput && data.path) {
                                         pathInput.value = data.path;
                                     }
+                                    setPathIcon('ok', 'File found (' + (data.size_mb || '?') + ' MB)');
                                 } else {
                                     statusDiv.innerHTML =
                                         '<div class="alert alert-danger py-2 small">' +
@@ -354,11 +377,13 @@
                                             '<div class="alert alert-success py-2 small">' +
                                             '<i class="bi bi-check-circle-fill me-1"></i>' +
                                             (data.message || 'Database OK') + '</div>';
+                                        setPathIcon('ok', 'File found (' + (data.size_mb || '?') + ' MB)');
                                     } else {
                                         statusDiv.innerHTML =
                                             '<div class="alert alert-danger py-2 small">' +
                                             '<i class="bi bi-exclamation-triangle-fill me-1"></i>' +
                                             (data.message || 'Verification failed') + '</div>';
+                                        setPathIcon('warn', data.message || 'Verification failed');
                                     }
                                 };
                                 vxhr.onerror = function () {
