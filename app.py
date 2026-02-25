@@ -195,15 +195,15 @@ def create_app(test_config=None):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         if not app.debug:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        # CSP: allows inline scripts/styles (used heavily in templates) and WebSocket connections.
+        # CSP: allows CDN-hosted Bootstrap/HTMX/Chart.js plus inline scripts and styles.
         # Tighten by migrating inline JS to nonces or external files in a future pass.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
             "img-src 'self' data:; "
             "connect-src 'self' ws: wss:; "
-            "font-src 'self'; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
             "object-src 'none'; "
             "base-uri 'self';"
         )
