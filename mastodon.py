@@ -31,6 +31,33 @@ def _validate_shell_param(value, label):
     if not _SHELL_SAFE_RE.match(value):
         raise ValueError(f"{label} contains unsafe characters: {value!r}")
 
+def _check_version_range(installed, requirement):
+    """Simple semver range check. Supports >=, ^, and plain version.
+
+    Returns True if installed meets requirement, False if not, None if unparseable.
+    """
+    parts = [int(x) for x in re.findall(r'\d+', installed)][:3]
+    while len(parts) < 3:
+        parts.append(0)
+
+    m = re.match(r'>=\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?', requirement.strip())
+    if m:
+        req = [int(m.group(1)), int(m.group(2) or 0), int(m.group(3) or 0)]
+        return parts >= req
+
+    m = re.match(r'\^\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?', requirement.strip())
+    if m:
+        req = [int(m.group(1)), int(m.group(2) or 0), int(m.group(3) or 0)]
+        return parts >= req and parts[0] == req[0]
+
+    m = re.match(r'(\d+)(?:\.(\d+))?(?:\.(\d+))?', requirement.strip())
+    if m:
+        req = [int(m.group(1)), int(m.group(2) or 0), int(m.group(3) or 0)]
+        return parts == req
+
+    return None
+
+
 DEFAULT_MASTODON_REPO = "mastodon/mastodon"
 _REPO_RE = re.compile(r'^[\w.\-]+/[\w.\-]+$')
 
@@ -255,6 +282,377 @@ def _swap_env_db(ssh, app_dir, new_host, new_port):
     return True, "DB config swapped"
 
 
+def _check_env_compliance(ssh, user, app_dir, branch, log):
+    """Check installed Ruby/Node.js/Bundler against the target branch requirements.
+
+    Reads .ruby-version and package.json from the remote ref via a non-destructive
+    git fetch (updates tracking refs only, does not touch the working tree).
+
+    Returns True if all checks pass or only warnings; False if any [FAIL].
+    """
+    remote_ref = f"origin/{branch}" if branch else "origin/HEAD"
+    all_pass = True
+
+    # Step 1: Fetch remote refs (non-destructive — updates tracking refs only)
+    fetch_cmd = (
+        f"su - {user} -c 'cd {app_dir} && git fetch origin {branch}'"
+        if branch else
+        f"su - {user} -c 'cd {app_dir} && git fetch origin'"
+    )
+    stdout, stderr, code = ssh.execute_sudo(fetch_cmd, timeout=60)
+    if code != 0:
+        log(f"  [WARN] Could not fetch from origin: {(stderr or stdout or '').strip()}")
+
+    # Step 2: Read .ruby-version from remote ref
+    required_ruby = None
+    stdout, stderr, code = ssh.execute_sudo(
+        f"su - {user} -c 'cd {app_dir} && git show {remote_ref}:.ruby-version 2>/dev/null'",
+        timeout=10,
+    )
+    if code == 0 and stdout.strip():
+        required_ruby = stdout.strip()
+
+    # Step 3: Read package.json engines.node from remote ref
+    required_node = None
+    stdout, stderr, code = ssh.execute_sudo(
+        f"su - {user} -c 'cd {app_dir} && git show {remote_ref}:package.json 2>/dev/null'",
+        timeout=15,
+    )
+    if code == 0 and stdout.strip():
+        try:
+            pkg = json.loads(stdout)
+            node_range = pkg.get("engines", {}).get("node", "")
+            if node_range:
+                required_node = node_range
+        except Exception:
+            pass
+
+    # Step 4: Check installed versions
+    # Ruby
+    installed_ruby = None
+    stdout, stderr, code = ssh.execute_sudo(
+        f"su - {user} -c 'ruby --version 2>/dev/null'",
+        timeout=10,
+    )
+    if code == 0 and stdout.strip():
+        m = re.search(r'ruby\s+(\d+\.\d+\.\d+)', stdout)
+        if m:
+            installed_ruby = m.group(1)
+
+    # Node.js
+    installed_node = None
+    stdout, stderr, code = ssh.execute_sudo(
+        f"su - {user} -c 'node --version 2>/dev/null'",
+        timeout=10,
+    )
+    if code == 0 and stdout.strip():
+        m = re.search(r'v?(\d+\.\d+\.\d+)', stdout.strip())
+        if m:
+            installed_node = m.group(1)
+
+    # Bundler
+    installed_bundler = None
+    stdout, stderr, code = ssh.execute_sudo(
+        f"su - {user} -c 'bundle --version 2>/dev/null'",
+        timeout=10,
+    )
+    if code == 0 and stdout.strip():
+        m = re.search(r'(\d+\.\d+[\.\d]*)', stdout.strip())
+        if m:
+            installed_bundler = m.group(1)
+
+    # Step 5: Compare and log
+
+    # Ruby — compare major.minor only (patch is not relevant for compatibility)
+    if required_ruby and installed_ruby:
+        req_parts = required_ruby.strip().split('.')[:2]
+        ins_parts = installed_ruby.split('.')[:2]
+        if req_parts == ins_parts:
+            log(f"  [PASS] Ruby {installed_ruby} installed, required {required_ruby}")
+        else:
+            log(f"  [FAIL] Ruby {installed_ruby} installed, required {required_ruby} — upgrade Ruby before proceeding")
+            all_pass = False
+    elif required_ruby and not installed_ruby:
+        log(f"  [FAIL] Ruby required {required_ruby} but could not detect installed version")
+        all_pass = False
+    elif installed_ruby and not required_ruby:
+        log(f"  [WARN] Ruby {installed_ruby} installed (could not read .ruby-version from {remote_ref})")
+    else:
+        log("  [WARN] Could not determine Ruby requirement or installed version")
+
+    # Node.js
+    if required_node and installed_node:
+        result = _check_version_range(installed_node, required_node)
+        if result is True:
+            log(f"  [PASS] Node.js {installed_node} installed, required {required_node}")
+        elif result is False:
+            log(f"  [FAIL] Node.js {installed_node} installed, required {required_node} — upgrade Node.js before proceeding")
+            all_pass = False
+        else:
+            log(f"  [WARN] Node.js {installed_node} installed, required {required_node} (could not parse requirement range)")
+    elif required_node and not installed_node:
+        log(f"  [FAIL] Node.js required {required_node} but could not detect installed version")
+        all_pass = False
+    elif installed_node and not required_node:
+        log(f"  [WARN] Node.js {installed_node} installed (engines.node not found in package.json)")
+    else:
+        log("  [WARN] Could not determine Node.js requirement or installed version")
+
+    # Bundler — informational only
+    if installed_bundler:
+        log(f"  [PASS] Bundler {installed_bundler} available")
+    else:
+        log("  [WARN] Could not determine Bundler version (bundle command not found)")
+
+    return all_pass
+
+
+def run_mastodon_preflight(log_callback=None):
+    """Run read-only pre-flight checks for the Mastodon upgrade.
+
+    Validates configuration, Proxmox guest status, SSH connectivity, app directory,
+    .env.production readability, git status, environment compliance (Ruby/Node.js),
+    and database reachability — without modifying anything.
+
+    Returns (all_pass: bool, log_output: str).
+    """
+    from models import Credential
+
+    config = _get_mastodon_config()
+    log_lines = []
+    checks_passed = 0
+    checks_total = 0
+    checks_failed = 0
+
+    def log(msg):
+        logger.info(msg)
+        log_lines.append(msg)
+        if log_callback:
+            log_callback(msg)
+
+    def check(label, passed, fail_msg=None):
+        nonlocal checks_passed, checks_total, checks_failed
+        checks_total += 1
+        if passed:
+            checks_passed += 1
+            log(f"  [PASS] {label}")
+        else:
+            checks_failed += 1
+            msg = f"  [FAIL] {label}"
+            if fail_msg:
+                msg += f" — {fail_msg}"
+            log(msg)
+
+    log("=== Mastodon Pre-flight Check ===")
+    log("")
+
+    # ── A. Configuration validation ──────────────────────────────────────────
+    log("--- A. Configuration ---")
+
+    required_fields = [
+        ("guest_id", "Mastodon app guest"),
+        ("db_guest_id", "PostgreSQL guest"),
+        ("pgbouncer_host", "PGBouncer host"),
+        ("pgbouncer_port", "PGBouncer port"),
+        ("direct_db_host", "Direct DB host"),
+        ("direct_db_port", "Direct DB port"),
+    ]
+    config_ok = True
+    for field, label in required_fields:
+        val = config.get(field, "")
+        if val:
+            check(f"{label} configured", True)
+        else:
+            check(f"{label} configured", False, "not set in settings")
+            config_ok = False
+
+    protection_type = config.get("protection_type", "snapshot")
+    backup_storage = config.get("backup_storage", "")
+    if protection_type == "backup":
+        if backup_storage:
+            check("Backup storage configured", True)
+        else:
+            check("Backup storage configured", False, "backup protection selected but no storage configured")
+            config_ok = False
+
+    user = config.get("user", "mastodon")
+    app_dir = config.get("app_dir", "/home/mastodon/live")
+    branch = (config.get("branch") or "").strip()
+
+    try:
+        _validate_shell_param(user, "Mastodon user")
+        _validate_shell_param(app_dir, "Mastodon app_dir")
+        if branch:
+            _validate_shell_param(branch, "Git branch")
+        check("Shell-safe config values", True)
+    except ValueError as e:
+        check("Shell-safe config values", False, str(e))
+        config_ok = False
+
+    if not config_ok:
+        log("")
+        log(f"=== Pre-flight complete: {checks_passed}/{checks_total} checks passed — {checks_failed} failure(s), upgrade blocked ===")
+        return False, "\n".join(log_lines)
+
+    # ── B. Proxmox guest status ───────────────────────────────────────────────
+    log("")
+    log("--- B. Proxmox guests ---")
+
+    mastodon_guest = Guest.query.get(int(config["guest_id"]))
+    db_guest = Guest.query.get(int(config["db_guest_id"]))
+
+    check("Mastodon app guest in database", mastodon_guest is not None,
+          f"guest ID {config['guest_id']} not found")
+    check("PostgreSQL guest in database", db_guest is not None,
+          f"guest ID {config['db_guest_id']} not found")
+
+    mastodon_guest_2 = None
+    guest_id_2 = config.get("guest_id_2", "")
+    if guest_id_2:
+        mastodon_guest_2 = Guest.query.get(int(guest_id_2))
+        if not mastodon_guest_2:
+            log(f"  [WARN] Second Mastodon guest ID {guest_id_2} not found — will skip VM2 checks")
+
+    for guest_obj in filter(None, [mastodon_guest, db_guest]):
+        if not guest_obj.proxmox_host:
+            log(f"  [WARN] {guest_obj.name} has no Proxmox host configured — skipping Proxmox checks")
+            continue
+        try:
+            client = ProxmoxClient(guest_obj.proxmox_host)
+            node = client.find_guest_node(guest_obj.vmid)
+            if not node:
+                check(f"{guest_obj.name} found on Proxmox", False, "not found on any PVE node")
+                continue
+            check(f"{guest_obj.name} found on Proxmox", True)
+            status = client.get_guest_status(node, guest_obj.vmid, guest_obj.guest_type)
+            check(f"{guest_obj.name} running", status == "running", f"current status: {status}")
+            if protection_type == "snapshot":
+                supports_snap = client.guest_supports_snapshot(node, guest_obj.vmid, guest_obj.guest_type)
+                check(f"{guest_obj.name} supports snapshots", supports_snap,
+                      "storage does not support snapshots — switch to Backup protection")
+        except Exception as e:
+            check(f"{guest_obj.name} Proxmox reachable", False, str(e))
+
+    if not mastodon_guest or not db_guest:
+        log("")
+        log(f"=== Pre-flight complete: {checks_passed}/{checks_total} checks passed — {checks_failed} failure(s), upgrade blocked ===")
+        return False, "\n".join(log_lines)
+
+    # ── C. SSH checks on mastodon app guest ──────────────────────────────────
+    log("")
+    log(f"--- C. SSH checks on {mastodon_guest.name} ---")
+
+    credential = mastodon_guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+
+    if not credential:
+        check("SSH credential available", False, "no credential configured for mastodon guest or as default")
+    elif not mastodon_guest.ip_address:
+        check("SSH credential available", True)
+        check("Mastodon guest IP configured", False, "no IP address set on guest")
+    else:
+        check("SSH credential available", True)
+        check("Mastodon guest IP configured", True)
+        try:
+            with SSHClient.from_credential(mastodon_guest.ip_address, credential) as ssh:
+                check("SSH connection established", True)
+
+                # App directory exists
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"test -d {app_dir} && echo ok", timeout=10
+                )
+                check(f"App directory {app_dir} exists",
+                      code == 0 and "ok" in (stdout or ""),
+                      "directory not found")
+
+                # .env.production readable by mastodon user
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"su - {user} -c 'test -r {app_dir}/.env.production && echo ok'",
+                    timeout=10,
+                )
+                check(".env.production readable",
+                      code == 0 and "ok" in (stdout or ""),
+                      "file not found or not readable by mastodon user")
+
+                # Uncommitted changes — informational (WARN only, stash handles it)
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"su - {user} -c 'cd {app_dir} && git status --porcelain'",
+                    timeout=15,
+                )
+                if code == 0:
+                    dirty = [ln for ln in (stdout or "").splitlines() if ln.strip()]
+                    if dirty:
+                        log(f"  [WARN] {len(dirty)} uncommitted change(s) — they will be stashed during upgrade")
+                    else:
+                        log("  [INFO] Working tree clean (no uncommitted changes)")
+                else:
+                    log("  [WARN] Could not determine git working tree status")
+
+                # Environment compliance (includes git fetch + version checks)
+                log("  Checking environment compliance...")
+                env_ok = _check_env_compliance(ssh, user, app_dir, branch, log)
+                checks_total += 1
+                if env_ok:
+                    checks_passed += 1
+                else:
+                    checks_failed += 1
+
+                # Direct DB reachability
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"(pg_isready -h {config['direct_db_host']} -p {config['direct_db_port']} 2>/dev/null"
+                    f" || nc -z {config['direct_db_host']} {config['direct_db_port']} 2>/dev/null) && echo ok",
+                    timeout=10,
+                )
+                check(f"Direct DB reachable ({config['direct_db_host']}:{config['direct_db_port']})",
+                      code == 0 and "ok" in (stdout or ""),
+                      "cannot connect to direct PostgreSQL port")
+
+                # PGBouncer reachability
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"(pg_isready -h {config['pgbouncer_host']} -p {config['pgbouncer_port']} 2>/dev/null"
+                    f" || nc -z {config['pgbouncer_host']} {config['pgbouncer_port']} 2>/dev/null) && echo ok",
+                    timeout=10,
+                )
+                check(f"PGBouncer reachable ({config['pgbouncer_host']}:{config['pgbouncer_port']})",
+                      code == 0 and "ok" in (stdout or ""),
+                      "cannot connect to PGBouncer port")
+
+        except Exception as e:
+            check("SSH connection established", False, str(e))
+
+    # ── D. SSH checks on second Mastodon guest (if configured) ───────────────
+    if mastodon_guest_2 and mastodon_guest_2.ip_address:
+        log("")
+        log(f"--- D. SSH checks on {mastodon_guest_2.name} ---")
+
+        cred2 = mastodon_guest_2.credential
+        if not cred2:
+            cred2 = Credential.query.filter_by(is_default=True).first()
+
+        if not cred2:
+            check(f"[VM2] SSH credential for {mastodon_guest_2.name}", False, "no credential configured")
+        else:
+            try:
+                with SSHClient.from_credential(mastodon_guest_2.ip_address, cred2) as ssh2:
+                    check(f"[VM2] SSH connection to {mastodon_guest_2.name}", True)
+                    stdout, stderr, code = ssh2.execute_sudo(
+                        f"test -d {app_dir} && echo ok", timeout=10
+                    )
+                    check(f"[VM2] App directory exists on {mastodon_guest_2.name}",
+                          code == 0 and "ok" in (stdout or ""),
+                          "directory not found")
+            except Exception as e:
+                check(f"[VM2] SSH connection to {mastodon_guest_2.name}", False, str(e))
+
+    # ── Final summary ─────────────────────────────────────────────────────────
+    log("")
+    status_word = "upgrade blocked" if checks_failed > 0 else "ready to upgrade"
+    log(f"=== Pre-flight complete: {checks_passed}/{checks_total} checks passed — {checks_failed} failure(s), {status_word} ===")
+
+    return checks_failed == 0, "\n".join(log_lines)
+
+
 def run_mastodon_upgrade(log_callback=None):
     """Run the full Mastodon upgrade procedure.
 
@@ -317,6 +715,32 @@ def run_mastodon_upgrade(log_callback=None):
 
     pull_cmd = f"git pull origin {branch}" if branch else "git pull"
 
+    # Get SSH credential here (needed for env check before snapshots)
+    credential = mastodon_guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        return False, "No SSH credential available for Mastodon guest"
+
+    # --- Environment compliance check (before snapshots) ---
+    # Abort early if the server's Ruby/Node.js do not meet target version requirements.
+    log("=== Checking environment compliance ===")
+    if mastodon_guest.ip_address:
+        try:
+            with SSHClient.from_credential(mastodon_guest.ip_address, credential) as ssh:
+                env_ok = _check_env_compliance(ssh, user, app_dir, branch, log)
+            if not env_ok:
+                log("ERROR: Environment does not meet requirements. Upgrade aborted.")
+                log("Fix the version issues above before running the upgrade.")
+                return False, "\n".join(log_lines)
+            log("Environment compliance: OK")
+        except Exception as e:
+            log(f"WARNING: Could not run environment compliance check: {e}")
+            log("Proceeding with upgrade — verify environment manually if needed.")
+    else:
+        log("WARNING: No IP address for Mastodon guest — skipping environment compliance check")
+    log("")
+
     # --- Step 1: Protection (snapshot or backup) ---
     protection_type = config.get("protection_type", "snapshot")
     backup_storage = config.get("backup_storage", "")
@@ -365,12 +789,6 @@ def run_mastodon_upgrade(log_callback=None):
 
     # --- Step 2: SSH upgrade sequence ---
     log("=== Step 2: Connecting to Mastodon guest via SSH ===")
-
-    credential = mastodon_guest.credential
-    if not credential:
-        credential = Credential.query.filter_by(is_default=True).first()
-    if not credential:
-        return False, "No SSH credential available for Mastodon guest"
 
     env_swapped = False
 

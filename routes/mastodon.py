@@ -21,6 +21,7 @@ _STATS_TTL = 60  # seconds before a cached result is considered stale
 # frontend can poll for real-time log output.
 # ---------------------------------------------------------------------------
 _upgrade_job = {"running": False, "success": None, "log": []}
+_preflight_job = {"running": False, "success": None, "log": []}
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +252,52 @@ def upgrade_status():
         "success": _upgrade_job["success"],
         "log": _upgrade_job["log"],
     })
+
+
+@bp.route("/preflight/status")
+def preflight_status():
+    return jsonify({
+        "running": _preflight_job["running"],
+        "success": _preflight_job["success"],
+        "log": _preflight_job["log"],
+    })
+
+
+@bp.route("/preflight", methods=["POST"])
+def preflight():
+    from mastodon import run_mastodon_preflight
+    from flask import current_app
+
+    if _upgrade_job["running"]:
+        return jsonify({"error": "An upgrade is already in progress"}), 409
+    if _preflight_job["running"]:
+        return jsonify({"error": "A pre-flight check is already in progress"}), 409
+
+    _preflight_job.update({"running": True, "success": None, "log": []})
+
+    def _cb(msg):
+        _preflight_job["log"].append(msg)
+
+    _app = current_app._get_current_object()
+
+    def _bg():
+        ok = False
+        try:
+            with _app.app_context():
+                ok, _ = run_mastodon_preflight(log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _preflight_job["running"] = False
+        _preflight_job["success"] = ok
+
+    try:
+        import gevent as _gevent
+        _gevent.spawn(_bg)
+    except ImportError:
+        _threading.Thread(target=_bg, daemon=True).start()
+
+    return jsonify({"started": True})
 
 
 @bp.route("/upgrade", methods=["POST"])

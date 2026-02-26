@@ -281,7 +281,7 @@
                 </div>
                 {% endif %}
 
-                <div class="d-flex gap-2 flex-wrap">
+                <div class="d-flex gap-2 flex-wrap align-items-center">
                     <form method="post" action="/mastodon/detect-versions">
                         <button type="submit" class="btn btn-outline-success" title="SSH into configured guests to detect Mastodon and PostgreSQL versions">
                             <i class="bi bi-search"></i> Detect Versions
@@ -293,6 +293,10 @@
                         </button>
                     </form>
                     {% if settings.guest_id and settings.db_guest_id %}
+                    <button type="button" class="btn btn-outline-secondary" id="preflightBtn"
+                            onclick="startPreflight()">
+                        <i class="bi bi-clipboard2-check"></i> Pre-flight Check
+                    </button>
                     <form method="post" action="/mastodon/upgrade" id="upgradeForm"
                           onsubmit="return startUpgrade(event)">
                         <button type="submit" class="btn btn-warning" id="upgradeBtn">
@@ -301,6 +305,7 @@
                     </form>
                     {% endif %}
                 </div>
+                <div class="mt-2" id="preflightStatusBadge"></div>
             </div>
         </div>
 
@@ -389,6 +394,73 @@ function toggleBackupStorage() {
     document.getElementById('backupModeRow').classList.toggle('d-none', !isBkp);
 }
 
+// ── Pre-flight check ─────────────────────────────────────────────────────────
+let _preflightLogLen = 0;
+
+function _setPreflightBadge(success) {
+    const badge = document.getElementById('preflightStatusBadge');
+    if (!badge) return;
+    if (success === true) {
+        badge.innerHTML = '<span class="badge bg-info">Ready to upgrade</span>';
+    } else if (success === false) {
+        badge.innerHTML = '<span class="badge bg-warning text-dark">Not ready</span>';
+    }
+}
+
+function pollPreflightStatus() {
+    fetch('/mastodon/preflight/status')
+        .then(r => r.json())
+        .then(data => {
+            const logEl = document.getElementById('liveUpgradeLog');
+            const newLines = data.log.slice(_preflightLogLen);
+            if (newLines.length) {
+                if (_preflightLogLen === 0) logEl.textContent = '';
+                logEl.textContent += newLines.join('\n') + '\n';
+                _preflightLogLen = data.log.length;
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            if (data.running) {
+                setTimeout(pollPreflightStatus, 1500);
+            } else {
+                _setUpgradeRunning(false);
+                const preflightBtn = document.getElementById('preflightBtn');
+                if (preflightBtn) preflightBtn.disabled = false;
+                if (data.success !== null) _setPreflightBadge(data.success);
+            }
+        })
+        .catch(() => setTimeout(pollPreflightStatus, 3000));
+}
+
+function startPreflight() {
+    _preflightLogLen = 0;
+    const logEl = document.getElementById('liveUpgradeLog');
+    logEl.textContent = 'Starting pre-flight check…\n';
+    document.getElementById('upgradeStatusBadge').innerHTML = '';
+    const badgeEl = document.getElementById('preflightStatusBadge');
+    if (badgeEl) badgeEl.innerHTML = '';
+    _setUpgradeRunning(true);
+    const preflightBtn = document.getElementById('preflightBtn');
+    if (preflightBtn) preflightBtn.disabled = true;
+    document.getElementById('upgradeLogCard').scrollIntoView({behavior: 'smooth'});
+
+    fetch('/mastodon/preflight', {method: 'POST'})
+        .then(r => {
+            if (r.status === 409) {
+                return r.json().then(d => {
+                    logEl.textContent = 'ERROR: ' + (d.error || 'Another operation is in progress') + '\n';
+                    _setUpgradeRunning(false);
+                    if (preflightBtn) preflightBtn.disabled = false;
+                });
+            }
+            setTimeout(pollPreflightStatus, 1500);
+        })
+        .catch(() => {
+            logEl.textContent = 'ERROR: Could not start pre-flight check\n';
+            _setUpgradeRunning(false);
+            if (preflightBtn) preflightBtn.disabled = false;
+        });
+}
+
 // ── Live upgrade log polling ───────────────────────────────────────────────
 let _logLen = 0;
 
@@ -457,7 +529,7 @@ function startUpgrade(e) {
     return true; // allow the form to submit normally
 }
 
-// On page load: check if an upgrade is already running (e.g. user navigated away and back)
+// On page load: resume any in-progress operation and restore last in-memory log
 fetch('/mastodon/upgrade/status')
     .then(r => r.json())
     .then(data => {
@@ -472,6 +544,20 @@ fetch('/mastodon/upgrade/status')
             document.getElementById('liveUpgradeLog').textContent = data.log.join('\n');
             _logLen = data.log.length;
             if (data.success !== null) _setUpgradeBadge(data.success);
+        }
+    });
+
+fetch('/mastodon/preflight/status')
+    .then(r => r.json())
+    .then(data => {
+        if (data.running) {
+            _preflightLogLen = 0;
+            document.getElementById('liveUpgradeLog').textContent = '';
+            document.getElementById('upgradeStatusBadge').innerHTML = '';
+            _setUpgradeRunning(true);
+            const preflightBtn = document.getElementById('preflightBtn');
+            if (preflightBtn) preflightBtn.disabled = true;
+            pollPreflightStatus();
         }
     });
 </script>
