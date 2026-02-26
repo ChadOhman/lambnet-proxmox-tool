@@ -11,6 +11,7 @@ APP_NAME="lambnet-update-manager"
 APP_DIR="/opt/lambnet"
 DATA_DIR="/var/lib/lambnet"
 BACKUP_DIR="/var/lib/lambnet/backups"
+SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
 UPDATE_BRANCH=""
 
 # Parse arguments
@@ -143,6 +144,19 @@ echo "  Dependencies up to date."
 # ── Step 4: Restart ──────────────────────────────────────────
 echo ""
 echo "[4/4] Restarting service...  ($(ts))"
+
+# Patch missing environment variables into the service file.
+# SESSION_COOKIE_SECURE=0 is required for HTTP-only installs so that
+# browsers send back the session cookie and session state (e.g. safety mode)
+# is not lost on every request.
+if [ -f "$SERVICE_FILE" ]; then
+    if ! grep -q "SESSION_COOKIE_SECURE" "$SERVICE_FILE"; then
+        sed -i '/^Environment=FLASK_SECRET_KEY_FILE/a Environment=SESSION_COOKIE_SECURE=0' "$SERVICE_FILE"
+        systemctl daemon-reload
+        echo "  Patched SESSION_COOKIE_SECURE=0 into service file."
+    fi
+fi
+
 systemctl restart "$APP_NAME"
 sleep 2
 
