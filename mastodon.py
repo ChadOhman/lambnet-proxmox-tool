@@ -369,14 +369,22 @@ def _check_env_compliance(ssh, user, app_dir, branch, log):
 
     # Step 5: Compare and log
 
-    # Ruby — compare major.minor only (patch is not relevant for compatibility)
+    # Ruby — compare full version. A patch-level difference is a [WARN] (rbenv install handles
+    # it automatically during upgrade). A major.minor mismatch is a [FAIL] and requires
+    # manual intervention.
     if required_ruby and installed_ruby:
-        req_parts = required_ruby.strip().split('.')[:2]
-        ins_parts = installed_ruby.split('.')[:2]
-        if req_parts == ins_parts:
+        req_parts = [int(x) for x in re.findall(r'\d+', required_ruby.strip())][:3]
+        ins_parts = [int(x) for x in re.findall(r'\d+', installed_ruby)][:3]
+        while len(req_parts) < 3:
+            req_parts.append(0)
+        while len(ins_parts) < 3:
+            ins_parts.append(0)
+        if ins_parts == req_parts:
             log(f"  [PASS] Ruby {installed_ruby} installed, required {required_ruby}")
+        elif ins_parts[:2] == req_parts[:2]:
+            log(f"  [WARN] Ruby {installed_ruby} installed, required {required_ruby} — rbenv will install {required_ruby} automatically during upgrade")
         else:
-            log(f"  [FAIL] Ruby {installed_ruby} installed, required {required_ruby} — upgrade Ruby before proceeding")
+            log(f"  [FAIL] Ruby {installed_ruby} installed, required {required_ruby} — major.minor mismatch, manual Ruby upgrade required")
             all_pass = False
     elif required_ruby and not installed_ruby:
         log(f"  [FAIL] Ruby required {required_ruby} but could not detect installed version")
@@ -841,7 +849,22 @@ def run_mastodon_upgrade(log_callback=None):
             if code != 0:
                 log("WARNING: git stash pop returned non-zero (may be no stash to pop)")
 
-            # 2e. bundle install
+            # 2e. Ensure correct Ruby version and Bundler are installed via rbenv.
+            # Reads the target version from .ruby-version in the app dir (updated by git pull).
+            # --skip-existing is a no-op if already installed; silently non-fatal if rbenv not present.
+            log("--- rbenv install (ensuring correct Ruby version) ---")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'export PATH=$HOME/.rbenv/bin:$HOME/.rbenv/shims:$PATH; "
+                f"cd {app_dir} && rbenv install --skip-existing && gem install bundler --no-document'",
+                timeout=600,
+            )
+            out = (stdout or "").strip()
+            if out:
+                log(out[-500:] if len(out) > 500 else out)
+            if code != 0:
+                log(f"NOTE: rbenv/gem step exited {code} — if rbenv is not in use, this is expected and harmless")
+
+            # 2f. bundle install
             log("--- bundle install ---")
             stdout, stderr, code = ssh.execute_sudo(
                 f"su - {user} -c 'cd {app_dir} && bundle install'", timeout=600
@@ -853,7 +876,7 @@ def run_mastodon_upgrade(log_callback=None):
                 env_swapped = False
                 return False, "\n".join(log_lines)
 
-            # 2f. yarn install
+            # 2g. yarn install
             log("--- yarn install ---")
             stdout, stderr, code = ssh.execute_sudo(
                 f"su - {user} -c 'cd {app_dir} && yarn install --frozen-lockfile'", timeout=600
