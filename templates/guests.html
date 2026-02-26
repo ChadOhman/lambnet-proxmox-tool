@@ -115,7 +115,12 @@
                             {% if not guest.tags %}<span class="text-muted">-</span>{% endif %}
                         </td>
                         <td><span class="badge bg-secondary">{{ guest.connection_method }}</span></td>
-                        <td>{{ guest.pending_updates()|length }}</td>
+                        <td>
+                            {{ guest.pending_updates()|length }}
+                            {% if guest.reboot_updates()|length > 0 %}
+                            <span class="text-warning ms-1" title="{{ guest.reboot_updates()|length }} update(s) will require a reboot (kernel/libc/systemd)"><i class="bi bi-arrow-clockwise"></i></span>
+                            {% endif %}
+                        </td>
                         <td>
                             {% set sec = guest.security_updates()|length %}
                             {% if sec > 0 %}

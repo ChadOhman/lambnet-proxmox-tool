@@ -30,6 +30,7 @@ class UpdateJob:
         self.success = None  # None=in progress, True=success, False=failed
         self.cancel_requested = False
         self.cancelled = False
+        self.reboot_required = False
         self.started_at = datetime.now(timezone.utc)
         self._lock = threading.Lock()
 
@@ -53,6 +54,7 @@ class UpdateJob:
                 "running": self.running,
                 "success": self.success,
                 "cancelled": self.cancelled,
+                "reboot_required": self.reboot_required,
                 "started_at": self.started_at.isoformat(),
             }
 
@@ -115,6 +117,14 @@ def _run_update_background(app, guest_id, dist_upgrade=False):
 
                             if exit_code == 0:
                                 job.append("\n\nUpdates applied successfully.\n")
+                                # Check reboot-required while SSH connection is still open
+                                rb_out, _, _ = ssh.execute_sudo(
+                                    "[ -f /var/run/reboot-required ] && echo yes || echo no",
+                                    timeout=10,
+                                )
+                                reboot_needed = bool(rb_out) and rb_out.strip() == "yes"
+                                guest.reboot_required = reboot_needed
+                                job.reboot_required = reboot_needed
                                 now = datetime.now(timezone.utc)
                                 for pkg in guest.pending_updates():
                                     pkg.status = "applied"
@@ -159,6 +169,10 @@ def _run_update_background(app, guest_id, dist_upgrade=False):
                             if stdout:
                                 job.append(stdout)
                             job.append("\n\nUpdates applied successfully.\n")
+                            # Check reboot-required via guest agent
+                            from scanner import check_reboot_required
+                            check_reboot_required(guest)
+                            job.reboot_required = guest.reboot_required
                             now = datetime.now(timezone.utc)
                             for pkg in guest.pending_updates():
                                 pkg.status = "applied"

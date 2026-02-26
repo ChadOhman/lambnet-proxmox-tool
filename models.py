@@ -5,6 +5,21 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
 
+# Package name prefixes that typically require a reboot on Debian/Ubuntu.
+# Used to predict whether pending updates will need one before they are applied.
+_REBOOT_PKG_PREFIXES = (
+    "linux-image",
+    "linux-modules",
+    "linux-headers",
+    "libc6",
+    "libc-bin",
+    "systemd",
+    "udev",
+    "initramfs-tools",
+    "grub-",
+    "shim-",
+)
+
 # Association table: which tags a user has access to
 user_tags = db.Table(
     "user_tags",
@@ -395,6 +410,10 @@ class Guest(db.Model):
     def security_updates(self):
         return [u for u in self.updates if u.status == "pending" and u.severity == "critical"]
 
+    def reboot_updates(self):
+        """Return pending updates whose package names suggest a reboot will be needed."""
+        return [u for u in self.pending_updates() if u.package_name.startswith(_REBOOT_PKG_PREFIXES)]
+
     def __repr__(self):
         return f"<Guest {self.name} ({self.guest_type})>"
 
@@ -411,6 +430,11 @@ class UpdatePackage(db.Model):
     discovered_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     applied_at = db.Column(db.DateTime, nullable=True)
     status = db.Column(db.String(32), default="pending")  # pending, applied, skipped
+
+    @property
+    def requires_reboot(self):
+        """True if this package typically requires a reboot to take effect."""
+        return self.package_name.startswith(_REBOOT_PKG_PREFIXES)
 
     def __repr__(self):
         return f"<UpdatePackage {self.package_name} on guest {self.guest_id}>"

@@ -6,6 +6,7 @@
                 <th>Current</th>
                 <th>Available</th>
                 <th>Severity</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -15,10 +16,15 @@
                 <td><code>{{ pkg.current_version }}</code></td>
                 <td><code>{{ pkg.available_version }}</code></td>
                 <td><span class="badge badge-{{ pkg.severity }}">{{ pkg.severity }}</span></td>
+                <td>
+                    {% if pkg.requires_reboot %}
+                    <span class="badge bg-warning text-dark" title="This package typically requires a reboot"><i class="bi bi-arrow-clockwise"></i> reboot</span>
+                    {% endif %}
+                </td>
             </tr>
             {% else %}
             <tr>
-                <td colspan="4" class="text-center text-muted">No updates</td>
+                <td colspan="5" class="text-center text-muted">No updates</td>
             </tr>
             {% endfor %}
         </tbody>

@@ -23,15 +23,29 @@
             <div class="card-body p-0">
                 <pre id="logOutput" style="background: #1a1a2e; color: #e0e0e0; padding: 1rem; margin: 0; min-height: 400px; max-height: 600px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; word-wrap: break-word; border-radius: 0;"></pre>
             </div>
-            <div class="card-footer d-flex justify-content-between align-items-center">
-                <small class="text-muted" id="statusText">Waiting for update output...</small>
-                <div class="d-flex gap-2">
-                    <button id="cancelBtn" class="btn btn-danger btn-sm">
-                        <i class="bi bi-x-circle"></i> Cancel
-                    </button>
-                    <a href="/guests/{{ guest.id }}" id="backBtn" class="btn btn-secondary btn-sm disabled">
-                        <i class="bi bi-arrow-left"></i> Back to Guest
-                    </a>
+            <div class="card-footer">
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted" id="statusText">Waiting for update output...</small>
+                    <div class="d-flex gap-2">
+                        <button id="cancelBtn" class="btn btn-danger btn-sm">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </button>
+                        <a href="/guests/{{ guest.id }}" id="backBtn" class="btn btn-secondary btn-sm disabled">
+                            <i class="bi bi-arrow-left"></i> Back to Guest
+                        </a>
+                    </div>
+                </div>
+                <div id="rebootPrompt" class="alert alert-warning d-flex align-items-center justify-content-between mt-3 mb-0" style="display:none !important">
+                    <div>
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        <strong>Reboot required.</strong> One or more updates need a reboot to take effect.
+                    </div>
+                    <form method="post" action="/guests/{{ guest.id }}/power/reboot" class="d-inline ms-3"
+                          onsubmit="return confirm('Reboot {{ guest.name }} now?')">
+                        <button type="submit" class="btn btn-warning btn-sm">
+                            <i class="bi bi-arrow-clockwise"></i> Reboot Now
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -105,6 +119,11 @@
                 if (data.success) {
                     logEl.textContent += '\n--- Update complete ---\n';
                     setStatus('Updates applied successfully!', 'bg-success', 'Complete');
+                    if (data.reboot_required) {
+                        const rebootEl = document.getElementById('rebootPrompt');
+                        rebootEl.style.cssText = '';  // clear the display:none !important
+                        rebootEl.style.display = 'flex';
+                    }
                 } else if (data.cancelled) {
                     logEl.textContent += '\n--- Update cancelled ---\n';
                     setStatus('Update was cancelled.', 'bg-warning', 'Cancelled');
