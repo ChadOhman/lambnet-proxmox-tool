@@ -19,3 +19,4 @@ secret.key
 *.swp
 *.swo
 *~
+.claude/
