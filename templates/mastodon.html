@@ -324,27 +324,42 @@
         </div>
 
         <!-- Upgrade Steps Reference -->
+        {% set _app_guest = guests | selectattr('id', 'equalto', settings.guest_id | int) | first | default(None) %}
+        {% set _app_guest2 = guests | selectattr('id', 'equalto', settings.guest_id_2 | int) | first | default(None) if settings.guest_id_2 else None %}
+        {% set _db_guest = guests | selectattr('id', 'equalto', settings.db_guest_id | int) | first | default(None) %}
         <div class="card bg-dark mt-4">
             <div class="card-header">
                 <h5 class="mb-0"><i class="bi bi-list-ol"></i> Upgrade Steps</h5>
             </div>
             <div class="card-body">
                 <ol class="small mb-0">
-                    <li>{% if settings.protection_type == 'backup' %}Backup (vzdump) {% if settings.guest_id_2 %}all{% else %}both{% endif %} guests to <code>{{ settings.backup_storage or '(storage not set)' }}</code>{% else %}Snapshot {% if settings.guest_id_2 %}all{% else %}both{% endif %} guests{% endif %}</li>
-                    <li><code>git stash</code> (save local changes)</li>
-                    <li>Swap <code>.env.production</code> to direct DB</li>
-                    <li><code>git pull{% if settings.branch %} origin {{ settings.branch }}{% endif %}</code> (fetch latest)</li>
-                    <li><code>git stash pop</code> (restore local changes)</li>
+                    <li>
+                        {% if settings.protection_type == 'backup' %}
+                        Backup (vzdump) to <code>{{ settings.backup_storage or '(storage not set)' }}</code>
+                        (mode: <code>{{ settings.backup_mode or 'snapshot' }}</code>):
+                        {% else %}
+                        Snapshot:
+                        {% endif %}
+                        <code>{{ _app_guest.name if _app_guest else '(app guest not set)' }}</code>{% if _app_guest2 %},
+                        <code>{{ _app_guest2.name }}</code>{% endif %},
+                        <code>{{ _db_guest.name if _db_guest else '(DB guest not set)' }}</code>
+                    </li>
+                    <li><code>git stash</code> on <code>{{ _app_guest.name if _app_guest else 'app guest' }}</code></li>
+                    <li>Swap <code>.env.production</code> DB_HOST/DB_PORT to direct PostgreSQL (<code>{{ _db_guest.name if _db_guest else 'DB guest' }}</code>)</li>
+                    <li><code>git pull{% if settings.branch %} origin {{ settings.branch }}{% endif %}</code></li>
+                    <li><code>git stash pop</code></li>
                     <li><code>bundle install</code></li>
                     <li><code>yarn install --frozen-lockfile</code></li>
-                    <li>Pre-deployment migrations (<code>SKIP_POST_DEPLOYMENT_MIGRATIONS=true</code>)</li>
+                    <li>Pre-deployment DB migrations (<code>SKIP_POST_DEPLOYMENT_MIGRATIONS=true</code>)</li>
                     <li>Asset precompilation</li>
-                    <li>Reload/restart Mastodon services</li>
+                    <li>Restart <code>mastodon-*</code> services</li>
                     <li>Clear cache (<code>tootctl cache clear</code>)</li>
-                    <li>Post-deployment migrations</li>
+                    <li>Post-deployment DB migrations</li>
                     <li>Restore <code>.env.production</code> to PGBouncer</li>
                     <li>Final service restart</li>
-                    {% if settings.guest_id_2 %}<li>Sync code to second Mastodon guest (git pull + bundle + yarn + assets + restart, no migrations)</li>{% endif %}
+                    {% if _app_guest2 %}
+                    <li>Sync code to <code>{{ _app_guest2.name }}</code>: git pull + bundle + yarn + assets + restart (no migrations)</li>
+                    {% endif %}
                 </ol>
             </div>
         </div>
