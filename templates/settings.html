@@ -448,7 +448,6 @@
                 <form method="post" action="/settings/backups">
                     <div class="mb-3">
                         <label class="form-label">Default Backup Storage</label>
-                        {% if backup_storages %}
                         <select class="form-select font-monospace" name="backup_storage">
                             <option value="">-- None (use per-guest storage) --</option>
                             {% for st in backup_storages %}
@@ -456,12 +455,13 @@
                                 {{ st.storage }} ({{ st.type }}){% if st.avail %} — {{ (st.avail / 1073741824) | round(1) }} GB free{% endif %}
                             </option>
                             {% endfor %}
+                            {% if settings.backup_storage and not (backup_storages | selectattr('storage', 'equalto', settings.backup_storage) | list) %}
+                            <option value="{{ settings.backup_storage }}" selected>{{ settings.backup_storage }} (saved)</option>
+                            {% endif %}
                         </select>
-                        {% else %}
-                        <input type="text" class="form-control" name="backup_storage" value="{{ settings.backup_storage or '' }}" placeholder="e.g. local, nfs-backup, pbs">
-                        {% endif %}
                         <div class="form-text">
                             Proxmox storage ID for vzdump backups. Must support backup content type.
+                            {% if not backup_storages %}<span class="text-warning">No storages discovered — ensure a Proxmox host is configured and reachable.</span>{% endif %}
                         </div>
                     </div>
                     <div class="mb-3">
