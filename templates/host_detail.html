@@ -459,6 +459,10 @@
             <i class="bi bi-check-circle-fill me-2"></i>System is up to date
         </div>
         <div id="updatesError" class="text-center text-muted py-4 d-none"></div>
+        <div id="rebootWarning" class="alert alert-warning d-none mx-3 mt-3 mb-0 py-2">
+            <i class="bi bi-arrow-clockwise me-1"></i>
+            <strong id="rebootWarningText"></strong> — a reboot will be required after applying these updates.
+        </div>
         <div id="updatesTableWrap" class="table-responsive d-none">
             <table class="table table-dark table-hover table-sm mb-0">
                 <thead>
@@ -467,6 +471,7 @@
                         <th>Current Version</th>
                         <th>Available Version</th>
                         <th>Priority</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody id="updatesTableBody"></tbody>
@@ -735,6 +740,15 @@
     setInterval(fetchGuestStats, 30000);
 })();
 
+// ── Reboot-requiring package detection ───────────────────────────────────────
+const _REBOOT_PKG_PREFIXES = [
+    'linux-image', 'linux-modules', 'linux-headers',
+    'libc6', 'libc-bin', 'systemd', 'udev', 'initramfs-tools', 'grub-', 'shim-',
+];
+function _pkgRequiresReboot(name) {
+    return _REBOOT_PKG_PREFIXES.some(p => name.startsWith(p));
+}
+
 // ── Pending updates ───────────────────────────────────────────────────────────
 (function() {
     const hostId = {{ host.id }};
@@ -746,6 +760,8 @@
     const updateCountBadge = document.getElementById('updateCountBadge');
     const refreshCacheBtn  = document.getElementById('refreshCacheBtn');
     const applyUpdatesBtn  = document.getElementById('applyUpdatesBtn');
+    const rebootWarning    = document.getElementById('rebootWarning');
+    const rebootWarningText = document.getElementById('rebootWarningText');
 
     function escHtml(s) {
         return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -757,6 +773,7 @@
         updatesError.classList.add('d-none');
         updatesTableWrap.classList.add('d-none');
         updateCountBadge.classList.add('d-none');
+        rebootWarning.classList.add('d-none');
         fetch('/hosts/' + hostId + '/updates', { cache: 'no-store' })
             .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(data => {
@@ -774,12 +791,22 @@
                     updateCountBadge.classList.remove('d-none');
                     return;
                 }
-                updatesTableBody.innerHTML = pkgs.map(p =>
-                    '<tr><td><code>' + escHtml(p.Package || p.package) + '</code></td>' +
-                    '<td><small class="text-muted">' + escHtml(p.OldVersion || p.old_version || '—') + '</small></td>' +
-                    '<td><small class="text-success">' + escHtml(p.Version || p.version || '—') + '</small></td>' +
-                    '<td><small class="text-muted">' + escHtml(p.Priority || p.priority || '—') + '</small></td></tr>'
-                ).join('');
+                const rebootPkgs = pkgs.filter(p => _pkgRequiresReboot(p.Package || p.package || ''));
+                if (rebootPkgs.length > 0) {
+                    rebootWarningText.textContent = rebootPkgs.length + ' update' + (rebootPkgs.length > 1 ? 's require' : ' requires') + ' a reboot';
+                    rebootWarning.classList.remove('d-none');
+                }
+                updatesTableBody.innerHTML = pkgs.map(p => {
+                    const name = p.Package || p.package || '';
+                    const rebootBadge = _pkgRequiresReboot(name)
+                        ? '<span class="badge bg-warning text-dark" title="Typically requires a reboot"><i class="bi bi-arrow-clockwise"></i> reboot</span>'
+                        : '';
+                    return '<tr><td><code>' + escHtml(name) + '</code></td>' +
+                        '<td><small class="text-muted">' + escHtml(p.OldVersion || p.old_version || '—') + '</small></td>' +
+                        '<td><small class="text-success">' + escHtml(p.Version || p.version || '—') + '</small></td>' +
+                        '<td><small class="text-muted">' + escHtml(p.Priority || p.priority || '—') + '</small></td>' +
+                        '<td>' + rebootBadge + '</td></tr>';
+                }).join('');
                 updatesTableWrap.classList.remove('d-none');
                 updateCountBadge.textContent = pkgs.length;
                 updateCountBadge.className = 'badge bg-warning text-dark ms-2';

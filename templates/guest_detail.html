@@ -829,8 +829,12 @@
 {% endif %}
 
 <div class="card bg-dark">
-    <div class="card-header">
+    <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-box-seam"></i> Pending Updates ({{ guest.pending_updates()|length }})</h5>
+        {% set rb = guest.reboot_updates()|length %}
+        {% if rb > 0 %}
+        <span class="badge bg-warning text-dark"><i class="bi bi-arrow-clockwise me-1"></i>{{ rb }} require{{ '' if rb > 1 else 's' }} reboot</span>
+        {% endif %}
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -842,6 +846,7 @@
                         <th>Available Version</th>
                         <th>Severity</th>
                         <th>Discovered</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -854,10 +859,15 @@
                             <span class="badge badge-{{ pkg.severity }}">{{ pkg.severity }}</span>
                         </td>
                         <td>{{ pkg.discovered_at | local_dt('%Y-%m-%d %H:%M') }}</td>
+                        <td>
+                            {% if pkg.requires_reboot %}
+                            <span class="badge bg-warning text-dark" title="Typically requires a reboot"><i class="bi bi-arrow-clockwise"></i> reboot</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="5" class="text-center text-muted py-3">No pending updates</td>
+                        <td colspan="6" class="text-center text-muted py-3">No pending updates</td>
                     </tr>
                     {% endfor %}
                 </tbody>
