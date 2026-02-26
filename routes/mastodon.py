@@ -1,5 +1,6 @@
 import logging
 import time as _time
+import threading as _threading
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required
 from models import db, Setting, Guest
@@ -15,6 +16,12 @@ from audit import log_action
 _stats_cache = {"result": None, "ts": 0.0, "loading": False}
 _STATS_TTL = 60  # seconds before a cached result is considered stale
 
+# ---------------------------------------------------------------------------
+# In-memory upgrade job state — tracks the currently-running upgrade so the
+# frontend can poll for real-time log output.
+# ---------------------------------------------------------------------------
+_upgrade_job = {"running": False, "success": None, "log": []}
+
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("mastodon", __name__)
@@ -24,8 +31,8 @@ bp = Blueprint("mastodon", __name__)
 @login_required
 def _require_login():
     from flask_login import current_user
-    if not current_user.is_admin:
-        flash("Admin access required.", "error")
+    if not current_user.can_update:
+        flash("'Apply Updates' permission required.", "error")
         return redirect(url_for("dashboard.index"))
 
 
@@ -36,6 +43,7 @@ def _get_mastodon_settings():
         "user": Setting.get("mastodon_user", "mastodon"),
         "app_dir": Setting.get("mastodon_app_dir", "/home/mastodon/live"),
         "repo": Setting.get("mastodon_repo", "mastodon/mastodon"),
+        "branch": Setting.get("mastodon_branch", ""),
         "pgbouncer_host": Setting.get("mastodon_pgbouncer_host", ""),
         "pgbouncer_port": Setting.get("mastodon_pgbouncer_port", ""),
         "direct_db_host": Setting.get("mastodon_direct_db_host", ""),
@@ -170,6 +178,7 @@ def save():
     Setting.set("mastodon_user", request.form.get("mastodon_user", "mastodon").strip())
     Setting.set("mastodon_app_dir", request.form.get("mastodon_app_dir", "/home/mastodon/live").strip())
     Setting.set("mastodon_repo", request.form.get("mastodon_repo", "mastodon/mastodon").strip())
+    Setting.set("mastodon_branch", request.form.get("mastodon_branch", "").strip())
     Setting.set("mastodon_pgbouncer_host", request.form.get("mastodon_pgbouncer_host", "").strip())
     Setting.set("mastodon_pgbouncer_port", request.form.get("mastodon_pgbouncer_port", "").strip())
     Setting.set("mastodon_direct_db_host", request.form.get("mastodon_direct_db_host", "").strip())
@@ -207,30 +216,56 @@ def check():
     return redirect(url_for("mastodon.upgrade_page"))
 
 
+@bp.route("/upgrade/status")
+def upgrade_status():
+    return jsonify({
+        "running": _upgrade_job["running"],
+        "success": _upgrade_job["success"],
+        "log": _upgrade_job["log"],
+    })
+
+
 @bp.route("/upgrade", methods=["POST"])
 def upgrade():
     from mastodon import run_mastodon_upgrade
+    from flask import current_app
 
-    ok, log_output = run_mastodon_upgrade()
+    if _upgrade_job["running"]:
+        flash("An upgrade is already in progress.", "warning")
+        return redirect(url_for("mastodon.upgrade_page"))
 
-    now = ""
-    if ok:
+    _upgrade_job.update({"running": True, "success": None, "log": []})
+
+    def _cb(msg):
+        _upgrade_job["log"].append(msg)
+
+    _app = current_app._get_current_object()
+
+    def _bg():
+        ok = False
+        try:
+            with _app.app_context():
+                ok, _ = run_mastodon_upgrade(log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _upgrade_job["running"] = False
+        _upgrade_job["success"] = ok
         from datetime import datetime, timezone
-        now = datetime.now(timezone.utc).isoformat()
-        log_action("mastodon_upgrade", "settings", resource_name="mastodon",
-                   details={"status": "success"})
-        db.session.commit()
-        flash("Mastodon upgrade completed successfully!", "success")
-    else:
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc).isoformat()
-        Setting.set("mastodon_last_upgrade_at", now)
-        Setting.set("mastodon_last_upgrade_status", "error")
-        Setting.set("mastodon_last_upgrade_log", log_output)
-        log_action("mastodon_upgrade", "settings", resource_name="mastodon",
-                   details={"status": "error"})
-        db.session.commit()
-        flash("Mastodon upgrade failed. Check the log for details.", "error")
+        with _app.app_context():
+            now = datetime.now(timezone.utc).isoformat()
+            Setting.set("mastodon_last_upgrade_at", now)
+            Setting.set("mastodon_last_upgrade_status", "success" if ok else "error")
+            Setting.set("mastodon_last_upgrade_log", "\n".join(_upgrade_job["log"]))
+            log_action("mastodon_upgrade", "settings", resource_name="mastodon",
+                       details={"status": "success" if ok else "error"})
+            db.session.commit()
+
+    try:
+        import gevent as _gevent
+        _gevent.spawn(_bg)
+    except ImportError:
+        _threading.Thread(target=_bg, daemon=True).start()
 
     return redirect(url_for("mastodon.upgrade_page"))
 

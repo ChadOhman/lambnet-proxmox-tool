@@ -127,7 +127,7 @@ def backup_guest(guest, storage, mode="snapshot"):
     return False, f"Backup of '{guest.name}' timed out after {timeout // 60} minutes"
 
 
-def _run_second_guest_sync(guest, user, app_dir, log):
+def _run_second_guest_sync(guest, user, app_dir, log, branch=""):
     """Sync code to a second Mastodon app guest via SSH (no DB migrations).
 
     Runs: git stash, git pull, git stash pop, bundle install, yarn install,
@@ -146,6 +146,8 @@ def _run_second_guest_sync(guest, user, app_dir, log):
         log(f"[VM2] No IP address configured for '{guest.name}'")
         return False
 
+    pull_cmd = f"git pull origin {branch}" if branch else "git pull"
+
     try:
         with SSHClient.from_credential(guest.ip_address, credential) as ssh:
             log("--- [VM2] git stash ---")
@@ -154,9 +156,9 @@ def _run_second_guest_sync(guest, user, app_dir, log):
             )
             log(stdout or stderr or "(no output)")
 
-            log("--- [VM2] git pull ---")
+            log(f"--- [VM2] {pull_cmd} ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'cd {app_dir} && git pull'", timeout=120
+                f"su - {user} -c 'cd {app_dir} && {pull_cmd}'", timeout=120
             )
             log(stdout or stderr or "(no output)")
             if code != 0:
@@ -219,6 +221,7 @@ def _get_mastodon_config():
         "db_guest_id": Setting.get("mastodon_db_guest_id", ""),
         "user": Setting.get("mastodon_user", "mastodon"),
         "app_dir": Setting.get("mastodon_app_dir", "/home/mastodon/live"),
+        "branch": Setting.get("mastodon_branch", ""),
         "pgbouncer_host": Setting.get("mastodon_pgbouncer_host", ""),
         "pgbouncer_port": Setting.get("mastodon_pgbouncer_port", ""),
         "direct_db_host": Setting.get("mastodon_direct_db_host", ""),
@@ -252,8 +255,11 @@ def _swap_env_db(ssh, app_dir, new_host, new_port):
     return True, "DB config swapped"
 
 
-def run_mastodon_upgrade():
+def run_mastodon_upgrade(log_callback=None):
     """Run the full Mastodon upgrade procedure.
+
+    log_callback: optional callable(str) invoked immediately after each log line,
+    enabling real-time streaming to a polling endpoint.
 
     Returns (success, log_output).
     """
@@ -265,6 +271,8 @@ def run_mastodon_upgrade():
     def log(msg):
         logger.info(msg)
         log_lines.append(msg)
+        if log_callback:
+            log_callback(msg)
 
     # Validate config
     if not config["guest_id"]:
@@ -296,13 +304,18 @@ def run_mastodon_upgrade():
 
     user = config["user"]
     app_dir = config["app_dir"]
+    branch = (config.get("branch") or "").strip()
 
     # Validate shell-interpolated values to prevent command injection
     try:
         _validate_shell_param(user, "Mastodon user")
         _validate_shell_param(app_dir, "Mastodon app_dir")
+        if branch:
+            _validate_shell_param(branch, "Git branch")
     except ValueError as e:
         return False, str(e)
+
+    pull_cmd = f"git pull origin {branch}" if branch else "git pull"
 
     # --- Step 1: Protection (snapshot or backup) ---
     protection_type = config.get("protection_type", "snapshot")
@@ -377,9 +390,9 @@ def run_mastodon_upgrade():
             env_swapped = True
 
             # 2c. git pull
-            log("--- git pull ---")
+            log(f"--- {pull_cmd} ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'cd {app_dir} && git pull'", timeout=120
+                f"su - {user} -c 'cd {app_dir} && {pull_cmd}'", timeout=120
             )
             log(stdout or stderr or "(no output)")
             if code != 0:
@@ -504,7 +517,7 @@ def run_mastodon_upgrade():
     # --- Step 3: Sync code to second Mastodon app guest (if configured) ---
     if mastodon_guest_2:
         log(f"=== Step 3: Syncing code to second Mastodon guest '{mastodon_guest_2.name}' ===")
-        ok = _run_second_guest_sync(mastodon_guest_2, user, app_dir, log)
+        ok = _run_second_guest_sync(mastodon_guest_2, user, app_dir, log, branch=branch)
         if not ok:
             log(f"WARNING: Code sync to '{mastodon_guest_2.name}' failed — primary upgrade was successful")
 

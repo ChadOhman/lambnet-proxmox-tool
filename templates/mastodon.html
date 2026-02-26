@@ -4,8 +4,7 @@
 {% block content %}
 <nav aria-label="breadcrumb" class="mb-3">
     <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="/mastodon">Instance Overview</a></li>
-        <li class="breadcrumb-item active">Upgrade Management</li>
+        <li class="breadcrumb-item active">Mastodon Upgrade Management</li>
     </ol>
 </nav>
 
@@ -126,6 +125,12 @@
                         <label class="form-label">GitHub Repository</label>
                         <input type="text" class="form-control font-monospace" name="mastodon_repo" value="{{ settings.repo or 'mastodon/mastodon' }}" placeholder="e.g. glitch-soc/mastodon">
                         <div class="form-text">Change this if using a fork (e.g. <code>glitch-soc/mastodon</code>).</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Git Branch <small class="text-muted">(optional)</small></label>
+                        <input type="text" class="form-control font-monospace" name="mastodon_branch" value="{{ settings.branch }}" placeholder="e.g. main, stable">
+                        <div class="form-text">Leave blank to use the default tracking branch. Set to <code>main</code> for glitch-soc.</div>
                     </div>
 
                     <div class="mb-3">
@@ -278,9 +283,9 @@
                         </button>
                     </form>
                     {% if settings.guest_id and settings.db_guest_id %}
-                    <form method="post" action="/mastodon/upgrade"
-                          onsubmit="return confirm('This will:\n1. {% if settings.protection_type == 'backup' %}Backup{% else %}Snapshot{% endif %} {% if settings.guest_id_2 %}all{% else %}both{% endif %} VMs/CTs\n2. Run the full Mastodon upgrade\n{% if settings.guest_id_2 %}3. Sync code to second Mastodon guest\n4.{% else %}3.{% endif %} Restart all services\n\nContinue?')">
-                        <button type="submit" class="btn btn-warning">
+                    <form method="post" action="/mastodon/upgrade" id="upgradeForm"
+                          onsubmit="return startUpgrade(event)">
+                        <button type="submit" class="btn btn-warning" id="upgradeBtn">
                             <i class="bi bi-rocket-takeoff"></i> Upgrade Now
                         </button>
                     </form>
@@ -289,30 +294,32 @@
             </div>
         </div>
 
-        <!-- Last Upgrade Log -->
-        <div class="card bg-dark mt-4">
-            <div class="card-header">
+        <!-- Upgrade Log (live while running, historical when idle) -->
+        <div class="card bg-dark mt-4" id="upgradeLogCard">
+            <div class="card-header d-flex align-items-center justify-content-between">
                 <h5 class="mb-0">
-                    <i class="bi bi-terminal"></i> Last Upgrade
-                    {% if settings.last_upgrade_status == 'success' %}
-                    <span class="badge bg-success ms-2">Success</span>
-                    {% elif settings.last_upgrade_status == 'error' %}
-                    <span class="badge bg-danger ms-2">Failed</span>
-                    {% endif %}
+                    <i class="bi bi-terminal"></i> Upgrade Log
+                    <span id="upgradeStatusBadge" class="ms-2">
+                        {% if settings.last_upgrade_status == 'success' %}
+                        <span class="badge bg-success">Success</span>
+                        {% elif settings.last_upgrade_status == 'error' %}
+                        <span class="badge bg-danger">Failed</span>
+                        {% endif %}
+                    </span>
                 </h5>
+                <span id="upgradeSpinner" class="d-none">
+                    <span class="spinner-border spinner-border-sm text-warning me-1"></span>
+                    <small class="text-warning">Upgrade in progress…</small>
+                </span>
             </div>
             <div class="card-body">
-                {% if settings.last_upgrade_at %}
-                <p class="text-muted mb-2">
+                <p class="text-muted mb-2" id="upgradeTimestamp">
+                    {% if settings.last_upgrade_at %}
                     <small><i class="bi bi-clock"></i> {{ settings.last_upgrade_at }}</small>
+                    {% endif %}
                 </p>
-                {% endif %}
-
-                {% if settings.last_upgrade_log %}
-                <pre class="bg-dark border border-secondary rounded p-3 mb-0" style="max-height: 500px; overflow-y: auto; font-size: 0.85em; white-space: pre-wrap;">{{ settings.last_upgrade_log }}</pre>
-                {% else %}
-                <p class="text-muted mb-0">No upgrades have been run yet.</p>
-                {% endif %}
+                <pre id="liveUpgradeLog" class="bg-black border border-secondary rounded p-3 mb-0"
+                     style="max-height: 500px; overflow-y: auto; font-size: 0.85em; white-space: pre-wrap;">{% if settings.last_upgrade_log %}{{ settings.last_upgrade_log }}{% else %}No upgrades have been run yet.{% endif %}</pre>
             </div>
         </div>
 
@@ -326,7 +333,7 @@
                     <li>{% if settings.protection_type == 'backup' %}Backup (vzdump) {% if settings.guest_id_2 %}all{% else %}both{% endif %} guests to <code>{{ settings.backup_storage or '(storage not set)' }}</code>{% else %}Snapshot {% if settings.guest_id_2 %}all{% else %}both{% endif %} guests{% endif %}</li>
                     <li><code>git stash</code> (save local changes)</li>
                     <li>Swap <code>.env.production</code> to direct DB</li>
-                    <li><code>git pull</code> (fetch latest)</li>
+                    <li><code>git pull{% if settings.branch %} origin {{ settings.branch }}{% endif %}</code> (fetch latest)</li>
                     <li><code>git stash pop</code> (restore local changes)</li>
                     <li><code>bundle install</code></li>
                     <li><code>yarn install --frozen-lockfile</code></li>
@@ -352,5 +359,91 @@ function toggleBackupStorage() {
     document.getElementById('backupStorageRow').classList.toggle('d-none', !isBkp);
     document.getElementById('backupModeRow').classList.toggle('d-none', !isBkp);
 }
+
+// ── Live upgrade log polling ───────────────────────────────────────────────
+let _logLen = 0;
+
+function _setUpgradeRunning(running) {
+    const spinner = document.getElementById('upgradeSpinner');
+    const btn = document.getElementById('upgradeBtn');
+    spinner.classList.toggle('d-none', !running);
+    if (btn) btn.disabled = running;
+}
+
+function _setUpgradeBadge(success) {
+    const badge = document.getElementById('upgradeStatusBadge');
+    if (success === true) {
+        badge.innerHTML = '<span class="badge bg-success">Success</span>';
+    } else if (success === false) {
+        badge.innerHTML = '<span class="badge bg-danger">Failed</span>';
+    }
+}
+
+function pollUpgradeStatus() {
+    fetch('/mastodon/upgrade/status')
+        .then(r => r.json())
+        .then(data => {
+            const logEl = document.getElementById('liveUpgradeLog');
+            const newLines = data.log.slice(_logLen);
+            if (newLines.length) {
+                if (_logLen === 0) logEl.textContent = '';
+                logEl.textContent += newLines.join('\n') + '\n';
+                _logLen = data.log.length;
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            if (data.running) {
+                setTimeout(pollUpgradeStatus, 1500);
+            } else {
+                _setUpgradeRunning(false);
+                if (data.success !== null) {
+                    _setUpgradeBadge(data.success);
+                }
+            }
+        })
+        .catch(() => {
+            // Network error — keep polling
+            setTimeout(pollUpgradeStatus, 3000);
+        });
+}
+
+function startUpgrade(e) {
+    const protType = document.querySelector('input[name="mastodon_protection_type"]:checked');
+    const ptype = protType ? protType.value : 'snapshot';
+    const hasGuest2 = {{ 'true' if settings.guest_id_2 else 'false' }};
+    const msg = 'This will:\n'
+        + '1. ' + (ptype === 'backup' ? 'Backup' : 'Snapshot') + ' ' + (hasGuest2 ? 'all' : 'both') + ' VMs/CTs\n'
+        + '2. Run the full Mastodon upgrade\n'
+        + (hasGuest2 ? '3. Sync code to second Mastodon guest\n4. ' : '3. ') + 'Restart all services\n\nContinue?';
+    if (!confirm(msg)) return false;
+
+    // Show live log panel immediately
+    _logLen = 0;
+    document.getElementById('liveUpgradeLog').textContent = 'Starting upgrade…\n';
+    document.getElementById('upgradeStatusBadge').innerHTML = '';
+    _setUpgradeRunning(true);
+    // Scroll to log
+    document.getElementById('upgradeLogCard').scrollIntoView({behavior: 'smooth'});
+    // Begin polling after a short delay to let the server start the job
+    setTimeout(pollUpgradeStatus, 1500);
+    return true; // allow the form to submit normally
+}
+
+// On page load: check if an upgrade is already running (e.g. user navigated away and back)
+fetch('/mastodon/upgrade/status')
+    .then(r => r.json())
+    .then(data => {
+        if (data.running) {
+            _logLen = 0;
+            document.getElementById('liveUpgradeLog').textContent = '';
+            document.getElementById('upgradeStatusBadge').innerHTML = '';
+            _setUpgradeRunning(true);
+            pollUpgradeStatus();
+        } else if (data.log && data.log.length) {
+            // Show the in-memory log if it's more recent (e.g. just completed this session)
+            document.getElementById('liveUpgradeLog').textContent = data.log.join('\n');
+            _logLen = data.log.length;
+            if (data.success !== null) _setUpgradeBadge(data.success);
+        }
+    });
 </script>
 {% endblock %}
