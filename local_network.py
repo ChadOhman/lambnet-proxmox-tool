@@ -111,8 +111,11 @@ def init_local_bypass(app):
             Role.name.in_(("super_admin", "admin")),
         ).first()
         if admin and admin.is_active:
+            safety = session.get("safety_mode", False)
             session.clear()
             login_user(admin)
+            if safety:
+                session["safety_mode"] = True
             g.local_bypass = True
             logger.debug(f"Local bypass: auto-authenticated {client_ip} as admin")
 

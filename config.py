@@ -40,10 +40,16 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # Session cookie hardening
+    # Session cookie hardening.
+    # SESSION_COOKIE_SECURE defaults to True in production (FLASK_DEBUG != "1").
+    # Set SESSION_COOKIE_SECURE=0 in the environment when the app is accessed
+    # directly over HTTP (e.g. local network without TLS termination) — otherwise
+    # browsers will never send the session cookie back and session state (including
+    # safety mode) will be lost on every request.
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
-    SESSION_COOKIE_SECURE = os.environ.get("FLASK_DEBUG", "0") != "1"
+    _debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+    SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "0" if _debug else "1") == "1"
 
     # Default scan interval in hours
     SCAN_INTERVAL_HOURS = int(os.environ.get("SCAN_INTERVAL_HOURS", "6"))

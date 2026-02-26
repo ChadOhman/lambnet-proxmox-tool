@@ -162,6 +162,7 @@ WorkingDirectory=$APP_DIR
 Environment=LAMBNET_DATA_DIR=$DATA_DIR
 Environment=LAMBNET_SECRET_KEY=$SECRET_DIR/secret.key
 Environment=FLASK_SECRET_KEY_FILE=$SECRET_DIR/flask_secret
+Environment=SESSION_COOKIE_SECURE=0
 ExecStart=$APP_DIR/venv/bin/gunicorn --worker-class gevent --bind 0.0.0.0:5000 --workers 1 --timeout 120 "app:create_app()"
 Restart=always
 RestartSec=5
