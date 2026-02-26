@@ -27,8 +27,11 @@ mkdir -p "$DATA_DIR"
 echo "" > "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
+ts() { date '+%H:%M:%S'; }
+
 echo "============================================"
-echo " Mastodon Canada Administration Tool - Updating..."
+echo " Mastodon Canada Administration Tool"
+echo " Self-Update  $(ts)"
 echo "============================================"
 echo ""
 
@@ -54,29 +57,35 @@ CURRENT_VERSION="unknown"
 if [ -f "VERSION" ]; then
     CURRENT_VERSION=$(cat VERSION | tr -d '[:space:]')
 fi
-echo "Current version: v$CURRENT_VERSION"
-
+echo "Current version : v$CURRENT_VERSION"
+echo "App directory   : $APP_DIR"
 echo ""
-echo "[1/4] Backing up database..."
+
+# ── Step 1: Backup ──────────────────────────────────────────
+echo "[1/4] Backing up database...  ($(ts))"
 mkdir -p "$BACKUP_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 if [ -f "$DATA_DIR/lambnet.db" ]; then
+    DB_SIZE=$(du -sh "$DATA_DIR/lambnet.db" | cut -f1)
     cp "$DATA_DIR/lambnet.db" "$BACKUP_DIR/lambnet_${TIMESTAMP}.db"
-    echo "  Backup saved to $BACKUP_DIR/lambnet_${TIMESTAMP}.db"
+    echo "  Saved $BACKUP_DIR/lambnet_${TIMESTAMP}.db  ($DB_SIZE)"
 
     # Keep only last 10 backups
-    ls -t "$BACKUP_DIR"/lambnet_*.db 2>/dev/null | tail -n +11 | xargs -r rm
-    echo "  Old backups cleaned up."
+    REMOVED=$(ls -t "$BACKUP_DIR"/lambnet_*.db 2>/dev/null | tail -n +11)
+    if [ -n "$REMOVED" ]; then
+        echo "$REMOVED" | xargs -r rm
+        echo "  Removed old backups: $(echo "$REMOVED" | wc -l | tr -d ' ')"
+    fi
 else
-    echo "  No database to backup."
+    echo "  No database found — skipping backup."
 fi
 
+# ── Step 2: Pull code ────────────────────────────────────────
 echo ""
-echo "[2/4] Pulling latest code..."
-# Find the git root (may be parent dir if nested repo structure)
+echo "[2/4] Pulling latest code...  ($(ts))"
+
 GIT_DIR="$APP_DIR"
 if [ ! -d "$APP_DIR/.git" ]; then
-    # Check parent directory for .git
     PARENT_DIR=$(dirname "$APP_DIR")
     if [ -d "$PARENT_DIR/.git" ]; then
         GIT_DIR="$PARENT_DIR"
@@ -85,14 +94,25 @@ fi
 
 if [ -d "$GIT_DIR/.git" ]; then
     cd "$GIT_DIR"
-    # Determine which branch to update from
     BRANCH="${UPDATE_BRANCH:-main}"
-    echo "  Updating from branch: $BRANCH"
-    git fetch --quiet origin
-    git checkout --quiet "$BRANCH" 2>/dev/null || git checkout --quiet -b "$BRANCH" "origin/$BRANCH"
-    git reset --hard "origin/$BRANCH" --quiet
+    echo "  Branch: $BRANCH"
+
+    echo "  Fetching from origin..."
+    git fetch origin 2>&1 | sed 's/^/    /'
+
+    # Show incoming commits before applying them
+    AHEAD=$(git log --oneline HEAD..origin/"$BRANCH" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$AHEAD" -gt 0 ]; then
+        echo "  $AHEAD new commit(s) incoming:"
+        git log --oneline HEAD..origin/"$BRANCH" 2>/dev/null | sed 's/^/    + /'
+    else
+        echo "  Already up to date."
+    fi
+
+    git checkout "$BRANCH" 2>&1 | sed 's/^/    /'
+    git reset --hard "origin/$BRANCH" 2>&1 | sed 's/^/    /'
     cd "$APP_DIR"
-    echo "  Code updated from GitHub ($BRANCH)."
+    echo "  Code updated."
 else
     echo "  WARNING: Not a git repository. Manual update may be needed."
 fi
@@ -104,28 +124,39 @@ if [ -f "VERSION" ]; then
 fi
 echo "  New version: v$NEW_VERSION"
 
+# ── Step 3: Python dependencies ──────────────────────────────
 echo ""
-echo "[3/4] Updating Python dependencies..."
+echo "[3/4] Updating Python dependencies...  ($(ts))"
 source venv/bin/activate
-pip install --quiet --upgrade pip
-pip install --quiet -r requirements.txt
-pip install --quiet gevent
-echo "  Done."
 
+echo "  Upgrading pip..."
+pip install --upgrade pip 2>&1 | grep -E 'Successfully|already|Requirement|ERROR' | sed 's/^/    /'
+
+echo "  Installing requirements..."
+pip install -r requirements.txt 2>&1 | grep -E 'Successfully|already|Requirement|Collecting|ERROR' | sed 's/^/    /'
+
+echo "  Installing gevent..."
+pip install gevent 2>&1 | grep -E 'Successfully|already|Requirement|Collecting|ERROR' | sed 's/^/    /'
+
+echo "  Dependencies up to date."
+
+# ── Step 4: Restart ──────────────────────────────────────────
 echo ""
-echo "[4/4] Restarting service..."
+echo "[4/4] Restarting service...  ($(ts))"
 systemctl restart "$APP_NAME"
 sleep 2
 
 if systemctl is-active --quiet "$APP_NAME"; then
-    echo "  Service restarted successfully."
+    echo "  Service is active."
+    systemctl status "$APP_NAME" --no-pager -n 3 2>&1 | sed 's/^/    /'
 else
-    echo "  WARNING: Service may not have started. Check: journalctl -u $APP_NAME"
+    echo "  WARNING: Service may not have started."
+    echo "  Check: journalctl -u $APP_NAME -n 20"
 fi
 
 echo ""
 echo "============================================"
-echo " Update Complete!"
+echo " Update Complete!  ($(ts))"
 echo " v$CURRENT_VERSION -> v$NEW_VERSION"
 echo "============================================"
 echo ""

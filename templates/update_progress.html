@@ -10,13 +10,16 @@
                 <span id="statusBadge" class="badge bg-info">Starting...</span>
             </div>
             <div class="card-body p-0">
-                <pre id="logOutput" style="background: #1a1a2e; color: #e0e0e0; padding: 1rem; margin: 0; min-height: 300px; max-height: 500px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; word-wrap: break-word; border-radius: 0;"></pre>
+                <pre id="logOutput" style="background: #0d1117; color: #c9d1d9; padding: 1rem; margin: 0; min-height: 350px; max-height: 550px; overflow-y: auto; font-size: 0.82rem; white-space: pre-wrap; word-break: break-all; border-radius: 0; line-height: 1.5;"></pre>
             </div>
             <div class="card-footer d-flex justify-content-between align-items-center">
                 <small class="text-muted" id="statusText">Waiting for update output...</small>
-                <a href="/settings" id="backBtn" class="btn btn-secondary btn-sm disabled">
-                    <i class="bi bi-arrow-left"></i> Back to Settings
-                </a>
+                <div class="d-flex align-items-center gap-3">
+                    <small class="text-muted font-monospace" id="lineCount"></small>
+                    <a href="/settings" id="backBtn" class="btn btn-secondary btn-sm disabled">
+                        <i class="bi bi-arrow-left"></i> Back to Settings
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -31,13 +34,15 @@
     const statusText = document.getElementById('statusText');
     const backBtn = document.getElementById('backBtn');
     const spinIcon = document.getElementById('spinIcon');
+    const lineCount = document.getElementById('lineCount');
 
     let wasRunning = true;
     let connectionLost = false;
     let processDone = false;
     let processDoneAt = 0;
     let updateComplete = false;
-    let pollInterval = 2000;
+    let lastLineCount = 0;
+    const pollInterval = 2000;
 
     function setStatus(text, badgeClass, badgeText) {
         statusText.textContent = text;
@@ -45,13 +50,20 @@
         badge.textContent = badgeText;
     }
 
+    function updateLog(text) {
+        if (!text) return;
+        logEl.textContent = text;
+        const lines = text.split('\n').length;
+        if (lines !== lastLineCount) {
+            lastLineCount = lines;
+            lineCount.textContent = lines + ' lines';
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    }
+
     function markComplete(data) {
         updateComplete = true;
-        if (data && data.log) {
-            logEl.textContent = data.log;
-        }
-        logEl.textContent += '\n--- Update complete ---\n';
-        logEl.scrollTop = logEl.scrollHeight;
+        updateLog((data && data.log) ? data.log + '\n--- Update complete ---\n' : logEl.textContent + '\n--- Update complete ---\n');
         setStatus('Update complete!', 'bg-success', 'Complete');
         backBtn.classList.remove('disabled');
         backBtn.removeAttribute('aria-disabled');
@@ -66,17 +78,12 @@
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const data = await resp.json();
 
-            // Connection restored after being lost = service restarted
             if (connectionLost) {
                 markComplete(data);
                 return;
             }
 
-            // Update log
-            if (data.log) {
-                logEl.textContent = data.log;
-                logEl.scrollTop = logEl.scrollHeight;
-            }
+            updateLog(data.log);
 
             if (data.running) {
                 setStatus('Update in progress...', 'bg-info', 'Updating...');
@@ -84,16 +91,11 @@
                 processDone = false;
             } else {
                 if (wasRunning) {
-                    // Process just finished — wait for service restart
                     setStatus('Service restarting, please wait...', 'bg-warning text-dark', 'Restarting...');
                     wasRunning = false;
                     processDone = true;
                     processDoneAt = Date.now();
                 }
-
-                // If process has been done for >10s and we're still connected,
-                // the service either restarted fast or won't restart (e.g. dev mode).
-                // Either way, the update is done.
                 if (processDone && (Date.now() - processDoneAt) > 10000) {
                     markComplete(data);
                     return;
@@ -101,7 +103,6 @@
             }
 
         } catch (e) {
-            // Connection failed — service is restarting
             connectionLost = true;
             setStatus('Service restarting, please wait...', 'bg-warning text-dark', 'Restarting...');
         }
@@ -109,13 +110,11 @@
         setTimeout(poll, pollInterval);
     }
 
-    // Add spin animation
     const style = document.createElement('style');
     style.textContent = '.spin-animation { animation: spin 1s linear infinite; } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
     document.head.appendChild(style);
     spinIcon.classList.add('spin-animation');
 
-    // Start polling
     setTimeout(poll, 1000);
 })();
 </script>
