@@ -88,7 +88,6 @@
                     </div>
                     <div class="mb-3 {{ '' if settings.protection_type == 'backup' or not snapshots_supported else 'd-none' }}" id="backupStorageRow">
                         <label class="form-label">Backup Storage</label>
-                        {% if backup_storages %}
                         <select class="form-select font-monospace" name="mastodon_backup_storage">
                             <option value="">-- Select Storage --</option>
                             {% for st in backup_storages %}
@@ -96,12 +95,13 @@
                                 {{ st.storage }} ({{ st.type }}){% if st.avail %} — {{ (st.avail / 1073741824) | round(1) }} GB free{% endif %}
                             </option>
                             {% endfor %}
+                            {% if settings.backup_storage and not (backup_storages | selectattr('storage', 'equalto', settings.backup_storage) | list) %}
+                            <option value="{{ settings.backup_storage }}" selected>{{ settings.backup_storage }} (saved)</option>
+                            {% endif %}
                         </select>
-                        {% else %}
-                        <input type="text" class="form-control font-monospace" name="mastodon_backup_storage"
-                               value="{{ settings.backup_storage }}" placeholder="e.g. pbs-ovh">
-                        {% endif %}
-                        <div class="form-text">Storage to send vzdump backups to. Configure the Mastodon app guest first to auto-populate available storages.</div>
+                        <div class="form-text">Storage to send vzdump backups to.
+                            {% if not backup_storages %}<span class="text-warning">No storages discovered — configure the Mastodon app guest first.</span>{% endif %}
+                        </div>
                     </div>
                     <div class="mb-3 {{ '' if settings.protection_type == 'backup' or not snapshots_supported else 'd-none' }}" id="backupModeRow">
                         <label class="form-label">Backup Mode</label>
@@ -355,15 +355,17 @@
                         <code>{{ _db_guest.name if _db_guest else '(DB guest not set)' }}</code>
                     </li>
                     <li><code>git stash</code> on <code>{{ _app_guest.name if _app_guest else 'app guest' }}</code></li>
-                    <li>Swap <code>.env.production</code> DB_HOST/DB_PORT to direct PostgreSQL (<code>{{ _db_guest.name if _db_guest else 'DB guest' }}</code>)</li>
+                    <li>Swap <code>.env.production</code> to direct PostgreSQL (<code>{{ _db_guest.name if _db_guest else 'DB guest' }}</code>)</li>
                     <li><code>git pull{% if settings.branch %} origin {{ settings.branch }}{% endif %}</code></li>
                     <li><code>git stash pop</code></li>
                     <li><code>bundle install</code></li>
                     <li><code>yarn install --frozen-lockfile</code></li>
                     <li>Pre-deployment DB migrations (<code>SKIP_POST_DEPLOYMENT_MIGRATIONS=true</code>)</li>
                     <li>Asset precompilation</li>
-                    <li>Restart <code>mastodon-*</code> services</li>
+                    <li>Restore <code>.env.production</code> to PGBouncer</li>
+                    <li>Restart <code>mastodon-*</code> services <small class="text-muted">(now on PGBouncer)</small></li>
                     <li>Clear cache (<code>tootctl cache clear</code>)</li>
+                    <li>Re-swap <code>.env.production</code> to direct PostgreSQL</li>
                     <li>Post-deployment DB migrations</li>
                     <li>Restore <code>.env.production</code> to PGBouncer</li>
                     <li>Final service restart</li>

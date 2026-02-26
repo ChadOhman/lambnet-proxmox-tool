@@ -321,7 +321,10 @@ def run_mastodon_upgrade(log_callback=None):
     protection_type = config.get("protection_type", "snapshot")
     backup_storage = config.get("backup_storage", "")
 
-    if protection_type == "backup" and backup_storage:
+    if protection_type == "backup" and not backup_storage:
+        return False, "Backup protection selected but no backup storage is configured"
+
+    if protection_type == "backup":
         backup_mode = config.get("backup_mode", "snapshot")
         log(f"=== Step 1: Creating vzdump backups to storage '{backup_storage}' (mode: {backup_mode}) ===")
         log("(This may take several minutes — please be patient)")
@@ -461,7 +464,14 @@ def run_mastodon_upgrade(log_callback=None):
                 env_swapped = False
                 return False, "\n".join(log_lines)
 
-            # 2i. Restart all mastodon services
+            # 2i. Restore .env.production to PGBouncer before the intermediate restart
+            # so live traffic goes back through the connection pool, not direct PostgreSQL.
+            log("--- Restoring .env.production to PGBouncer (pre-restart) ---")
+            ok, msg = _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
+            log(msg)
+            env_swapped = False
+
+            # 2j. Restart all mastodon services (now on PGBouncer, running new code)
             log("--- Restarting mastodon services ---")
             stdout, stderr, code = ssh.execute_sudo(
                 "systemctl restart mastodon-*", timeout=60
@@ -476,7 +486,15 @@ def run_mastodon_upgrade(log_callback=None):
             )
             log(stdout or stderr or "(no output)")
 
-            # 2l. Post-deployment migrations
+            # 2l. Re-swap .env.production to direct DB for post-deployment migrations
+            log("--- Swapping .env.production to direct DB (post-deployment migrations) ---")
+            ok, msg = _swap_env_db(ssh, app_dir, config["direct_db_host"], config["direct_db_port"])
+            log(msg)
+            if not ok:
+                return False, "\n".join(log_lines)
+            env_swapped = True
+
+            # 2m. Post-deployment migrations
             log("--- Post-deployment database migrations ---")
             stdout, stderr, code = ssh.execute_sudo(
                 f"su - {user} -c 'cd {app_dir} && RAILS_ENV=production bundle exec rails db:migrate'",
@@ -489,13 +507,13 @@ def run_mastodon_upgrade(log_callback=None):
                 env_swapped = False
                 return False, "\n".join(log_lines)
 
-            # 2m. Restore .env.production to PGBouncer
+            # 2n. Restore .env.production to PGBouncer
             log("--- Restoring .env.production to PGBouncer ---")
             ok, msg = _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
             log(msg)
             env_swapped = False
 
-            # 2n. Final service restart
+            # 2o. Final service restart
             log("--- Final service restart ---")
             stdout, stderr, code = ssh.execute_sudo(
                 "systemctl restart mastodon-*", timeout=60

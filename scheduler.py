@@ -92,7 +92,12 @@ def _check_mastodon_release(app):
         if Setting.get("mastodon_auto_upgrade", "false") == "true":
             logger.info("Auto-upgrade enabled, starting Mastodon upgrade...")
             from mastodon import run_mastodon_upgrade
+            from audit import log_action
+            from models import db
             ok, log_output = run_mastodon_upgrade()
+            log_action("mastodon_upgrade", "settings", resource_name="mastodon",
+                       details={"status": "success" if ok else "error", "trigger": "auto"})
+            db.session.commit()
             if ok:
                 logger.info("Mastodon auto-upgrade completed successfully")
             else:
