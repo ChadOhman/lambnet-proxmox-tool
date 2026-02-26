@@ -91,22 +91,50 @@ def upgrade_page():
     settings = _get_mastodon_settings()
     guests = Guest.query.filter_by(enabled=True).order_by(Guest.name).all()
 
-    # Fetch backup-capable storages from the Mastodon guest's Proxmox host
     backup_storages = []
+    snapshots_supported = True  # assume True until proven otherwise
+    snapshot_blockers = []  # guest names that don't support snapshots
+
     guest_id = settings.get("guest_id", "")
-    if guest_id:
-        mastodon_guest = Guest.query.get(int(guest_id))
-        if mastodon_guest and mastodon_guest.proxmox_host and not mastodon_guest.proxmox_host.is_pbs:
+    guest_id_2 = settings.get("guest_id_2", "")
+    db_guest_id = settings.get("db_guest_id", "")
+
+    guests_to_check = []
+    for gid in (guest_id, guest_id_2, db_guest_id):
+        if gid:
+            g = Guest.query.get(int(gid))
+            if g:
+                guests_to_check.append(g)
+
+    if guests_to_check:
+        primary = guests_to_check[0]
+        if primary.proxmox_host and not primary.proxmox_host.is_pbs:
             try:
                 from proxmox_api import ProxmoxClient
-                client = ProxmoxClient(mastodon_guest.proxmox_host)
-                node = client.find_guest_node(mastodon_guest.vmid)
+                client = ProxmoxClient(primary.proxmox_host)
+
+                # Backup storages (from primary app guest's host)
+                node = client.find_guest_node(primary.vmid)
                 if node:
                     backup_storages = client.list_node_storages(node, content_type="backup")
-            except Exception as e:
-                logger.warning(f"Could not fetch backup storages: {e}")
 
-    return render_template("mastodon.html", settings=settings, guests=guests, backup_storages=backup_storages)
+                # Snapshot capability check for all configured guests
+                for g in guests_to_check:
+                    g_node = client.find_guest_node(g.vmid)
+                    if g_node and not client.guest_supports_snapshot(g_node, g.vmid, g.guest_type):
+                        snapshots_supported = False
+                        snapshot_blockers.append(g.name)
+            except Exception as e:
+                logger.warning(f"Could not check snapshot/backup support: {e}")
+
+    return render_template(
+        "mastodon.html",
+        settings=settings,
+        guests=guests,
+        backup_storages=backup_storages,
+        snapshots_supported=snapshots_supported,
+        snapshot_blockers=snapshot_blockers,
+    )
 
 
 @bp.route("/stats")

@@ -337,6 +337,22 @@ class ProxmoxClient:
         except Exception as e:
             return False, str(e)
 
+    def guest_supports_snapshot(self, node, vmid, guest_type):
+        """Return True if the guest's storage supports snapshots (i.e. not plain LVM).
+
+        Uses the Proxmox API feature-check endpoint. Defaults to True on any
+        error so we don't silently block snapshot attempts.
+        """
+        try:
+            if guest_type == "vm":
+                result = self.api.nodes(node).qemu(vmid).feature.get(feature="snapshot")
+            else:
+                result = self.api.nodes(node).lxc(vmid).feature.get(feature="snapshot")
+            return bool(result.get("hasFeature", 1))
+        except Exception as e:
+            logger.debug(f"Could not check snapshot feature for {guest_type}/{vmid}: {e}")
+            return True  # fail open
+
     def create_snapshot(self, node, vmid, guest_type, snapname, description=""):
         """Create a snapshot of a VM or CT. Returns (success, upid_or_error)."""
         try:
