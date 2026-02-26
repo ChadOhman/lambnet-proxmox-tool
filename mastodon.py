@@ -328,16 +328,20 @@ def _check_env_compliance(ssh, user, app_dir, branch, log):
             pass
 
     # Step 4: Check installed versions
-    # Ruby
+    # Ruby — try plain PATH first, then explicit rbenv shims.
+    # su - user -c '...' creates a non-interactive login shell which sources .profile but
+    # NOT .bashrc on most Debian/Ubuntu systems, so rbenv shims may not be in PATH.
     installed_ruby = None
-    stdout, stderr, code = ssh.execute_sudo(
+    for _ruby_cmd in [
         f"su - {user} -c 'ruby --version 2>/dev/null'",
-        timeout=10,
-    )
-    if code == 0 and stdout.strip():
-        m = re.search(r'ruby\s+(\d+\.\d+\.\d+)', stdout)
-        if m:
-            installed_ruby = m.group(1)
+        f"su - {user} -c 'export PATH=$HOME/.rbenv/bin:$HOME/.rbenv/shims:$PATH; ruby --version 2>/dev/null'",
+    ]:
+        stdout, stderr, code = ssh.execute_sudo(_ruby_cmd, timeout=10)
+        if code == 0 and stdout.strip():
+            m = re.search(r'ruby\s+(\d+\.\d+\.\d+)', stdout)
+            if m:
+                installed_ruby = m.group(1)
+                break
 
     # Node.js
     installed_node = None
@@ -350,16 +354,18 @@ def _check_env_compliance(ssh, user, app_dir, branch, log):
         if m:
             installed_node = m.group(1)
 
-    # Bundler
+    # Bundler — same rbenv fallback as Ruby
     installed_bundler = None
-    stdout, stderr, code = ssh.execute_sudo(
+    for _bundle_cmd in [
         f"su - {user} -c 'bundle --version 2>/dev/null'",
-        timeout=10,
-    )
-    if code == 0 and stdout.strip():
-        m = re.search(r'(\d+\.\d+[\.\d]*)', stdout.strip())
-        if m:
-            installed_bundler = m.group(1)
+        f"su - {user} -c 'export PATH=$HOME/.rbenv/bin:$HOME/.rbenv/shims:$PATH; bundle --version 2>/dev/null'",
+    ]:
+        stdout, stderr, code = ssh.execute_sudo(_bundle_cmd, timeout=10)
+        if code == 0 and stdout.strip():
+            m = re.search(r'(\d+\.\d+[\.\d]*)', stdout.strip())
+            if m:
+                installed_bundler = m.group(1)
+                break
 
     # Step 5: Compare and log
 
@@ -598,9 +604,11 @@ def run_mastodon_preflight(log_callback=None):
                 else:
                     checks_failed += 1
 
-                # Direct DB reachability
+                # Direct DB reachability — use bash /dev/tcp (no external tools required)
+                # Falls back to pg_isready and nc if bash /dev/tcp is unavailable
                 stdout, stderr, code = ssh.execute_sudo(
-                    f"(pg_isready -h {config['direct_db_host']} -p {config['direct_db_port']} 2>/dev/null"
+                    f"(timeout 3 bash -c ': >/dev/tcp/{config['direct_db_host']}/{config['direct_db_port']}' 2>/dev/null"
+                    f" || pg_isready -h {config['direct_db_host']} -p {config['direct_db_port']} 2>/dev/null"
                     f" || nc -z {config['direct_db_host']} {config['direct_db_port']} 2>/dev/null) && echo ok",
                     timeout=10,
                 )
@@ -608,9 +616,10 @@ def run_mastodon_preflight(log_callback=None):
                       code == 0 and "ok" in (stdout or ""),
                       "cannot connect to direct PostgreSQL port")
 
-                # PGBouncer reachability
+                # PGBouncer reachability — same bash /dev/tcp approach
                 stdout, stderr, code = ssh.execute_sudo(
-                    f"(pg_isready -h {config['pgbouncer_host']} -p {config['pgbouncer_port']} 2>/dev/null"
+                    f"(timeout 3 bash -c ': >/dev/tcp/{config['pgbouncer_host']}/{config['pgbouncer_port']}' 2>/dev/null"
+                    f" || pg_isready -h {config['pgbouncer_host']} -p {config['pgbouncer_port']} 2>/dev/null"
                     f" || nc -z {config['pgbouncer_host']} {config['pgbouncer_port']} 2>/dev/null) && echo ok",
                     timeout=10,
                 )

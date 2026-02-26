@@ -46,7 +46,7 @@
 
                     <div class="mb-3">
                         <label class="form-label">PostgreSQL Guest</label>
-                        <select class="form-select" name="mastodon_db_guest_id">
+                        <select class="form-select" name="mastodon_db_guest_id" id="dbGuestSelect">
                             <option value="">-- Select Guest --</option>
                             {% for guest in guests %}
                             <option value="{{ guest.id }}" {{ 'selected' if settings.db_guest_id == guest.id|string }}>
@@ -185,7 +185,7 @@
                             {% else %}
                             <input type="text" class="form-control font-monospace" name="mastodon_direct_db_host" value="{{ settings.direct_db_host }}" placeholder="e.g. 10.0.0.50">
                             {% endif %}
-                            <div class="form-text">Direct PostgreSQL (for migrations)</div>
+                            <div class="form-text">Direct PostgreSQL (for migrations){% if not safety_mode %} — <a href="#" onclick="fillDirectDbFromGuest(); return false;" class="small">use DB guest IP</a>{% endif %}</div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Direct DB_PORT</label>
@@ -393,6 +393,27 @@ function toggleBackupStorage() {
     document.getElementById('backupStorageRow').classList.toggle('d-none', !isBkp);
     document.getElementById('backupModeRow').classList.toggle('d-none', !isBkp);
 }
+
+// ── Guest IP auto-fill ────────────────────────────────────────────────────────
+const _guestIPs = {
+    {% for guest in guests %}"{{ guest.id }}": "{{ guest.ip_address or '' }}"{% if not loop.last %}, {% endif %}{% endfor %}
+};
+
+function fillDirectDbFromGuest() {
+    const sel = document.getElementById('dbGuestSelect');
+    const ip = sel ? (_guestIPs[sel.value] || '') : '';
+    const field = document.querySelector('input[name="mastodon_direct_db_host"]:not([type="hidden"])');
+    if (field && ip) field.value = ip;
+}
+
+(function() {
+    const sel = document.getElementById('dbGuestSelect');
+    if (sel) sel.addEventListener('change', function() {
+        const ip = _guestIPs[this.value] || '';
+        const field = document.querySelector('input[name="mastodon_direct_db_host"]:not([type="hidden"])');
+        if (field && !field.value && ip) field.value = ip;
+    });
+})();
 
 // ── Pre-flight check ─────────────────────────────────────────────────────────
 let _preflightLogLen = 0;
