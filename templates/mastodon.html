@@ -249,6 +249,9 @@
                         <td>
                             {% if settings.pg_version %}
                             <span class="badge bg-secondary">{{ settings.pg_version }}</span>
+                            {% if settings.pg_latest_version %}
+                            <span class="badge bg-warning text-dark ms-1" title="Update available via apt">{{ settings.pg_latest_version }} available</span>
+                            {% endif %}
                             {% else %}
                             <span class="text-muted">Not detected</span>
                             {% endif %}
@@ -270,7 +273,7 @@
                     </tr>
                 </table>
 
-                {% if settings.current_version and settings.latest_version and settings.current_version != settings.latest_version %}
+                {% if settings.current_version and settings.latest_version and settings.update_available %}
                 <div class="alert alert-warning py-2 mb-3">
                     <i class="bi bi-exclamation-triangle"></i>
                     <strong>Update available:</strong> v{{ settings.current_version }} &rarr; v{{ settings.latest_version }}

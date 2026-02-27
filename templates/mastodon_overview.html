@@ -288,7 +288,7 @@ function _pollStats(url) {
             }
 
             const updBadge = document.getElementById('stat-update-badge');
-            if (d.current_version && d.latest_version && d.current_version !== d.latest_version) {
+            if (d.current_version && d.latest_version && d.update_available) {
                 updBadge.innerHTML = '<span class="badge bg-warning text-dark"><i class="bi bi-arrow-up-circle"></i> v' + d.latest_version + ' available</span>';
             } else if (d.current_version && d.latest_version) {
                 updBadge.innerHTML = '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Up to date</span>';

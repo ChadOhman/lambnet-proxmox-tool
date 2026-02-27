@@ -86,6 +86,37 @@ DEFAULT_MASTODON_REPO = "mastodon/mastodon"
 _REPO_RE = re.compile(r'^[\w.\-]+/[\w.\-]+$')
 
 
+def _version_gt(candidate: str, current: str) -> bool:
+    """True if candidate semver is strictly greater than current.
+
+    Strips build metadata (e.g. '+glitch') before comparing so that
+    '4.5.7' and '4.6.0-alpha.5+glitch' are compared by their numeric
+    components only.  A stable release (no pre-release tag) sorts higher
+    than a pre-release with the same major.minor.patch.
+    """
+    def _parse(v):
+        v = v.lstrip("v").split("+")[0]
+        m = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$", v)
+        if not m:
+            return None
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4))
+
+    pa, pb = _parse(candidate), _parse(current)
+    if pa is None or pb is None:
+        return False
+    if pa[:3] != pb[:3]:
+        return pa[:3] > pb[:3]
+    # Same major.minor.patch — stable (pre=None) sorts above any pre-release
+    pre_a, pre_b = pa[3], pb[3]
+    if pre_a is None and pre_b is None:
+        return False
+    if pre_a is None:
+        return True   # candidate is stable, current is pre-release → newer
+    if pre_b is None:
+        return False  # candidate is pre-release, current is stable → older
+    return pre_a > pre_b  # both pre-release: lexicographic comparison
+
+
 def check_mastodon_release():
     """Check GitHub for the latest Mastodon release.
 
@@ -111,7 +142,8 @@ def check_mastodon_release():
         Setting.set("mastodon_latest_release_url", release_url)
 
         current = Setting.get("mastodon_current_version", "")
-        update_available = bool(current and latest != current)
+        update_available = bool(current and _version_gt(latest, current))
+        Setting.set("mastodon_update_available", "true" if update_available else "false")
 
         return update_available, latest, release_url
     except Exception as e:

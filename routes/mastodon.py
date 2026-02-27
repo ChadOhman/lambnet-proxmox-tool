@@ -54,6 +54,8 @@ def _get_mastodon_settings():
         "pg_version": Setting.get("mastodon_pg_version", ""),
         "latest_version": Setting.get("mastodon_latest_version", ""),
         "latest_release_url": Setting.get("mastodon_latest_release_url", ""),
+        "update_available": Setting.get("mastodon_update_available", "") == "true",
+        "pg_latest_version": Setting.get("mastodon_pg_latest_version", ""),
         "last_upgrade_at": Setting.get("mastodon_last_upgrade_at", ""),
         "last_upgrade_status": Setting.get("mastodon_last_upgrade_status", ""),
         "last_upgrade_log": Setting.get("mastodon_last_upgrade_log", ""),
@@ -181,6 +183,7 @@ def stats():
                 )
             data["current_version"] = settings.get("current_version", "")
             data["latest_version"] = settings.get("latest_version", "")
+            data["update_available"] = settings.get("update_available", False)
             data["pg_version"] = settings.get("pg_version", "")
             _stats_cache["result"] = data
             _stats_cache["ts"] = _time.time()
@@ -461,6 +464,23 @@ def detect_versions():
                     pg_version = match.group(1)
                     Setting.set("mastodon_pg_version", pg_version)
                     detected.append(f"PostgreSQL: {pg_version}")
+
+                    # Check apt for a newer patch version of this major release
+                    pg_major = pg_version.split(".")[0]
+                    upg_out, _ = _execute_command(
+                        db_guest,
+                        f"apt list --upgradable 2>/dev/null | grep -i 'postgresql-{pg_major}/'",
+                        timeout=15,
+                    )
+                    if upg_out and upg_out.strip():
+                        # e.g. "postgresql-18/focal-pgdg 18.4-1.pgdg22.04+1 amd64 [upgradable from: 18.3-...]"
+                        upg_match = re.search(r"postgresql-\d+/\S+\s+([\d.]+)", upg_out.strip())
+                        if upg_match:
+                            Setting.set("mastodon_pg_latest_version", upg_match.group(1))
+                        else:
+                            Setting.set("mastodon_pg_latest_version", "")
+                    else:
+                        Setting.set("mastodon_pg_latest_version", "")
             elif error:
                 logger.warning(f"PostgreSQL version detection failed: {error}")
                 flash(f"Could not detect PostgreSQL version: {error}", "warning")
