@@ -1,20 +1,9 @@
 import logging
-import time as _time
 import threading as _threading
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required
 from models import db, Setting, Guest
 from audit import log_action
-
-# ---------------------------------------------------------------------------
-# In-memory stats cache — avoids holding an HTTP connection open for 15-20 s
-# while SSH calls run (which disrupts the SSE collab stream on the same
-# single gevent worker).  The stats() route fires a detached background
-# greenlet and returns {"loading": true} immediately; clients poll until
-# the background job populates the cache.
-# ---------------------------------------------------------------------------
-_stats_cache = {"result": None, "ts": 0.0, "loading": False}
-_STATS_TTL = 60  # seconds before a cached result is considered stale
 
 # ---------------------------------------------------------------------------
 # In-memory upgrade job state — tracks the currently-running upgrade so the
@@ -66,29 +55,6 @@ def _get_mastodon_settings():
     }
 
 
-@bp.route("/")
-def overview():
-    settings = _get_mastodon_settings()
-    guest_id = settings.get("guest_id", "")
-    db_guest_id = settings.get("db_guest_id", "")
-
-    mastodon_services = []
-    from models import GuestService
-    try:
-        if guest_id:
-            mastodon_services += GuestService.query.filter_by(guest_id=int(guest_id)).all()
-        if db_guest_id:
-            mastodon_services += GuestService.query.filter_by(guest_id=int(db_guest_id)).all()
-    except (TypeError, ValueError):
-        logger.warning("Mastodon guest_id setting is not a valid integer")
-
-    return render_template(
-        "mastodon_overview.html",
-        settings=settings,
-        mastodon_services=mastodon_services,
-    )
-
-
 @bp.route("/upgrade")
 def upgrade_page():
     settings = _get_mastodon_settings()
@@ -138,68 +104,6 @@ def upgrade_page():
         snapshots_supported=snapshots_supported,
         snapshot_blockers=snapshot_blockers,
     )
-
-
-@bp.route("/stats")
-def stats():
-    settings = _get_mastodon_settings()
-    guest_id = settings.get("guest_id", "")
-    db_guest_id = settings.get("db_guest_id", "")
-
-    if not guest_id or not db_guest_id:
-        return jsonify({"error": "Mastodon guests not configured"}), 400
-
-    force = request.args.get("force") == "1"
-    now = _time.time()
-
-    # Return cached result if it is still fresh
-    if not force and _stats_cache["result"] and (now - _stats_cache["ts"]) < _STATS_TTL:
-        return jsonify(_stats_cache["result"])
-
-    # Background collection already in progress — tell the client to poll
-    if _stats_cache["loading"]:
-        return jsonify({"loading": True})
-
-    # Kick off a detached background greenlet (or thread) so this HTTP request
-    # returns in milliseconds without holding a WSGI connection open.
-    _stats_cache["loading"] = True
-    if force:
-        _stats_cache["result"] = None
-
-    from flask import current_app
-    _app = current_app._get_current_object()
-
-    def _bg():
-        try:
-            from scanner import get_mastodon_overview_stats
-            with _app.app_context():
-                from models import Guest as _G
-                mg = _G.query.get(int(guest_id))
-                dg = _G.query.get(int(db_guest_id))
-                data = get_mastodon_overview_stats(
-                    mg, dg,
-                    app_dir=settings.get("app_dir", "/home/mastodon/live"),
-                    user=settings.get("user", "mastodon"),
-                )
-            data["current_version"] = settings.get("current_version", "")
-            data["latest_version"] = settings.get("latest_version", "")
-            data["update_available"] = settings.get("update_available", False)
-            data["pg_version"] = settings.get("pg_version", "")
-            _stats_cache["result"] = data
-            _stats_cache["ts"] = _time.time()
-        except Exception as exc:
-            logger.error("Mastodon stats background fetch failed: %s", exc)
-        finally:
-            _stats_cache["loading"] = False
-
-    try:
-        import gevent as _gevent
-        _gevent.spawn(_bg)
-    except ImportError:
-        import threading as _threading
-        _threading.Thread(target=_bg, daemon=True).start()
-
-    return jsonify({"loading": True})
 
 
 @bp.route("/save", methods=["POST"])
