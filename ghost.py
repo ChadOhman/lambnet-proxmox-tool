@@ -546,39 +546,35 @@ def run_ghost_upgrade(log_callback=None, skip_protection=False):
                     service_name = f"ghost_{m_name.group(1)}"
             log(f"Ghost service name: {service_name}")
 
-            # Ensure ghost_user has NOPASSWD sudo for systemctl.  ghost-cli uses
-            # 'sudo systemctl ...' to start/stop the service; without a sudoers entry
+            # Write/refresh the sudoers entry for ghost_user.  ghost-cli uses
+            # 'sudo systemctl ...' to manage the service; without NOPASSWD entries
             # sudo prompts for a password, ghost-cli detects it and calls prompt(),
-            # which throws in non-TTY mode.  TurnKey does not create this file.
+            # which throws in non-TTY mode.  Always overwrite so the entry stays
+            # current if new systemctl sub-commands are required by updated ghost-cli.
             sudoers_path = f"/etc/sudoers.d/ghost-{service_name}"
-            chk_out, _, _ = ssh.execute_sudo(
-                f"test -f {sudoers_path} && echo exists || echo missing", timeout=5
+            sc_out, _, _ = ssh.execute_sudo(
+                "command -v systemctl 2>/dev/null || echo /usr/bin/systemctl",
+                timeout=5,
             )
-            if "missing" in (chk_out or ""):
-                log(f"Creating sudoers entry: {sudoers_path}")
-                sc_out, _, _ = ssh.execute_sudo(
-                    "command -v systemctl 2>/dev/null || echo /usr/bin/systemctl",
-                    timeout=5,
-                )
-                systemctl = (sc_out or "").strip() or "/usr/bin/systemctl"
-                sudoers_lines = [
-                    "# Managed by lambnet-proxmox-tool",
-                ] + [
-                    f"{user} ALL=(root) NOPASSWD: {systemctl} {action} {service_name}"
-                    for action in ("start", "stop", "restart", "is-active",
-                                   "is-enabled", "enable", "disable")
-                ]
-                write_parts = [
-                    f"echo '{line}' {'>' if i == 0 else '>>'} {sudoers_path}"
-                    for i, line in enumerate(sudoers_lines)
-                ] + [f"chmod 440 {sudoers_path}"]
-                _, w_err, w_code = ssh.execute_sudo(" && ".join(write_parts), timeout=15)
-                if w_code == 0:
-                    log("  Sudoers entry created.")
-                else:
-                    log(f"  WARNING: Could not create sudoers: {(w_err or '').strip()}")
+            systemctl = (sc_out or "").strip() or "/usr/bin/systemctl"
+            sudoers_lines = [
+                "# Managed by lambnet-proxmox-tool",
+            ] + [
+                f"{user} ALL=(root) NOPASSWD: {systemctl} {action} {service_name}"
+                for action in ("start", "stop", "restart", "reset-failed",
+                               "is-active", "is-enabled", "enable", "disable")
+            ] + [
+                f"{user} ALL=(root) NOPASSWD: {systemctl} daemon-reload",
+            ]
+            write_parts = [
+                f"echo '{line}' {'>' if i == 0 else '>>'} {sudoers_path}"
+                for i, line in enumerate(sudoers_lines)
+            ] + [f"chmod 440 {sudoers_path}"]
+            _, w_err, w_code = ssh.execute_sudo(" && ".join(write_parts), timeout=15)
+            if w_code == 0:
+                log(f"Sudoers entry written: {sudoers_path}")
             else:
-                log(f"Sudoers already configured: {sudoers_path}")
+                log(f"WARNING: Could not write sudoers: {(w_err or '').strip()}")
             log("")
 
             # Update ghost-cli itself first so it doesn't try to interactively prompt
