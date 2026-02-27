@@ -5,8 +5,9 @@ from flask_login import login_required, current_user
 from audit import log_action
 from models import db, Guest, GuestService
 from scanner import (check_service_statuses, service_action, get_service_logs, get_service_stats,
-                     sidekiq_clear_dead, sidekiq_retry_dead, sidekiq_list_jobs,
-                     sidekiq_delete_job, sidekiq_retry_job,
+                     sidekiq_clear_dead, sidekiq_retry_dead,
+                     sidekiq_clear_retry, sidekiq_retry_retry,
+                     sidekiq_list_jobs, sidekiq_delete_job, sidekiq_retry_job,
                      lt_list_installed, lt_list_available, lt_install_package, lt_update_all_packages)
 
 logger = logging.getLogger(__name__)
@@ -191,6 +192,38 @@ def sidekiq_retry_dead_queue(service_id):
     ok, msg = sidekiq_retry_dead(guest, svc)
     if ok:
         log_action("sidekiq_retry_dead", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"service": svc.service_name, "result": msg})
+        db.session.commit()
+    return jsonify({"ok": ok, "message": msg})
+
+
+@bp.route("/<int:service_id>/sidekiq/clear-retry", methods=["POST"])
+def sidekiq_clear_retry_queue(service_id):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "sidekiq":
+        return jsonify({"ok": False, "message": "Not a Sidekiq service"}), 400
+    guest = svc.guest
+    ok, msg = sidekiq_clear_retry(guest, svc)
+    if ok:
+        log_action("sidekiq_clear_retry", "guest", resource_id=guest.id, resource_name=guest.name,
+                   details={"service": svc.service_name, "result": msg})
+        db.session.commit()
+    return jsonify({"ok": ok, "message": msg})
+
+
+@bp.route("/<int:service_id>/sidekiq/retry-retry", methods=["POST"])
+def sidekiq_retry_retry_queue(service_id):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "sidekiq":
+        return jsonify({"ok": False, "message": "Not a Sidekiq service"}), 400
+    guest = svc.guest
+    ok, msg = sidekiq_retry_retry(guest, svc)
+    if ok:
+        log_action("sidekiq_retry_retry", "guest", resource_id=guest.id, resource_name=guest.name,
                    details={"service": svc.service_name, "result": msg})
         db.session.commit()
     return jsonify({"ok": ok, "message": msg})

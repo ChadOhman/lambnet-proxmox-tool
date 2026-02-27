@@ -353,9 +353,23 @@
             <div class="col-md-2">
                 <div class="text-muted small">Retry Queue</div>
                 <div class="fs-5" id="stat-sq-retry">{{ stats.retry_size|default('0') }}</div>
-                <button class="btn btn-outline-secondary btn-sm mt-1" onclick="openJobModal('retry')">
-                    <i class="bi bi-card-list"></i> Browse
-                </button>
+                <div class="d-flex gap-1 mt-1 flex-wrap">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="openJobModal('retry')">
+                        <i class="bi bi-card-list"></i> Browse
+                    </button>
+                    {% if current_user.can_edit_services %}
+                    <button id="retryAllRetryBtn" class="btn btn-outline-warning btn-sm"
+                            onclick="retryAllRetry()" title="Retry all jobs now"
+                            {% if stats.retry_size|default(0)|int == 0 %}disabled{% endif %}>
+                        <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                    <button id="clearRetryBtn" class="btn btn-outline-danger btn-sm"
+                            onclick="clearRetryQueue()" title="Clear retry queue"
+                            {% if stats.retry_size|default(0)|int == 0 %}disabled{% endif %}>
+                        <i class="bi bi-trash"></i>
+                    </button>
+                    {% endif %}
+                </div>
             </div>
             <div class="col-md-2">
                 <div class="text-muted small">Dead</div>
@@ -785,6 +799,60 @@ function clearDeadQueue() {
             alert('Request failed: ' + e);
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-trash"></i> Clear';
+        });
+}
+
+function retryAllRetry() {
+    if (!confirm('Retry all jobs in the Retry queue now? They will be immediately re-queued for processing.')) return;
+    const btn = document.getElementById('retryAllRetryBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    fetch('/services/{{ service.id }}/sidekiq/retry-retry', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                const retryEl = document.getElementById('stat-sq-retry');
+                if (retryEl) retryEl.textContent = '0';
+                btn.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+                document.getElementById('clearRetryBtn').disabled = true;
+            } else {
+                alert('Error: ' + data.message);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+            }
+        })
+        .catch(e => {
+            alert('Request failed: ' + e);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+        });
+}
+
+function clearRetryQueue() {
+    if (!confirm('Clear all jobs from the Retry queue? This cannot be undone.')) return;
+    const btn = document.getElementById('clearRetryBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    fetch('/services/{{ service.id }}/sidekiq/clear-retry', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                const retryEl = document.getElementById('stat-sq-retry');
+                if (retryEl) retryEl.textContent = '0';
+                btn.innerHTML = '<i class="bi bi-trash"></i>';
+                document.getElementById('retryAllRetryBtn').disabled = true;
+            } else {
+                alert('Error: ' + data.message);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-trash"></i>';
+            }
+        })
+        .catch(e => {
+            alert('Request failed: ' + e);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-trash"></i>';
         });
 }
 
