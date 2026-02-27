@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 # Shell-safe value pattern: alphanumeric, hyphens, underscores, dots, forward slashes, colons
 _SHELL_SAFE_RE = re.compile(r'^[\w.\-/:~]+$')
 
+# PATH prefix for su - user commands. su - creates a non-interactive login shell that sources
+# .profile but NOT .bashrc on Debian/Ubuntu, so rbenv shims installed via .bashrc are absent.
+# Prepend this to any command that invokes ruby, bundle, or bundler-installed executables.
+_RBENV_PATH = "export PATH=$HOME/.rbenv/bin:$HOME/.rbenv/shims:$PATH"
+
 
 def _validate_shell_param(value, label):
     """Raise ValueError if a config value contains shell-unsafe characters."""
@@ -202,7 +207,7 @@ def _run_second_guest_sync(guest, user, app_dir, log, branch=""):
 
             log("--- [VM2] bundle install ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'cd {app_dir} && bundle install'", timeout=600
+                f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && bundle install'", timeout=600
             )
             out = stdout or ""
             log(out[-2000:] if len(out) > 2000 else out or stderr or "(no output)")
@@ -212,7 +217,7 @@ def _run_second_guest_sync(guest, user, app_dir, log, branch=""):
 
             log("--- [VM2] yarn install ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'cd {app_dir} && yarn install --frozen-lockfile'", timeout=600
+                f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && yarn install --frozen-lockfile'", timeout=600
             )
             out = stdout or ""
             log(out[-2000:] if len(out) > 2000 else out or stderr or "(no output)")
@@ -222,7 +227,7 @@ def _run_second_guest_sync(guest, user, app_dir, log, branch=""):
 
             log("--- [VM2] asset precompilation ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'cd {app_dir} && RAILS_ENV=production bundle exec rails assets:precompile'",
+                f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && RAILS_ENV=production bundle exec rails assets:precompile'",
                 timeout=900,
             )
             out = stdout or ""
@@ -334,7 +339,7 @@ def _check_env_compliance(ssh, user, app_dir, branch, log):
     installed_ruby = None
     for _ruby_cmd in [
         f"su - {user} -c 'ruby --version 2>/dev/null'",
-        f"su - {user} -c 'export PATH=$HOME/.rbenv/bin:$HOME/.rbenv/shims:$PATH; ruby --version 2>/dev/null'",
+        f"su - {user} -c '{_RBENV_PATH}; ruby --version 2>/dev/null'",
     ]:
         stdout, stderr, code = ssh.execute_sudo(_ruby_cmd, timeout=10)
         if code == 0 and stdout.strip():
@@ -358,7 +363,7 @@ def _check_env_compliance(ssh, user, app_dir, branch, log):
     installed_bundler = None
     for _bundle_cmd in [
         f"su - {user} -c 'bundle --version 2>/dev/null'",
-        f"su - {user} -c 'export PATH=$HOME/.rbenv/bin:$HOME/.rbenv/shims:$PATH; bundle --version 2>/dev/null'",
+        f"su - {user} -c '{_RBENV_PATH}; bundle --version 2>/dev/null'",
     ]:
         stdout, stderr, code = ssh.execute_sudo(_bundle_cmd, timeout=10)
         if code == 0 and stdout.strip():
@@ -858,7 +863,7 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
             # --skip-existing is a no-op if already installed; silently non-fatal if rbenv not present.
             log("--- rbenv install (ensuring correct Ruby version) ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'export PATH=$HOME/.rbenv/bin:$HOME/.rbenv/shims:$PATH; "
+                f"su - {user} -c '{_RBENV_PATH}; "
                 f"cd {app_dir} && rbenv install --skip-existing && gem install bundler --no-document'",
                 timeout=600,
             )
@@ -871,7 +876,7 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
             # 2f. bundle install
             log("--- bundle install ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'cd {app_dir} && bundle install'", timeout=600
+                f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && bundle install'", timeout=600
             )
             log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
             if code != 0:
@@ -883,7 +888,7 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
             # 2g. yarn install
             log("--- yarn install ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'cd {app_dir} && yarn install --frozen-lockfile'", timeout=600
+                f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && yarn install --frozen-lockfile'", timeout=600
             )
             log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
             if code != 0:
@@ -892,10 +897,10 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 env_swapped = False
                 return False, "\n".join(log_lines)
 
-            # 2g. Pre-deployment migrations
+            # 2h. Pre-deployment migrations
             log("--- Pre-deployment database migrations ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'cd {app_dir} && RAILS_ENV=production SKIP_POST_DEPLOYMENT_MIGRATIONS=true bundle exec rails db:migrate'",
+                f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && RAILS_ENV=production SKIP_POST_DEPLOYMENT_MIGRATIONS=true bundle exec rails db:migrate'",
                 timeout=600,
             )
             log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
@@ -905,10 +910,10 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 env_swapped = False
                 return False, "\n".join(log_lines)
 
-            # 2h. Asset precompilation
+            # 2i. Asset precompilation
             log("--- Asset precompilation ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'cd {app_dir} && RAILS_ENV=production bundle exec rails assets:precompile'",
+                f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && RAILS_ENV=production bundle exec rails assets:precompile'",
                 timeout=900,
             )
             log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
@@ -918,29 +923,29 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 env_swapped = False
                 return False, "\n".join(log_lines)
 
-            # 2i. Restore .env.production to PGBouncer before the intermediate restart
+            # 2j. Restore .env.production to PGBouncer before the intermediate restart
             # so live traffic goes back through the connection pool, not direct PostgreSQL.
             log("--- Restoring .env.production to PGBouncer (pre-restart) ---")
             ok, msg = _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
             log(msg)
             env_swapped = False
 
-            # 2j. Restart all mastodon services (now on PGBouncer, running new code)
+            # 2k. Restart all mastodon services (now on PGBouncer, running new code)
             log("--- Restarting mastodon services ---")
             stdout, stderr, code = ssh.execute_sudo(
                 "systemctl restart mastodon-*", timeout=60
             )
             log(stdout or stderr or "(no output)")
 
-            # 2k. Clear cache
+            # 2l. Clear cache
             log("--- Clearing cache ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'cd {app_dir} && RAILS_ENV=production bin/tootctl cache clear'",
+                f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && RAILS_ENV=production bin/tootctl cache clear'",
                 timeout=120,
             )
             log(stdout or stderr or "(no output)")
 
-            # 2l. Re-swap .env.production to direct DB for post-deployment migrations
+            # 2m. Re-swap .env.production to direct DB for post-deployment migrations
             log("--- Swapping .env.production to direct DB (post-deployment migrations) ---")
             ok, msg = _swap_env_db(ssh, app_dir, config["direct_db_host"], config["direct_db_port"])
             log(msg)
@@ -948,10 +953,10 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 return False, "\n".join(log_lines)
             env_swapped = True
 
-            # 2m. Post-deployment migrations
+            # 2n. Post-deployment migrations
             log("--- Post-deployment database migrations ---")
             stdout, stderr, code = ssh.execute_sudo(
-                f"su - {user} -c 'cd {app_dir} && RAILS_ENV=production bundle exec rails db:migrate'",
+                f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && RAILS_ENV=production bundle exec rails db:migrate'",
                 timeout=600,
             )
             log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
