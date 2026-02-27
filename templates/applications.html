@@ -12,6 +12,8 @@
                     <h5 class="card-title mb-0"><i class="bi bi-rocket-takeoff"></i> Mastodon</h5>
                     {% if apps.mastodon.update_available %}
                     <span class="badge bg-warning text-dark">Update available</span>
+                    {% elif apps.mastodon.current_version %}
+                    <span class="badge bg-success"><i class="bi bi-check-lg"></i> Up to date</span>
                     {% endif %}
                 </div>
                 <div class="mb-3">
@@ -39,6 +41,8 @@
                     <h5 class="card-title mb-0"><i class="bi bi-journal-text"></i> Ghost</h5>
                     {% if apps.ghost.update_available %}
                     <span class="badge bg-warning text-dark">Update available</span>
+                    {% elif apps.ghost.current_version %}
+                    <span class="badge bg-success"><i class="bi bi-check-lg"></i> Up to date</span>
                     {% endif %}
                 </div>
                 <div class="mb-3">
