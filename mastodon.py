@@ -827,16 +827,21 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 f"su - {user} -c 'cd {app_dir} && git ls-files --unmerged'", timeout=15
             )
             if stdout.strip():
-                unmerged = "\n".join(
-                    f"  {line.split()[-1]}" for line in stdout.strip().splitlines()
-                )
+                # git ls-files --unmerged emits 3 lines per file (stages 1/2/3); deduplicate
+                seen = set()
+                unique_files = []
+                for line in stdout.strip().splitlines():
+                    fname = line.split()[-1]
+                    if fname not in seen:
+                        seen.add(fname)
+                        unique_files.append(f"  {fname}")
+                unmerged = "\n".join(unique_files)
                 log(f"ERROR: Repository has unmerged (conflicted) files:\n{unmerged}")
                 log("Resolve these conflicts manually on the server before running the upgrade:")
                 log(f"  ssh {user}@{mastodon_guest.ip_address}")
                 log(f"  cd {app_dir}")
-                log("  git status          # see what is conflicted")
-                log("  git checkout -- <file>   # discard local changes, or")
-                log("  git add <file> && git commit   # if you want to keep them")
+                log("  git merge --abort   # cancel the incomplete merge (recommended), or")
+                log("  git add <file> && git commit   # if you resolved the conflict manually")
                 return False, "\n".join(log_lines)
 
             # 2a. git stash
