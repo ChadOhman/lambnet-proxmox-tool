@@ -611,8 +611,31 @@ def run_ghost_upgrade(log_callback=None, skip_protection=False):
             if service_status == "active":
                 log(f"Ghost service ({service_name}) is active — upgrade successful")
             else:
-                log(f"WARNING: Ghost service ({service_name}) status after upgrade: "
-                    f"{service_status or 'unknown'}")
+                log(f"Ghost service ({service_name}) is {service_status or 'unknown'} "
+                    f"— attempting to start...")
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"systemctl start {service_name} 2>&1", timeout=30
+                )
+                if (stdout or "").strip():
+                    log((stdout or "").strip())
+                # Re-check
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"systemctl is-active {service_name} 2>/dev/null", timeout=15
+                )
+                service_status = (stdout or "").strip()
+                if service_status == "active":
+                    log(f"Ghost service ({service_name}) started successfully.")
+                else:
+                    log(f"WARNING: Ghost service ({service_name}) is still "
+                        f"{service_status or 'unknown'} after start attempt.")
+                    # Show recent journal entries to aid diagnosis
+                    stdout, _, _ = ssh.execute_sudo(
+                        f"journalctl -u {service_name} -n 20 --no-pager 2>/dev/null",
+                        timeout=15,
+                    )
+                    if (stdout or "").strip():
+                        log("--- Recent service journal ---")
+                        log((stdout or "").strip())
 
             # Detect and persist new version via .ghost-cli metadata
             stdout, stderr, code = ssh.execute_sudo(
