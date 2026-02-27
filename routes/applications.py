@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, flash
 from flask_login import login_required, current_user
+from models import Setting
 
 bp = Blueprint("applications", __name__)
 
@@ -14,4 +15,18 @@ def _require_login():
 
 @bp.route("/")
 def index():
-    return render_template("applications.html")
+    apps = {
+        "mastodon": {
+            "auto_upgrade": Setting.get("mastodon_auto_upgrade", "false") == "true",
+            "update_available": Setting.get("mastodon_update_available", "false") == "true",
+            "current_version": Setting.get("mastodon_current_version", ""),
+            "latest_version": Setting.get("mastodon_latest_version", ""),
+        },
+        "ghost": {
+            "auto_upgrade": Setting.get("ghost_auto_upgrade", "false") == "true",
+            "update_available": Setting.get("ghost_update_available", "false") == "true",
+            "current_version": Setting.get("ghost_current_version", ""),
+            "latest_version": Setting.get("ghost_latest_version", ""),
+        },
+    }
+    return render_template("applications.html", apps=apps)
