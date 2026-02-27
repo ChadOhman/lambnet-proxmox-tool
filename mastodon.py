@@ -877,9 +877,30 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 f"su - {user} -c 'cd {app_dir} && git stash pop'", timeout=30
             )
             log(stdout or stderr or "(no output)")
-            # stash pop may fail if no stash exists or conflict - not fatal
             if code != 0:
-                log("WARNING: git stash pop returned non-zero (may be no stash to pop)")
+                # Check whether stash pop left unmerged files (conflict).
+                # If so, auto-resolve in favour of the stashed (local) version and drop the entry.
+                unmerged_out, _, _ = ssh.execute_sudo(
+                    f"su - {user} -c 'cd {app_dir} && git ls-files --unmerged'", timeout=15
+                )
+                if unmerged_out.strip():
+                    conflicted = list(dict.fromkeys(
+                        line.split()[-1] for line in unmerged_out.strip().splitlines()
+                    ))
+                    log(f"WARNING: stash pop conflict in: {', '.join(conflicted)} — auto-resolving (keeping local version)")
+                    for fname in conflicted:
+                        ssh.execute_sudo(
+                            f"su - {user} -c 'cd {app_dir} && git checkout --theirs -- {fname}'", timeout=15
+                        )
+                        ssh.execute_sudo(
+                            f"su - {user} -c 'cd {app_dir} && git add {fname}'", timeout=15
+                        )
+                    ssh.execute_sudo(
+                        f"su - {user} -c 'cd {app_dir} && git stash drop'", timeout=15
+                    )
+                    log("  Stash conflicts resolved.")
+                else:
+                    log("WARNING: git stash pop returned non-zero (may be no stash to pop)")
 
             # 2e. Ensure correct Ruby version and Bundler are installed via rbenv.
             # Reads the target version from .ruby-version in the app dir (updated by git pull).
@@ -890,11 +911,29 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 f"cd {app_dir} && rbenv install --skip-existing && gem install bundler --no-document'",
                 timeout=600,
             )
-            out = (stdout or "").strip()
+            out = ((stdout or "") + (stderr or "")).strip()
             if out:
                 log(out[-500:] if len(out) > 500 else out)
             if code != 0:
-                log(f"NOTE: rbenv/gem step exited {code} — if rbenv is not in use, this is expected and harmless")
+                # Verify whether the required Ruby version is actually installed.
+                # If not, this is a hard failure — bundle install will fail immediately.
+                rv_out, _, _ = ssh.execute_sudo(
+                    f"su - {user} -c 'cat {app_dir}/.ruby-version 2>/dev/null'", timeout=5
+                )
+                required_rv = rv_out.strip()
+                ver_out, _, _ = ssh.execute_sudo(
+                    f"su - {user} -c '{_RBENV_PATH}; rbenv versions --bare 2>/dev/null'", timeout=10
+                )
+                if required_rv and required_rv not in (ver_out or ""):
+                    log(f"ERROR: rbenv install failed (exit {code}) and Ruby {required_rv} is not installed.")
+                    log("ruby-build may not know about this version yet. To fix on the server:")
+                    log("  cd ~/.rbenv/plugins/ruby-build && git pull")
+                    log(f"  rbenv install {required_rv}")
+                    _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
+                    env_swapped = False
+                    return False, "\n".join(log_lines)
+                else:
+                    log(f"NOTE: rbenv/gem step exited {code} — rbenv not in use or bundler already present, continuing")
 
             # 2f. bundle install
             log("--- bundle install ---")
