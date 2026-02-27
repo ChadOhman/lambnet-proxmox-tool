@@ -15,11 +15,12 @@
                     <div class="mb-3">
                         <label class="form-label">Webhook URL</label>
                         {% if safety_mode %}
-                        <input type="hidden" name="discord_webhook_url" value="">
+                        <input type="hidden" name="discord_webhook_url" value="{{ settings.discord_webhook_url or '' }}">
                         <input type="text" class="form-control text-muted" value="hidden" disabled>
                         {% else %}
                         <input type="text" class="form-control" name="discord_webhook_url"
-                            placeholder="{{ '(saved)' if settings.discord_webhook_url else 'https://discord.com/api/webhooks/...' }}">
+                            value="{{ settings.discord_webhook_url or '' }}"
+                            placeholder="https://discord.com/api/webhooks/...">
                         {% endif %}
                         <div class="form-text">Create a webhook in Discord: Channel Settings &rarr; Integrations &rarr; Webhooks.</div>
                     </div>
