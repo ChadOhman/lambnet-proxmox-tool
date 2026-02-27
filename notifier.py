@@ -3,7 +3,6 @@ import logging
 import urllib.request
 import urllib.error
 from models import Setting
-from credential_store import decrypt
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +14,7 @@ _COLOR_RED = 14431557    # #dc3545
 
 
 def _get_discord_config():
-    webhook_enc = Setting.get("discord_webhook_url")
-    webhook_url = decrypt(webhook_enc) if webhook_enc else None
+    webhook_url = Setting.get("discord_webhook_url")
     enabled = Setting.get("discord_enabled", "false") == "true"
     return {"webhook_url": webhook_url, "enabled": enabled}
 

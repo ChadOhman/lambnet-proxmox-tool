@@ -121,7 +121,7 @@ def save_discord():
     notify_app = "discord_notify_app" in request.form
 
     if webhook_url:
-        Setting.set("discord_webhook_url", encrypt(webhook_url))
+        Setting.set("discord_webhook_url", webhook_url)
     Setting.set("discord_enabled", "true" if enabled else "false")
     Setting.set("discord_notify_updates", "true" if notify_updates else "false")
     Setting.set("discord_notify_updates_security_only", "true" if notify_security_only else "false")
