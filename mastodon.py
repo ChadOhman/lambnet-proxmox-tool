@@ -821,6 +821,24 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
     try:
         with SSHClient.from_credential(mastodon_guest.ip_address, credential) as ssh:
 
+            # Pre-check: abort before touching anything if unmerged files exist.
+            # git stash silently skips unmerged files, which then causes git pull to fail.
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {app_dir} && git ls-files --unmerged'", timeout=15
+            )
+            if stdout.strip():
+                unmerged = "\n".join(
+                    f"  {line.split()[-1]}" for line in stdout.strip().splitlines()
+                )
+                log(f"ERROR: Repository has unmerged (conflicted) files:\n{unmerged}")
+                log("Resolve these conflicts manually on the server before running the upgrade:")
+                log(f"  ssh {user}@{mastodon_guest.ip_address}")
+                log(f"  cd {app_dir}")
+                log("  git status          # see what is conflicted")
+                log("  git checkout -- <file>   # discard local changes, or")
+                log("  git add <file> && git commit   # if you want to keep them")
+                return False, "\n".join(log_lines)
+
             # 2a. git stash
             log("--- git stash ---")
             stdout, stderr, code = ssh.execute_sudo(
