@@ -419,7 +419,7 @@ def run_ghost_preflight(log_callback=None):
                     if m:
                         log(f"  [INFO] Ghost current version: {m.group(1)}")
                     else:
-                        log(f"  [WARN] .ghost-cli exists but active-version not found")
+                        log("  [WARN] .ghost-cli exists but active-version not found")
                 else:
                     log(f"  [WARN] Could not read {ghost_dir}/.ghost-cli"
                         + (f" — {(stderr or '').strip()}" if stderr else ""))
@@ -536,9 +536,20 @@ def run_ghost_upgrade(log_callback=None, skip_protection=False):
 
     try:
         with SSHClient.from_credential(ghost_guest.ip_address, credential) as ssh:
+            # Update ghost-cli itself first so it doesn't try to interactively prompt
+            # about running an outdated version (which throws in non-TTY SSH sessions).
+            log("Updating ghost-cli to latest version...")
+            cli_cmd = "npm install -g ghost-cli@latest 2>&1"
+            stdout, stderr, code = ssh.execute_sudo(cli_cmd, timeout=120)
+            _log_cmd_output(log, stdout, stderr, code, max_chars=2000)
+            if code != 0:
+                log("WARNING: ghost-cli update failed — proceeding anyway")
+            log("")
+
             # Run ghost update as the Ghost system user.  su - creates a full login
             # shell so ghost-cli can find Node.js on PATH and interact with systemd.
-            update_cmd = f"su - {user} -c 'cd {ghost_dir} && ghost update'"
+            # --no-prompt disables interactive confirmations for non-TTY environments.
+            update_cmd = f"su - {user} -c 'cd {ghost_dir} && ghost update --no-prompt'"
             log(f"Running: {update_cmd}")
             stdout, stderr, code = ssh.execute_sudo(update_cmd, timeout=600)
             _log_cmd_output(log, stdout, stderr, code, max_chars=4000)
