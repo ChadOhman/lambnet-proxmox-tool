@@ -44,8 +44,14 @@ def _send_discord(embeds):
                 return True, "Notification sent successfully"
             return False, f"Discord returned HTTP {resp.status}"
     except urllib.error.HTTPError as e:
-        logger.error(f"Discord HTTP error: {e.code} {e.reason}")
-        return False, f"Discord HTTP error: {e.code} {e.reason}"
+        try:
+            body = json.loads(e.read().decode())
+            detail = body.get("message", "")
+        except Exception:
+            detail = ""
+        msg = f"Discord HTTP {e.code}: {detail or e.reason}"
+        logger.error(f"Discord webhook error: {msg}")
+        return False, msg
     except Exception as e:
         logger.error(f"Discord send failed: {e}")
         return False, str(e)
