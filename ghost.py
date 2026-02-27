@@ -10,7 +10,7 @@ import logging
 import os.path as _osp
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from urllib.request import Request, urlopen
 
 from models import Guest, Setting
