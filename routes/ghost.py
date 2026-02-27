@@ -257,16 +257,10 @@ def upgrade():
 @bp.route("/detect-versions", methods=["POST"])
 def detect_versions():
     from ghost import detect_ghost_version
-    from mastodon import _validate_shell_param
 
     guest_id = Setting.get("ghost_guest_id", "")
     ghost_dir = Setting.get("ghost_dir", "/var/www/ghost")
-
-    try:
-        _validate_shell_param(ghost_dir, "Ghost dir")
-    except ValueError as e:
-        flash(str(e), "error")
-        return redirect(url_for("ghost.upgrade_page"))
+    ghost_user = Setting.get("ghost_user", "ghost")
 
     if not guest_id:
         flash("Ghost guest is not configured.", "warning")
@@ -282,12 +276,12 @@ def detect_versions():
         flash("Ghost guest not found.", "error")
         return redirect(url_for("ghost.upgrade_page"))
 
-    version = detect_ghost_version(guest, ghost_dir)
+    version, error = detect_ghost_version(guest, ghost_dir, user=ghost_user)
     if version:
         Setting.set("ghost_current_version", version)
         db.session.commit()
         flash(f"Detected Ghost version: {version}", "success")
     else:
-        flash("Could not detect Ghost version via SSH. Check your configuration.", "warning")
+        flash(f"Could not detect Ghost version: {error}", "warning")
 
     return redirect(url_for("ghost.upgrade_page"))
