@@ -170,31 +170,50 @@ def detect_ghost_version(guest, ghost_dir, user="ghost"):
 
     try:
         with SSHClient.from_credential(guest.ip_address, credential) as ssh:
-            # Primary method: read version from Ghost's current release package.json.
-            # Run as ghost user so Node.js (nvm / system) is on PATH.
-            node_cmd = (
-                f"su - {user} -c "
-                f"\"node -e \\\"console.log(require('{ghost_dir}/current/package.json').version)\\\"\""
+            # Method 1: read .ghost-cli metadata file — ghost-cli always writes this,
+            # no Node.js required.  Contains {"active-version": "5.82.0", ...}
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cat {ghost_dir}/.ghost-cli 2>/dev/null", timeout=10
             )
-            stdout, stderr, code = ssh.execute_sudo(node_cmd, timeout=15)
+            if code == 0 and stdout.strip():
+                m = re.search(r'"active-version"\s*:\s*"([^"]+)"', stdout)
+                if m:
+                    return m.group(1), None
+
+            ghost_cli_err = (stderr or "").strip()
+
+            # Method 2: ghost version (not --version) run from install dir as ghost user.
+            # Outputs "Ghost version: X.Y.Z" among other lines.
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -c 'cd {ghost_dir} && ghost version 2>/dev/null'",
+                timeout=20,
+            )
+            if code == 0 and stdout.strip():
+                m = re.search(r'Ghost version:\s*(\S+)', stdout)
+                if m:
+                    return m.group(1), None
+
+            ghost_ver_err = (stderr or stdout or "").strip()
+
+            # Method 3: read current/package.json via python3 (avoids Node PATH issues)
+            py_cmd = (
+                f"python3 -c \"import json; "
+                f"print(json.load(open('{ghost_dir}/current/package.json'))['version'])\" 2>/dev/null"
+            )
+            stdout, stderr, code = ssh.execute_sudo(py_cmd, timeout=10)
             if code == 0 and stdout.strip():
                 v = stdout.strip().splitlines()[0].strip()
                 if re.match(r'^\d+\.\d+', v):
                     return v, None
 
-            node_err = (stderr or stdout or "").strip()
+            py_err = (stderr or stdout or "").strip()
 
-            # Fallback: ghost --version (also as ghost user for PATH)
-            ghost_cmd = f"su - {user} -c 'ghost --version 2>/dev/null'"
-            stdout, stderr, code = ssh.execute_sudo(ghost_cmd, timeout=15)
-            if code == 0 and stdout.strip():
-                m = re.search(r'Ghost:\s*(\S+)', stdout)
-                if m:
-                    return m.group(1), None
-
-            ghost_err = (stderr or stdout or "").strip()
-            detail = "; ".join(filter(None, [node_err[:200], ghost_err[:200]]))
-            return None, f"Both detection methods failed — {detail}" if detail else "Both detection methods returned no output"
+            errors = "; ".join(filter(None, [
+                f".ghost-cli: {ghost_cli_err[:100]}" if ghost_cli_err else None,
+                f"ghost version: {ghost_ver_err[:100]}" if ghost_ver_err else None,
+                f"package.json: {py_err[:100]}" if py_err else None,
+            ]))
+            return None, f"All detection methods failed — {errors}" if errors else "All detection methods returned no output"
 
     except Exception as e:
         logger.warning("Could not detect Ghost version: %s", e)
@@ -371,21 +390,18 @@ def run_ghost_preflight(log_callback=None):
                 else:
                     log("  [WARN] Could not determine Node.js version")
 
-                # Current Ghost version (informational) — run as ghost user for Node PATH
-                node_ver_cmd = (
-                    f"su - {user} -c "
-                    f"\"node -e \\\"console.log(require('{ghost_dir}/current/package.json').version)\\\"\""
+                # Current Ghost version (informational) — read .ghost-cli metadata
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"cat {ghost_dir}/.ghost-cli 2>/dev/null", timeout=10
                 )
-                stdout, stderr, code = ssh.execute_sudo(node_ver_cmd, timeout=15)
                 if code == 0 and stdout.strip():
-                    v = stdout.strip().splitlines()[0].strip()
-                    if re.match(r'^\d+\.\d+', v):
-                        log(f"  [INFO] Ghost current version: {v}")
+                    m = re.search(r'"active-version"\s*:\s*"([^"]+)"', stdout)
+                    if m:
+                        log(f"  [INFO] Ghost current version: {m.group(1)}")
                     else:
-                        log(f"  [WARN] Unexpected output from version check: {v!r}")
+                        log(f"  [WARN] .ghost-cli exists but active-version not found")
                 else:
-                    log(f"  [WARN] Could not read Ghost version from "
-                        f"{ghost_dir}/current/package.json"
+                    log(f"  [WARN] Could not read {ghost_dir}/.ghost-cli"
                         + (f" — {(stderr or '').strip()}" if stderr else ""))
 
                 # Service status (informational)
@@ -526,17 +542,15 @@ def run_ghost_upgrade(log_callback=None, skip_protection=False):
                 log(f"WARNING: Ghost service ({service_name}) status after upgrade: "
                     f"{service_status or 'unknown'}")
 
-            # Detect and persist new version — run as ghost user for Node PATH
-            post_ver_cmd = (
-                f"su - {user} -c "
-                f"\"node -e \\\"console.log(require('{ghost_dir}/current/package.json').version)\\\"\""
+            # Detect and persist new version via .ghost-cli metadata
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cat {ghost_dir}/.ghost-cli 2>/dev/null", timeout=10
             )
-            stdout, stderr, code = ssh.execute_sudo(post_ver_cmd, timeout=15)
             if code == 0 and stdout.strip():
-                new_version = stdout.strip().splitlines()[0].strip()
-                if re.match(r'^\d+\.\d+', new_version):
-                    Setting.set("ghost_current_version", new_version)
-                    log(f"Updated Ghost version: {new_version}")
+                m = re.search(r'"active-version"\s*:\s*"([^"]+)"', stdout)
+                if m:
+                    Setting.set("ghost_current_version", m.group(1))
+                    log(f"Updated Ghost version: {m.group(1)}")
 
     except Exception as e:
         log(f"SSH ERROR: {e}")
