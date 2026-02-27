@@ -940,7 +940,8 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
             stdout, stderr, code = ssh.execute_sudo(
                 f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && bundle install'", timeout=600
             )
-            log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
+            combined = (stdout or "") + ("\n" + stderr if stderr else "")
+            log(combined[-2000:].strip() if len(combined) > 2000 else combined.strip() or "(no output)")
             if code != 0:
                 log(f"ERROR: bundle install failed (exit {code})")
                 _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
@@ -952,7 +953,8 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
             stdout, stderr, code = ssh.execute_sudo(
                 f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && yarn install --frozen-lockfile'", timeout=600
             )
-            log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
+            combined = (stdout or "") + ("\n" + stderr if stderr else "")
+            log(combined[-2000:].strip() if len(combined) > 2000 else combined.strip() or "(no output)")
             if code != 0:
                 log(f"ERROR: yarn install failed (exit {code})")
                 _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
@@ -965,7 +967,8 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && RAILS_ENV=production SKIP_POST_DEPLOYMENT_MIGRATIONS=true bundle exec rails db:migrate'",
                 timeout=600,
             )
-            log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
+            combined = (stdout or "") + ("\n" + stderr if stderr else "")
+            log(combined[-2000:].strip() if len(combined) > 2000 else combined.strip() or "(no output)")
             if code != 0:
                 log(f"ERROR: pre-deployment migrations failed (exit {code})")
                 _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
@@ -978,7 +981,8 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && RAILS_ENV=production bundle exec rails assets:precompile'",
                 timeout=900,
             )
-            log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
+            combined = (stdout or "") + ("\n" + stderr if stderr else "")
+            log(combined[-2000:].strip() if len(combined) > 2000 else combined.strip() or "(no output)")
             if code != 0:
                 log(f"ERROR: asset precompilation failed (exit {code})")
                 _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
@@ -1021,7 +1025,8 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && RAILS_ENV=production bundle exec rails db:migrate'",
                 timeout=600,
             )
-            log(stdout[-2000:] if len(stdout) > 2000 else stdout or stderr or "(no output)")
+            combined = (stdout or "") + ("\n" + stderr if stderr else "")
+            log(combined[-2000:].strip() if len(combined) > 2000 else combined.strip() or "(no output)")
             if code != 0:
                 log(f"ERROR: post-deployment migrations failed (exit {code})")
                 _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
