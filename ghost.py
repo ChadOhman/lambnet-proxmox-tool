@@ -170,6 +170,26 @@ def detect_ghost_version(guest, ghost_dir, user="ghost"):
 
     try:
         with SSHClient.from_credential(guest.ip_address, credential) as ssh:
+            # Pre-check: verify the configured directory exists.
+            # If it doesn't, scan for .ghost-cli files to help the user find the right path.
+            stdout, stderr, code = ssh.execute_sudo(
+                f"test -d {ghost_dir} && echo ok", timeout=10
+            )
+            if not (code == 0 and "ok" in (stdout or "")):
+                found = ""
+                scan_out, _, scan_code = ssh.execute_sudo(
+                    "find /var /home /opt /srv -maxdepth 5 -name '.ghost-cli' 2>/dev/null | head -5",
+                    timeout=15,
+                )
+                if scan_code == 0 and scan_out.strip():
+                    paths = [
+                        _osp.dirname(p.strip())
+                        for p in scan_out.strip().splitlines()
+                        if p.strip()
+                    ]
+                    found = f" Found Ghost install(s) at: {', '.join(paths)}"
+                return None, f"Directory '{ghost_dir}' does not exist on the guest.{found}"
+
             # Method 1: read .ghost-cli metadata file — ghost-cli always writes this,
             # no Node.js required.  Contains {"active-version": "5.82.0", ...}
             stdout, stderr, code = ssh.execute_sudo(
