@@ -375,11 +375,22 @@ def detect_versions():
     if guest_id:
         mastodon_guest = Guest.query.get(int(guest_id))
         if mastodon_guest:
-            # Read lib/mastodon/version.rb and reconstruct the version string from its
-            # MAJOR/MINOR/PATCH/PRE/BUILD_METADATA constants.  This works for both
-            # upstream Mastodon and glitch-soc (which adds +glitch via BUILD_METADATA).
-            # git describe --tags is unreliable: it returns <nearest-tag>-<N>-g<sha>
-            # which does not match the human-readable version.
+            # Read lib/mastodon/version.rb and reconstruct the version string.
+            # Supports two formats:
+            #   - Constant-style:  MAJOR = 4  (older Mastodon)
+            #   - Method-style:    def major\n  4\nend  (newer Mastodon/glitch-soc)
+            # build_metadata may be a literal in version.rb (constant-style) or read
+            # from Rails config at runtime (method-style).  When it is not in version.rb,
+            # fall back to grepping the config directory.
+            import re as _re
+
+            def _find_first(patterns, text):
+                for pat in patterns:
+                    m = _re.search(pat, text)
+                    if m:
+                        return m.group(1)
+                return None
+
             stdout, error = _execute_command(
                 mastodon_guest,
                 f"su - {user} -c 'cat {app_dir}/lib/mastodon/version.rb 2>/dev/null'",
@@ -388,18 +399,41 @@ def detect_versions():
             )
             version = None
             if stdout and not error:
-                import re as _re
-                major = _re.search(r'MAJOR\s*=\s*(\d+)', stdout)
-                minor = _re.search(r'MINOR\s*=\s*(\d+)', stdout)
-                patch = _re.search(r'PATCH\s*=\s*(\d+)', stdout)
-                pre   = _re.search(r"PRE\s*=\s*['\"]([^'\"]+)['\"]", stdout)
-                build = _re.search(r"BUILD_METADATA\s*=\s*['\"]([^'\"]+)['\"]", stdout)
+                major = _find_first([r'MAJOR\s*=\s*(\d+)', r'def major\s+(\d+)'], stdout)
+                minor = _find_first([r'MINOR\s*=\s*(\d+)', r'def minor\s+(\d+)'], stdout)
+                patch = _find_first([r'PATCH\s*=\s*(\d+)', r'def patch\s+(\d+)'], stdout)
+                pre   = _find_first([r"PRE\s*=\s*['\"]([^'\"]+)['\"]",
+                                     r"def default_prerelease\s+['\"]([^'\"]+)['\"]"], stdout)
+                build = _find_first([r"BUILD_METADATA\s*=\s*['\"]([^'\"]+)['\"]"], stdout)
+
                 if major and minor and patch:
-                    version = f"{major.group(1)}.{minor.group(1)}.{patch.group(1)}"
+                    version = f"{major}.{minor}.{patch}"
                     if pre:
-                        version += f"-{pre.group(1)}"
+                        version += f"-{pre}"
                     if build:
-                        version += f"+{build.group(1)}"
+                        version += f"+{build}"
+
+            # build_metadata is not a literal in method-style version.rb (it reads from
+            # Rails config).  Search config files for the metadata value.
+            if version and '+' not in version:
+                meta_out, _ = _execute_command(
+                    mastodon_guest,
+                    f"su - {user} -c 'grep -rh \"metadata\" {app_dir}/config/ 2>/dev/null"
+                    r" | grep -v \"^\s*#\"'",
+                    timeout=10,
+                    sudo=True,
+                )
+                if meta_out:
+                    m = _re.search(
+                        r":metadata\s*=>\s*['\"]([^'\"]+)['\"]"
+                        r"|metadata:\s*['\"]([^'\"]+)['\"]",
+                        meta_out,
+                    )
+                    if m:
+                        build_val = m.group(1) or m.group(2)
+                        if build_val:
+                            version += f"+{build_val}"
+
             if version:
                 Setting.set("mastodon_current_version", version)
                 detected.append(f"Mastodon: v{version}")
