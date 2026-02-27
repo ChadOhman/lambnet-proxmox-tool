@@ -1,90 +1,80 @@
-import smtplib
+import json
 import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import urllib.request
+import urllib.error
 from models import Setting
 from credential_store import decrypt
 
 logger = logging.getLogger(__name__)
 
-GMAIL_SMTP_SERVER = "smtp.gmail.com"
-GMAIL_SMTP_PORT = 587
+# Discord embed color constants (decimal integers)
+_COLOR_GREEN = 8505220   # #81c784
+_COLOR_CYAN = 5227511    # #4fc3f7
+_COLOR_YELLOW = 16761095  # #ffc107
+_COLOR_RED = 14431557    # #dc3545
 
 
-def _get_email_config():
-    gmail_address = Setting.get("gmail_address")
-    gmail_app_password_enc = Setting.get("gmail_app_password")
-    recipients = Setting.get("email_recipients", "")
-    enabled = Setting.get("email_enabled", "false") == "true"
-
-    gmail_app_password = decrypt(gmail_app_password_enc) if gmail_app_password_enc else None
-
-    return {
-        "address": gmail_address,
-        "password": gmail_app_password,
-        "recipients": [r.strip() for r in recipients.split(",") if r.strip()],
-        "enabled": enabled,
-    }
+def _get_discord_config():
+    webhook_enc = Setting.get("discord_webhook_url")
+    webhook_url = decrypt(webhook_enc) if webhook_enc else None
+    enabled = Setting.get("discord_enabled", "false") == "true"
+    return {"webhook_url": webhook_url, "enabled": enabled}
 
 
-def _send_email(subject, html_body):
-    config = _get_email_config()
+def _send_discord(embeds):
+    """POST embeds to the configured Discord webhook. Returns (ok, message)."""
+    config = _get_discord_config()
 
     if not config["enabled"]:
-        return False, "Email notifications are disabled"
+        return False, "Discord notifications are disabled"
 
-    if not config["address"] or not config["password"]:
-        return False, "Gmail address or App Password not configured"
+    if not config["webhook_url"]:
+        return False, "Discord webhook URL not configured"
 
-    if not config["recipients"]:
-        return False, "No recipients configured"
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = f"Mastodon Canada Administration Tool <{config['address']}>"
-    msg["To"] = ", ".join(config["recipients"])
-
-    msg.attach(MIMEText(html_body, "html"))
-
+    payload = json.dumps({"embeds": embeds}).encode()
+    req = urllib.request.Request(
+        config["webhook_url"],
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
-        with smtplib.SMTP(GMAIL_SMTP_SERVER, GMAIL_SMTP_PORT) as server:
-            server.starttls()
-            server.login(config["address"], config["password"])
-            server.sendmail(config["address"], config["recipients"], msg.as_string())
-        return True, "Email sent successfully"
-    except smtplib.SMTPAuthenticationError:
-        return False, "Authentication failed. Check your Gmail App Password."
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 204):
+                return True, "Notification sent successfully"
+            return False, f"Discord returned HTTP {resp.status}"
+    except urllib.error.HTTPError as e:
+        logger.error(f"Discord HTTP error: {e.code} {e.reason}")
+        return False, f"Discord HTTP error: {e.code} {e.reason}"
     except Exception as e:
-        logger.error(f"Email send failed: {e}")
+        logger.error(f"Discord send failed: {e}")
         return False, str(e)
 
 
-def send_test_email():
-    html = """
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background: #1a1a2e; color: #e0e0e0; padding: 20px; border-radius: 8px;">
-            <h2 style="color: #4fc3f7; margin-top: 0;">Mastodon Canada Administration Tool</h2>
-            <p>This is a test email from your Mastodon Canada Administration Tool.</p>
-            <p style="color: #81c784;">Email notifications are working correctly!</p>
-        </div>
-    </div>
-    """
-    return _send_email("Mastodon Canada Administration Tool - Test Notification", html)
+def send_test_notification():
+    embeds = [{
+        "title": "Mastodon Canada Administration Tool",
+        "description": "Discord notifications are working correctly!",
+        "color": _COLOR_GREEN,
+    }]
+    return _send_discord(embeds)
 
 
 def send_update_notification(scan_results):
     """Send notification about available updates after a scan."""
-    config = _get_email_config()
-    if not config["enabled"]:
+    if Setting.get("discord_notify_updates", "true") != "true":
         return
 
-    # Filter to only guests with updates
+    security_only = Setting.get("discord_notify_updates_security_only", "false") == "true"
+
     guests_with_updates = []
     total_updates = 0
     total_security = 0
 
     for result in scan_results:
         if result.status == "success" and result.total_updates > 0:
+            if security_only and result.security_updates == 0:
+                continue
             guests_with_updates.append(result)
             total_updates += result.total_updates
             total_security += result.security_updates
@@ -92,101 +82,63 @@ def send_update_notification(scan_results):
     if not guests_with_updates:
         return
 
-    # Build HTML email
-    rows = ""
+    color = _COLOR_RED if total_security > 0 else _COLOR_YELLOW
+
+    fields = []
     for result in guests_with_updates:
         guest = result.guest
-        severity_color = "#dc3545" if result.security_updates > 0 else "#ffc107"
-        rows += f"""
-        <tr>
-            <td style="padding: 8px; border-bottom: 1px solid #333;">{guest.name}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #333;">{guest.guest_type.upper()}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #333;">{result.total_updates}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #333; color: {severity_color}; font-weight: bold;">{result.security_updates}</td>
-        </tr>
-        """
+        sec_label = f"{result.security_updates} \U0001f534" if result.security_updates > 0 else str(result.security_updates)
+        fields.append({
+            "name": f"{guest.name} ({guest.guest_type.upper()})",
+            "value": f"Updates: **{result.total_updates}** | Security: **{sec_label}**",
+            "inline": False,
+        })
 
-    severity_banner = ""
-    if total_security > 0:
-        severity_banner = f"""
-        <div style="background: #dc3545; color: white; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
-            <strong>CRITICAL:</strong> {total_security} security update(s) require immediate attention!
-        </div>
-        """
+    title = (
+        f"\U0001f6a8 CRITICAL: {total_security} security update(s) available"
+        if total_security > 0
+        else f"\U0001f4e6 {total_updates} update(s) available"
+    )
 
-    html = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
-        <div style="background: #1a1a2e; color: #e0e0e0; padding: 20px; border-radius: 8px;">
-            <h2 style="color: #4fc3f7; margin-top: 0;">Mastodon Canada Administration Tool - Updates Available</h2>
+    embeds = [{
+        "title": title,
+        "description": f"**{total_updates}** update(s) across **{len(guests_with_updates)}** guest(s).",
+        "color": color,
+        "fields": fields,
+        "footer": {"text": "Log in to MCAT to review and apply updates."},
+    }]
 
-            {severity_banner}
-
-            <p><strong>{total_updates}</strong> update(s) available across <strong>{len(guests_with_updates)}</strong> guest(s).</p>
-
-            <table style="width: 100%; border-collapse: collapse; background: #16213e; border-radius: 4px;">
-                <thead>
-                    <tr style="background: #0f3460;">
-                        <th style="padding: 10px; text-align: left; color: #4fc3f7;">Guest</th>
-                        <th style="padding: 10px; text-align: left; color: #4fc3f7;">Type</th>
-                        <th style="padding: 10px; text-align: left; color: #4fc3f7;">Updates</th>
-                        <th style="padding: 10px; text-align: left; color: #4fc3f7;">Security</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows}
-                </tbody>
-            </table>
-
-            <p style="margin-top: 16px; color: #888; font-size: 12px;">
-                Log in to your Mastodon Canada Administration Tool to review and apply updates.
-            </p>
-        </div>
-    </div>
-    """
-
-    subject = f"[MCAT] {total_updates} update(s) available"
-    if total_security > 0:
-        subject = f"[MCAT] CRITICAL: {total_security} security update(s) available"
-
-    ok, msg = _send_email(subject, html)
+    ok, msg = _send_discord(embeds)
     if ok:
-        logger.info(f"Update notification sent to {len(config['recipients'])} recipient(s)")
+        logger.info(f"Update notification sent for {len(guests_with_updates)} guest(s)")
     else:
         logger.error(f"Failed to send update notification: {msg}")
 
 
 def send_mastodon_update_notification(current_version, new_version, release_url):
-    """Send email notification about a new Mastodon release."""
-    html = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background: #1a1a2e; color: #e0e0e0; padding: 20px; border-radius: 8px;">
-            <h2 style="color: #4fc3f7; margin-top: 0;">Mastodon Update Available</h2>
+    """Send notification about a new Mastodon release."""
+    if Setting.get("discord_notify_mastodon", "true") != "true":
+        return False, "Mastodon notifications disabled"
 
-            <div style="background: #16213e; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
-                <table style="width: 100%; border-collapse: collapse;">
-                    <tr>
-                        <td style="padding: 6px 0; color: #888;">Current Version</td>
-                        <td style="padding: 6px 0; font-weight: bold;">v{current_version or 'unknown'}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 6px 0; color: #888;">New Version</td>
-                        <td style="padding: 6px 0; font-weight: bold; color: #ffc107;">v{new_version}</td>
-                    </tr>
-                </table>
-            </div>
+    auto_upgrade = Setting.get("mastodon_auto_upgrade", "false") == "true"
+    note = "Auto-upgrade is enabled and will run shortly." if auto_upgrade else "Log in to MCAT to upgrade."
 
-            <p>A new Mastodon release is available. {"Auto-upgrade is enabled and will run shortly." if _mastodon_auto_enabled() else "Log in to Mastodon Canada Administration Tool to upgrade."}</p>
+    fields = [
+        {"name": "Current Version", "value": f"v{current_version or 'unknown'}", "inline": True},
+        {"name": "New Version", "value": f"v{new_version}", "inline": True},
+    ]
+    if release_url:
+        fields.append({"name": "Release Notes", "value": f"[View on GitHub]({release_url})", "inline": False})
 
-            {f'<p><a href="{release_url}" style="color: #4fc3f7;">View release notes on GitHub</a></p>' if release_url else ''}
+    embeds = [{
+        "title": f"\U0001f43b Mastodon update available: v{new_version}",
+        "description": note,
+        "color": _COLOR_YELLOW,
+        "fields": fields,
+        "footer": {"text": "Sent by Mastodon Canada Administration Tool"},
+    }]
 
-            <p style="margin-top: 16px; color: #888; font-size: 12px;">
-                Sent by Mastodon Canada Administration Tool
-            </p>
-        </div>
-    </div>
-    """
-    subject = f"[MCAT] Mastodon update available: v{new_version}"
-    ok, msg = _send_email(subject, html)
+    ok, msg = _send_discord(embeds)
     if ok:
         logger.info(f"Mastodon update notification sent for v{new_version}")
     else:
@@ -194,41 +146,58 @@ def send_mastodon_update_notification(current_version, new_version, release_url)
     return ok, msg
 
 
-def _mastodon_auto_enabled():
-    return Setting.get("mastodon_auto_upgrade", "false") == "true"
+def send_ghost_update_notification(current_version, new_version, release_url):
+    """Send notification about a new Ghost release."""
+    if Setting.get("discord_notify_ghost", "true") != "true":
+        return False, "Ghost notifications disabled"
+
+    fields = [
+        {"name": "Current Version", "value": f"v{current_version or 'unknown'}", "inline": True},
+        {"name": "New Version", "value": f"v{new_version}", "inline": True},
+    ]
+    if release_url:
+        fields.append({"name": "Release Notes", "value": f"[View on GitHub]({release_url})", "inline": False})
+
+    embeds = [{
+        "title": f"\U0001f47b Ghost update available: v{new_version}",
+        "description": "Log in to MCAT to upgrade.",
+        "color": _COLOR_YELLOW,
+        "fields": fields,
+        "footer": {"text": "Sent by Mastodon Canada Administration Tool"},
+    }]
+
+    ok, msg = _send_discord(embeds)
+    if ok:
+        logger.info(f"Ghost update notification sent for v{new_version}")
+    else:
+        logger.error(f"Failed to send Ghost update notification: {msg}")
+    return ok, msg
 
 
 def send_app_update_notification(current_version, new_version):
-    """Send email notification about a new app release."""
+    """Send notification about a new MCAT app release."""
+    if Setting.get("discord_notify_app", "true") != "true":
+        return False, "App update notifications disabled"
+
     auto_update = Setting.get("app_auto_update", "false") == "true"
-    html = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background: #1a1a2e; color: #e0e0e0; padding: 20px; border-radius: 8px;">
-            <h2 style="color: #4fc3f7; margin-top: 0;">MCAT Update Available</h2>
+    note = (
+        "Auto-update is enabled. The application will update and restart shortly."
+        if auto_update
+        else "Log in to MCAT and go to Settings to apply the update."
+    )
 
-            <div style="background: #16213e; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
-                <table style="width: 100%; border-collapse: collapse;">
-                    <tr>
-                        <td style="padding: 6px 0; color: #888;">Current Version</td>
-                        <td style="padding: 6px 0; font-weight: bold;">v{current_version}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 6px 0; color: #888;">New Version</td>
-                        <td style="padding: 6px 0; font-weight: bold; color: #ffc107;">v{new_version}</td>
-                    </tr>
-                </table>
-            </div>
+    embeds = [{
+        "title": f"\u2b06\ufe0f MCAT application update available: v{new_version}",
+        "description": note,
+        "color": _COLOR_CYAN,
+        "fields": [
+            {"name": "Current Version", "value": f"v{current_version}", "inline": True},
+            {"name": "New Version", "value": f"v{new_version}", "inline": True},
+        ],
+        "footer": {"text": "Sent by Mastodon Canada Administration Tool"},
+    }]
 
-            <p>{"Auto-update is enabled. The application will update and restart shortly." if auto_update else "Log in to Mastodon Canada Administration Tool and go to Settings to apply the update."}</p>
-
-            <p style="margin-top: 16px; color: #888; font-size: 12px;">
-                Sent by Mastodon Canada Administration Tool
-            </p>
-        </div>
-    </div>
-    """
-    subject = f"[MCAT] Application update available: v{new_version}"
-    ok, msg = _send_email(subject, html)
+    ok, msg = _send_discord(embeds)
     if ok:
         logger.info(f"App update notification sent for v{new_version}")
     else:

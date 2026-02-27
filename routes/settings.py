@@ -20,10 +20,13 @@ def _require_login():
 
 def _get_settings_dict():
     return {
-        "gmail_address": Setting.get("gmail_address"),
-        "gmail_app_password": Setting.get("gmail_app_password"),
-        "email_recipients": Setting.get("email_recipients"),
-        "email_enabled": Setting.get("email_enabled", "false"),
+        "discord_webhook_url": Setting.get("discord_webhook_url"),
+        "discord_enabled": Setting.get("discord_enabled", "false"),
+        "discord_notify_updates": Setting.get("discord_notify_updates", "true"),
+        "discord_notify_updates_security_only": Setting.get("discord_notify_updates_security_only", "false"),
+        "discord_notify_mastodon": Setting.get("discord_notify_mastodon", "true"),
+        "discord_notify_ghost": Setting.get("discord_notify_ghost", "true"),
+        "discord_notify_app": Setting.get("discord_notify_app", "true"),
         "scan_interval": Setting.get("scan_interval", "6"),
         "scan_enabled": Setting.get("scan_enabled", "true"),
         "discovery_interval": Setting.get("discovery_interval", "4"),
@@ -107,36 +110,42 @@ def index():
     return render_template("settings.html", settings=settings, update_available=False, update_version=None, latest_release=latest_release, backup_storages=backup_storages, geoip_db_info=geoip_db_info)
 
 
-@bp.route("/email", methods=["POST"])
-def save_email():
-    gmail_address = request.form.get("gmail_address", "").strip()
-    gmail_app_password = request.form.get("gmail_app_password", "").strip()
-    recipients = request.form.get("email_recipients", "").strip()
-    enabled = "email_enabled" in request.form
+@bp.route("/discord", methods=["POST"])
+def save_discord():
+    webhook_url = request.form.get("discord_webhook_url", "").strip()
+    enabled = "discord_enabled" in request.form
+    notify_updates = "discord_notify_updates" in request.form
+    notify_security_only = "discord_notify_updates_security_only" in request.form
+    notify_mastodon = "discord_notify_mastodon" in request.form
+    notify_ghost = "discord_notify_ghost" in request.form
+    notify_app = "discord_notify_app" in request.form
 
-    Setting.set("gmail_address", gmail_address)
-    if gmail_app_password:
-        Setting.set("gmail_app_password", encrypt(gmail_app_password))
-    Setting.set("email_recipients", recipients)
-    Setting.set("email_enabled", "true" if enabled else "false")
+    if webhook_url:
+        Setting.set("discord_webhook_url", encrypt(webhook_url))
+    Setting.set("discord_enabled", "true" if enabled else "false")
+    Setting.set("discord_notify_updates", "true" if notify_updates else "false")
+    Setting.set("discord_notify_updates_security_only", "true" if notify_security_only else "false")
+    Setting.set("discord_notify_mastodon", "true" if notify_mastodon else "false")
+    Setting.set("discord_notify_ghost", "true" if notify_ghost else "false")
+    Setting.set("discord_notify_app", "true" if notify_app else "false")
 
-    log_action("settings_email_save", "settings", resource_name="email")
+    log_action("settings_discord_save", "settings", resource_name="discord")
     db.session.commit()
-    flash("Email settings saved.", "success")
+    flash("Discord settings saved.", "success")
     return redirect(url_for("settings.index"))
 
 
-@bp.route("/email/test", methods=["POST"])
-def test_email():
+@bp.route("/discord/test", methods=["POST"])
+def test_discord():
     # Save settings first
-    save_email()
+    save_discord()
 
-    from notifier import send_test_email
-    ok, message = send_test_email()
+    from notifier import send_test_notification
+    ok, message = send_test_notification()
     if ok:
-        flash(f"Test email sent: {message}", "success")
+        flash(f"Test notification sent: {message}", "success")
     else:
-        flash(f"Test email failed: {message}", "error")
+        flash(f"Test notification failed: {message}", "error")
 
     return redirect(url_for("settings.index"))
 

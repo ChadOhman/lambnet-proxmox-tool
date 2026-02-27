@@ -8,49 +8,58 @@
     <div class="col-lg-6">
         <div class="card bg-dark">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-envelope"></i> Gmail Notifications</h5>
+                <h5 class="mb-0"><i class="bi bi-chat-dots"></i> Discord Notifications</h5>
             </div>
             <div class="card-body">
-                <form method="post" action="/settings/email">
+                <form method="post" action="/settings/discord">
                     <div class="mb-3">
-                        <label class="form-label">Gmail Address</label>
+                        <label class="form-label">Webhook URL</label>
                         {% if safety_mode %}
-                        <input type="hidden" name="gmail_address" value="{{ settings.gmail_address or '' }}">
-                        <input type="email" class="form-control text-muted" value="hidden" disabled>
-                        {% else %}
-                        <input type="email" class="form-control" name="gmail_address" value="{{ settings.gmail_address or '' }}" placeholder="yourname@gmail.com">
-                        {% endif %}
-                        <div class="form-text">The Gmail account to send notifications from.</div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Gmail App Password</label>
-                        {% if safety_mode %}
-                        <input type="password" class="form-control text-muted" placeholder="hidden" disabled>
-                        {% else %}
-                        <input type="password" class="form-control" name="gmail_app_password" placeholder="{{ '********' if settings.gmail_app_password else 'Generate at myaccount.google.com' }}">
-                        {% endif %}
-                        <div class="form-text">
-                            Create an App Password in your Google Account settings under Security > 2-Step Verification > App passwords.
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Notification Recipients</label>
-                        {% if safety_mode %}
-                        <input type="hidden" name="email_recipients" value="{{ settings.email_recipients or '' }}">
+                        <input type="hidden" name="discord_webhook_url" value="">
                         <input type="text" class="form-control text-muted" value="hidden" disabled>
                         {% else %}
-                        <input type="text" class="form-control" name="email_recipients" value="{{ settings.email_recipients or '' }}" placeholder="admin@example.com, ops@example.com">
+                        <input type="text" class="form-control" name="discord_webhook_url"
+                            placeholder="{{ '(saved)' if settings.discord_webhook_url else 'https://discord.com/api/webhooks/...' }}">
                         {% endif %}
-                        <div class="form-text">Comma-separated list of email addresses.</div>
+                        <div class="form-text">Create a webhook in Discord: Channel Settings &rarr; Integrations &rarr; Webhooks.</div>
                     </div>
                     <div class="form-check mb-3">
-                        <input type="checkbox" class="form-check-input" name="email_enabled" id="emailEnabled" {{ 'checked' if settings.email_enabled == 'true' }}>
-                        <label class="form-check-label" for="emailEnabled">Enable email notifications</label>
+                        <input type="checkbox" class="form-check-input" name="discord_enabled" id="discordEnabled"
+                            {{ 'checked' if settings.discord_enabled == 'true' }}>
+                        <label class="form-check-label" for="discordEnabled">Enable Discord notifications</label>
                     </div>
+                    <fieldset class="mb-3">
+                        <legend class="col-form-label pt-0 fw-semibold">Notify me about:</legend>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_updates" id="discordNotifyUpdates"
+                                {{ 'checked' if settings.discord_notify_updates != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyUpdates">Guest &amp; host package updates</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_updates_security_only" id="discordNotifySecurityOnly"
+                                {{ 'checked' if settings.discord_notify_updates_security_only == 'true' }}>
+                            <label class="form-check-label" for="discordNotifySecurityOnly">Security updates only (skip non-security)</label>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_mastodon" id="discordNotifyMastodon"
+                                {{ 'checked' if settings.discord_notify_mastodon != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyMastodon">Mastodon version updates</label>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_ghost" id="discordNotifyGhost"
+                                {{ 'checked' if settings.discord_notify_ghost != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyGhost">Ghost version updates</label>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_app" id="discordNotifyApp"
+                                {{ 'checked' if settings.discord_notify_app != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyApp">MCAT application updates</label>
+                        </div>
+                    </fieldset>
                     <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary">Save Email Settings</button>
-                        <button type="submit" formaction="/settings/email/test" class="btn btn-outline-secondary">
-                            <i class="bi bi-send"></i> Send Test Email
+                        <button type="submit" class="btn btn-primary">Save Discord Settings</button>
+                        <button type="submit" formaction="/settings/discord/test" class="btn btn-outline-secondary">
+                            <i class="bi bi-send"></i> Send Test Notification
                         </button>
                     </div>
                 </form>

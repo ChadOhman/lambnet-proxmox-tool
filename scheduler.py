@@ -104,6 +104,28 @@ def _check_mastodon_release(app):
                 logger.error("Mastodon auto-upgrade failed")
 
 
+def _check_ghost_release(app):
+    """Check for new Ghost releases."""
+    with app.app_context():
+        from models import Setting
+
+        # Only check if a Ghost guest is configured
+        if not Setting.get("ghost_guest_id"):
+            return
+
+        from ghost import check_ghost_release
+        update_available, latest, release_url = check_ghost_release()
+
+        if not update_available:
+            return
+
+        current = Setting.get("ghost_current_version", "")
+        logger.info(f"Ghost update available: v{current} -> v{latest}")
+
+        from notifier import send_ghost_update_notification
+        send_ghost_update_notification(current, latest, release_url)
+
+
 def _run_discovery(app):
     """Refresh guest discovery for all Proxmox hosts."""
     with app.app_context():
@@ -269,7 +291,6 @@ def _check_app_update(app):
 
         logger.info(f"New app version available: v{current_version} -> v{latest}")
 
-        # Send email notification if configured
         from notifier import send_app_update_notification
         send_app_update_notification(current_version, latest)
 
@@ -483,6 +504,16 @@ def init_scheduler(app):
         replace_existing=True,
     )
 
+    # Ghost release check - runs alongside the scan job
+    _scheduler.add_job(
+        _check_ghost_release,
+        trigger=IntervalTrigger(hours=interval_hours),
+        args=[app],
+        id="ghost_check",
+        name="Check for Ghost releases",
+        replace_existing=True,
+    )
+
     # Service health checks - runs every N minutes
     _scheduler.add_job(
         _run_service_health_checks,
@@ -534,6 +565,6 @@ def init_scheduler(app):
     )
 
     _scheduler.start()
-    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
+    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, ghost check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
 
     return _scheduler

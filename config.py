@@ -54,11 +54,6 @@ class Config:
     # Default scan interval in hours
     SCAN_INTERVAL_HOURS = int(os.environ.get("SCAN_INTERVAL_HOURS", "6"))
 
-    # Gmail defaults
-    SMTP_SERVER = "smtp.gmail.com"
-    SMTP_PORT = 587
-    SMTP_USE_TLS = True
-
     # App info
     VERSION_FILE = os.path.join(BASE_DIR, "VERSION")
     GITHUB_REPO = "ChadOhman/mstdnca-proxmox-tool"
