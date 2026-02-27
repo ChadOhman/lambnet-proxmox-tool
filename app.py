@@ -98,6 +98,7 @@ def create_app(test_config=None):
     from routes.security import bp as security_bp
     from routes.terminal import bp as terminal_bp
     from routes.mastodon import bp as mastodon_bp
+    from routes.ghost import bp as ghost_bp
     from routes.api import bp as api_bp
     from routes.services import bp as services_bp
     from routes.unifi import bp as unifi_bp
@@ -112,6 +113,7 @@ def create_app(test_config=None):
     app.register_blueprint(security_bp, url_prefix="/security")
     app.register_blueprint(terminal_bp, url_prefix="/terminal")
     app.register_blueprint(mastodon_bp, url_prefix="/mastodon")
+    app.register_blueprint(ghost_bp, url_prefix="/ghost")
     app.register_blueprint(services_bp, url_prefix="/services")
     app.register_blueprint(unifi_bp, url_prefix="/unifi")
     app.register_blueprint(api_bp, url_prefix="/api")

@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Ghost Overview - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<!-- Header bar -->
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="mb-1">
+            <i class="bi bi-journal-text"></i> Ghost Instance Overview
+        </h2>
+        {% if settings.url %}
+        <div class="text-muted font-monospace small">
+            <a href="{{ settings.url }}" target="_blank" class="text-muted">
+                <i class="bi bi-box-arrow-up-right"></i> {{ settings.url }}
+            </a>
+        </div>
+        {% endif %}
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+        <a href="/ghost/upgrade" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-arrow-up-circle"></i> Manage Upgrades
+        </a>
+    </div>
+</div>
+
+{% if not settings.guest_id %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    Ghost guest is not configured.
+    <a href="/ghost/upgrade" class="alert-link">Configure it here.</a>
+</div>
+{% endif %}
+
+<!-- Service Health -->
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-heart-pulse"></i> Service Health</h5>
+        <small class="text-muted">From last scan — <a href="/services" class="text-muted">all services</a></small>
+    </div>
+    <div class="card-body">
+        {% if ghost_services %}
+        <div class="d-flex flex-wrap gap-2">
+            {% for svc in ghost_services %}
+            {% set badge_class = 'bg-success' if svc.status == 'running' else ('bg-danger' if svc.status in ('stopped','failed') else 'bg-secondary') %}
+            {% set dot = '●' if svc.status in ('running','stopped','failed') else '○' %}
+            <a href="/services/{{ svc.id }}" class="text-decoration-none">
+                <span class="badge {{ badge_class }} fs-6 px-3 py-2">
+                    {{ dot }} {{ svc.service_name }}
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No services found for the configured Ghost guest. Run a scan to populate service data.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Version info -->
+    <div class="col-lg-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-tag"></i> Version</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-dark table-sm mb-3">
+                    <tbody>
+                        <tr>
+                            <td class="text-muted" style="width: 45%">Current Version</td>
+                            <td>
+                                {% if settings.current_version %}
+                                <span class="badge bg-primary">v{{ settings.current_version }}</span>
+                                {% else %}
+                                <span class="text-muted">Not detected</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Latest Available</td>
+                            <td>
+                                {% if settings.latest_version %}
+                                <span class="badge bg-info">v{{ settings.latest_version }}</span>
+                                {% if settings.latest_release_url %}
+                                <a href="{{ settings.latest_release_url }}" target="_blank" class="ms-2 small">
+                                    <i class="bi bi-box-arrow-up-right"></i> Release Notes
+                                </a>
+                                {% endif %}
+                                {% else %}
+                                <span class="text-muted">Not checked</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Auto-Upgrade</td>
+                            <td>
+                                {% if settings.auto_upgrade == 'true' %}
+                                <span class="badge bg-success">Enabled</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Disabled</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Last Upgrade</td>
+                            <td>
+                                {% if settings.last_upgrade_at %}
+                                <small class="font-monospace">{{ settings.last_upgrade_at }}</small>
+                                {% if settings.last_upgrade_status == 'success' %}
+                                <span class="badge bg-success ms-1">Success</span>
+                                {% elif settings.last_upgrade_status == 'error' %}
+                                <span class="badge bg-danger ms-1">Failed</span>
+                                {% endif %}
+                                {% else %}
+                                <span class="text-muted">Never</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                {% if settings.current_version and settings.latest_version and settings.update_available %}
+                <div class="alert alert-warning py-2 mb-0">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>Update available:</strong> v{{ settings.current_version }} &rarr; v{{ settings.latest_version }}
+                    <div class="mt-1">
+                        <a href="/ghost/upgrade" class="btn btn-warning btn-sm">
+                            <i class="bi bi-arrow-up-circle"></i> Upgrade Now
+                        </a>
+                    </div>
+                </div>
+                {% elif settings.current_version and settings.latest_version %}
+                <div class="alert alert-success py-2 mb-0">
+                    <i class="bi bi-check-circle"></i> Ghost is up to date.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration summary -->
+    <div class="col-lg-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Configuration</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-dark table-sm mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-muted" style="width: 45%">Guest</td>
+                            <td>
+                                {% if ghost_guest %}
+                                <a href="/guests/{{ ghost_guest.id }}" class="text-decoration-none">{{ ghost_guest.name }}</a>
+                                <small class="text-muted">({{ ghost_guest.guest_type | upper }}/{{ ghost_guest.vmid }})</small>
+                                {% elif settings.guest_id %}
+                                <span class="font-monospace">{{ settings.guest_id }}</span>
+                                {% else %}
+                                <span class="text-muted">Not configured</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">System User</td>
+                            <td><code>{{ settings.user or 'ghost' }}</code></td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Install Directory</td>
+                            <td><code>{{ settings.ghost_dir or '/var/www/ghost' }}</code></td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Instance URL</td>
+                            <td>
+                                {% if settings.url %}
+                                <a href="{{ settings.url }}" target="_blank" class="font-monospace small">{{ settings.url }}</a>
+                                {% else %}
+                                <span class="text-muted">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Protection</td>
+                            <td>
+                                {% if settings.protection_type == 'backup' %}
+                                <span class="badge bg-secondary">Backup</span>
+                                <small class="text-muted ms-1">{{ settings.backup_storage or '(no storage set)' }}</small>
+                                {% else %}
+                                <span class="badge bg-secondary">Snapshot</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
