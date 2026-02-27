@@ -29,6 +29,25 @@ _SHELL_SAFE_RE = re.compile(r'^[\w.\-/:~]+$')
 _RBENV_PATH = "export PATH=$HOME/.rbenv/bin:$HOME/.rbenv/shims:$PATH"
 
 
+def _log_cmd_output(log, stdout, stderr, code, max_chars=2000):
+    """Log combined stdout+stderr, showing start+end on failure (error before stack trace)."""
+    combined = ((stdout or "") + ("\n" + stderr if stderr else "")).strip()
+    if not combined:
+        return
+    if len(combined) <= max_chars:
+        log(combined)
+    elif code != 0:
+        # On failure the actual error is near the top; stack trace fills the bottom.
+        # Show first 1500 + last 500 so both error and context are visible.
+        head = combined[:1500].strip()
+        tail = combined[-500:].strip()
+        log(head)
+        log("[... output truncated ...]")
+        log(tail)
+    else:
+        log(combined[-max_chars:].strip())
+
+
 def _validate_shell_param(value, label):
     """Raise ValueError if a config value contains shell-unsafe characters."""
     if not value:
@@ -940,8 +959,7 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
             stdout, stderr, code = ssh.execute_sudo(
                 f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && bundle install'", timeout=600
             )
-            combined = (stdout or "") + ("\n" + stderr if stderr else "")
-            log(combined[-2000:].strip() if len(combined) > 2000 else combined.strip() or "(no output)")
+            _log_cmd_output(log, stdout, stderr, code)
             if code != 0:
                 log(f"ERROR: bundle install failed (exit {code})")
                 _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
@@ -953,8 +971,7 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
             stdout, stderr, code = ssh.execute_sudo(
                 f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && yarn install --frozen-lockfile'", timeout=600
             )
-            combined = (stdout or "") + ("\n" + stderr if stderr else "")
-            log(combined[-2000:].strip() if len(combined) > 2000 else combined.strip() or "(no output)")
+            _log_cmd_output(log, stdout, stderr, code)
             if code != 0:
                 log(f"ERROR: yarn install failed (exit {code})")
                 _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
@@ -967,8 +984,7 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && RAILS_ENV=production SKIP_POST_DEPLOYMENT_MIGRATIONS=true bundle exec rails db:migrate'",
                 timeout=600,
             )
-            combined = (stdout or "") + ("\n" + stderr if stderr else "")
-            log(combined[-2000:].strip() if len(combined) > 2000 else combined.strip() or "(no output)")
+            _log_cmd_output(log, stdout, stderr, code)
             if code != 0:
                 log(f"ERROR: pre-deployment migrations failed (exit {code})")
                 _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
@@ -981,8 +997,7 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && RAILS_ENV=production bundle exec rails assets:precompile'",
                 timeout=900,
             )
-            combined = (stdout or "") + ("\n" + stderr if stderr else "")
-            log(combined[-2000:].strip() if len(combined) > 2000 else combined.strip() or "(no output)")
+            _log_cmd_output(log, stdout, stderr, code)
             if code != 0:
                 log(f"ERROR: asset precompilation failed (exit {code})")
                 _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
@@ -1025,8 +1040,7 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 f"su - {user} -c '{_RBENV_PATH}; cd {app_dir} && RAILS_ENV=production bundle exec rails db:migrate'",
                 timeout=600,
             )
-            combined = (stdout or "") + ("\n" + stderr if stderr else "")
-            log(combined[-2000:].strip() if len(combined) > 2000 else combined.strip() or "(no output)")
+            _log_cmd_output(log, stdout, stderr, code)
             if code != 0:
                 log(f"ERROR: post-deployment migrations failed (exit {code})")
                 _swap_env_db(ssh, app_dir, config["pgbouncer_host"], config["pgbouncer_port"])
