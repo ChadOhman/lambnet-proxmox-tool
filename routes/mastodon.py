@@ -375,20 +375,37 @@ def detect_versions():
     if guest_id:
         mastodon_guest = Guest.query.get(int(guest_id))
         if mastodon_guest:
+            # Read lib/mastodon/version.rb and reconstruct the version string from its
+            # MAJOR/MINOR/PATCH/PRE/BUILD_METADATA constants.  This works for both
+            # upstream Mastodon and glitch-soc (which adds +glitch via BUILD_METADATA).
+            # git describe --tags is unreliable: it returns <nearest-tag>-<N>-g<sha>
+            # which does not match the human-readable version.
             stdout, error = _execute_command(
                 mastodon_guest,
-                f"su - {user} -c 'cat {app_dir}/VERSION 2>/dev/null || cd {app_dir} && git describe --tags 2>/dev/null'",
+                f"su - {user} -c 'cat {app_dir}/lib/mastodon/version.rb 2>/dev/null'",
                 timeout=15,
                 sudo=True,
             )
+            version = None
             if stdout and not error:
-                version = stdout.strip().lstrip("v")
-                if version:
-                    Setting.set("mastodon_current_version", version)
-                    detected.append(f"Mastodon: v{version}")
-            elif error:
-                logger.warning(f"Mastodon version detection failed: {error}")
-                flash(f"Could not detect Mastodon version: {error}", "warning")
+                import re as _re
+                major = _re.search(r'MAJOR\s*=\s*(\d+)', stdout)
+                minor = _re.search(r'MINOR\s*=\s*(\d+)', stdout)
+                patch = _re.search(r'PATCH\s*=\s*(\d+)', stdout)
+                pre   = _re.search(r"PRE\s*=\s*['\"]([^'\"]+)['\"]", stdout)
+                build = _re.search(r"BUILD_METADATA\s*=\s*['\"]([^'\"]+)['\"]", stdout)
+                if major and minor and patch:
+                    version = f"{major.group(1)}.{minor.group(1)}.{patch.group(1)}"
+                    if pre:
+                        version += f"-{pre.group(1)}"
+                    if build:
+                        version += f"+{build.group(1)}"
+            if version:
+                Setting.set("mastodon_current_version", version)
+                detected.append(f"Mastodon: v{version}")
+            else:
+                logger.warning(f"Mastodon version detection failed: {error or 'could not parse version.rb'}")
+                flash(f"Could not detect Mastodon version: {error or 'could not parse lib/mastodon/version.rb'}", "warning")
         else:
             flash("Mastodon app guest not found.", "error")
     else:
