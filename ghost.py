@@ -531,11 +531,56 @@ def run_ghost_upgrade(log_callback=None, skip_protection=False):
 
     # --- Step 2: Ghost update via SSH ---
     log("=== Step 2: Running ghost update ===")
-    dir_basename = _osp.basename(ghost_dir.rstrip("/"))
-    service_name = f"ghost_{dir_basename}"
 
     try:
         with SSHClient.from_credential(ghost_guest.ip_address, credential) as ssh:
+            # Detect the real service name from .ghost-cli.  ghost-cli names services
+            # after the site hostname (e.g. ghost_news-mstdn-ca), not the directory.
+            service_name = f"ghost_{_osp.basename(ghost_dir.rstrip('/'))}"  # fallback
+            ghost_cli_raw, _, cli_rc = ssh.execute_sudo(
+                f"cat {ghost_dir}/.ghost-cli 2>/dev/null", timeout=10
+            )
+            if cli_rc == 0 and ghost_cli_raw.strip():
+                m_name = re.search(r'"name"\s*:\s*"([^"]+)"', ghost_cli_raw)
+                if m_name and re.match(r"^[a-zA-Z0-9_-]+$", m_name.group(1)):
+                    service_name = f"ghost_{m_name.group(1)}"
+            log(f"Ghost service name: {service_name}")
+
+            # Ensure ghost_user has NOPASSWD sudo for systemctl.  ghost-cli uses
+            # 'sudo systemctl ...' to start/stop the service; without a sudoers entry
+            # sudo prompts for a password, ghost-cli detects it and calls prompt(),
+            # which throws in non-TTY mode.  TurnKey does not create this file.
+            sudoers_path = f"/etc/sudoers.d/ghost-{service_name}"
+            chk_out, _, _ = ssh.execute_sudo(
+                f"test -f {sudoers_path} && echo exists || echo missing", timeout=5
+            )
+            if "missing" in (chk_out or ""):
+                log(f"Creating sudoers entry: {sudoers_path}")
+                sc_out, _, _ = ssh.execute_sudo(
+                    "command -v systemctl 2>/dev/null || echo /usr/bin/systemctl",
+                    timeout=5,
+                )
+                systemctl = (sc_out or "").strip() or "/usr/bin/systemctl"
+                sudoers_lines = [
+                    "# Managed by lambnet-proxmox-tool",
+                ] + [
+                    f"{user} ALL=(root) NOPASSWD: {systemctl} {action} {service_name}"
+                    for action in ("start", "stop", "restart", "is-active",
+                                   "is-enabled", "enable", "disable")
+                ]
+                write_parts = [
+                    f"echo '{line}' {'>' if i == 0 else '>>'} {sudoers_path}"
+                    for i, line in enumerate(sudoers_lines)
+                ] + [f"chmod 440 {sudoers_path}"]
+                _, w_err, w_code = ssh.execute_sudo(" && ".join(write_parts), timeout=15)
+                if w_code == 0:
+                    log("  Sudoers entry created.")
+                else:
+                    log(f"  WARNING: Could not create sudoers: {(w_err or '').strip()}")
+            else:
+                log(f"Sudoers already configured: {sudoers_path}")
+            log("")
+
             # Update ghost-cli itself first so it doesn't try to interactively prompt
             # about running an outdated version (which throws in non-TTY SSH sessions).
             log("Updating ghost-cli to latest version...")
