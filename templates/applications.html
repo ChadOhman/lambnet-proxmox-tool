@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Applications - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-window-stack"></i> Applications</h2>
+
+<div class="row g-4">
+    <div class="col-sm-6 col-lg-4">
+        <div class="card bg-dark h-100">
+            <div class="card-body d-flex flex-column">
+                <h5 class="card-title"><i class="bi bi-rocket-takeoff"></i> Mastodon</h5>
+                <p class="card-text text-muted flex-grow-1">Upgrade Mastodon to the latest release.</p>
+                <a href="/mastodon/upgrade" class="btn btn-outline-light mt-auto">Go to Mastodon</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card bg-dark h-100">
+            <div class="card-body d-flex flex-column">
+                <h5 class="card-title"><i class="bi bi-journal-text"></i> Ghost</h5>
+                <p class="card-text text-muted flex-grow-1">Upgrade Ghost to the latest release.</p>
+                <a href="/ghost/upgrade" class="btn btn-outline-light mt-auto">Go to Ghost</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

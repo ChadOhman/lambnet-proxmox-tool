@@ -80,13 +80,6 @@
                         </a>
                     </li>
                     {% endif %}
-                    {% if current_user.is_super_admin %}
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.blueprint == 'credentials' %}active{% endif %}" href="/credentials">
-                            <i class="bi bi-key"></i> Credentials
-                        </a>
-                    </li>
-                    {% endif %}
                     {% if current_user.is_admin %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'schedules' %}active{% endif %}" href="/schedules">
@@ -102,25 +95,10 @@
                     </li>
                     {% endif %}
                     {% if current_user.can_update %}
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {% if request.blueprint in ('mastodon', 'ghost') %}active{% endif %}"
-                           href="#" data-bs-toggle="dropdown" aria-expanded="false">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.blueprint == 'applications' %}active{% endif %}" href="/applications">
                             <i class="bi bi-window-stack"></i> Applications
                         </a>
-                        <ul class="dropdown-menu dropdown-menu-dark">
-                            <li>
-                                <a class="dropdown-item {% if request.blueprint == 'mastodon' %}active{% endif %}"
-                                   href="/mastodon/upgrade">
-                                    <i class="bi bi-rocket-takeoff"></i> Mastodon
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item {% if request.blueprint == 'ghost' %}active{% endif %}"
-                                   href="/ghost/upgrade">
-                                    <i class="bi bi-journal-text"></i> Ghost
-                                </a>
-                            </li>
-                        </ul>
                     </li>
                     {% endif %}
                     {% if current_user.can_manage_users %}

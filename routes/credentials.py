@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from models import db, Credential
 from credential_store import encrypt
@@ -17,8 +17,7 @@ def _require_login():
 
 @bp.route("/")
 def index():
-    credentials = Credential.query.order_by(Credential.is_default.desc(), Credential.name).all()
-    return render_template("credentials.html", credentials=credentials)
+    return redirect(url_for("security.index"))
 
 
 @bp.route("/add", methods=["POST"])
@@ -30,7 +29,7 @@ def add():
 
     if not name:
         flash("Name is required.", "error")
-        return redirect(url_for("credentials.index"))
+        return redirect(url_for("security.index"))
 
     if auth_type == "password":
         value = request.form.get("password", "")
@@ -39,7 +38,7 @@ def add():
 
     if not value:
         flash("Password or private key is required.", "error")
-        return redirect(url_for("credentials.index"))
+        return redirect(url_for("security.index"))
 
     # If setting as default, unset other defaults
     if is_default:
@@ -61,7 +60,7 @@ def add():
     db.session.commit()
 
     flash(f"Credential '{name}' added.", "success")
-    return redirect(url_for("credentials.index"))
+    return redirect(url_for("security.index"))
 
 
 @bp.route("/<int:cred_id>/edit", methods=["POST"])
@@ -75,7 +74,7 @@ def edit(cred_id):
 
     if not name:
         flash("Name is required.", "error")
-        return redirect(url_for("credentials.index"))
+        return redirect(url_for("security.index"))
 
     cred.name = name
     cred.username = username or cred.username
@@ -106,7 +105,7 @@ def edit(cred_id):
     log_action("credential_edit", "credential", resource_id=cred.id, resource_name=name)
     db.session.commit()
     flash(f"Credential '{name}' updated.", "success")
-    return redirect(url_for("credentials.index"))
+    return redirect(url_for("security.index"))
 
 
 @bp.route("/<int:cred_id>/set-default", methods=["POST"])
@@ -117,7 +116,7 @@ def set_default(cred_id):
     log_action("credential_set_default", "credential", resource_id=cred.id, resource_name=cred.name)
     db.session.commit()
     flash(f"'{cred.name}' set as default credential.", "success")
-    return redirect(url_for("credentials.index"))
+    return redirect(url_for("security.index"))
 
 
 @bp.route("/<int:cred_id>/delete", methods=["POST"])
@@ -128,4 +127,4 @@ def delete(cred_id):
     db.session.delete(cred)
     db.session.commit()
     flash(f"Credential '{name}' deleted.", "warning")
-    return redirect(url_for("credentials.index"))
+    return redirect(url_for("security.index"))

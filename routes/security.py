@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
-from models import db, User, Role, Tag, TagUnifiNetwork, Setting, AuditLog
+from models import db, User, Role, Tag, TagUnifiNetwork, Setting, AuditLog, Credential
 from audit import log_action
 
 bp = Blueprint("security", __name__)
@@ -77,9 +77,14 @@ def index():
         except Exception:
             pass
 
+    credentials = []
+    if current_user.is_super_admin:
+        credentials = Credential.query.order_by(Credential.is_default.desc(), Credential.name).all()
+
     return render_template("security.html", users=users, roles=roles, tags=tags,
                            settings=settings, audit_pagination=audit_pagination,
-                           unifi_networks_available=unifi_networks_available)
+                           unifi_networks_available=unifi_networks_available,
+                           credentials=credentials)
 
 
 # --- User management ---
