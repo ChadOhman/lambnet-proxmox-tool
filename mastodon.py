@@ -670,11 +670,12 @@ def run_mastodon_preflight(log_callback=None):
     return checks_failed == 0, "\n".join(log_lines)
 
 
-def run_mastodon_upgrade(log_callback=None):
+def run_mastodon_upgrade(log_callback=None, skip_protection=False):
     """Run the full Mastodon upgrade procedure.
 
     log_callback: optional callable(str) invoked immediately after each log line,
     enabling real-time streaming to a polling endpoint.
+    skip_protection: if True, skip the snapshot/backup step (super-admin only).
 
     Returns (success, log_output).
     """
@@ -759,50 +760,53 @@ def run_mastodon_upgrade(log_callback=None):
     log("")
 
     # --- Step 1: Protection (snapshot or backup) ---
-    protection_type = config.get("protection_type", "snapshot")
-    backup_storage = config.get("backup_storage", "")
-
-    if protection_type == "backup" and not backup_storage:
-        return False, "Backup protection selected but no backup storage is configured"
-
-    if protection_type == "backup":
-        backup_mode = config.get("backup_mode", "snapshot")
-        log(f"=== Step 1: Creating vzdump backups to storage '{backup_storage}' (mode: {backup_mode}) ===")
-        log("(This may take several minutes — please be patient)")
-
-        ok, msg = backup_guest(mastodon_guest, backup_storage, mode=backup_mode)
-        log(f"Backup {mastodon_guest.name}: {msg}")
-        if not ok:
-            return False, "\n".join(log_lines)
-
-        if mastodon_guest_2:
-            ok, msg = backup_guest(mastodon_guest_2, backup_storage, mode=backup_mode)
-            log(f"Backup {mastodon_guest_2.name}: {msg}")
-            if not ok:
-                return False, "\n".join(log_lines)
-
-        ok, msg = backup_guest(db_guest, backup_storage, mode=backup_mode)
-        log(f"Backup {db_guest.name}: {msg}")
-        if not ok:
-            return False, "\n".join(log_lines)
+    if skip_protection:
+        log("=== Step 1: Skipping snapshot/backup (requested by super-admin) ===")
     else:
-        log("=== Step 1: Creating Proxmox snapshots ===")
+        protection_type = config.get("protection_type", "snapshot")
+        backup_storage = config.get("backup_storage", "")
 
-        ok, msg = snapshot_guest(mastodon_guest)
-        log(f"Snapshot {mastodon_guest.name}: {msg}")
-        if not ok:
-            return False, "\n".join(log_lines)
+        if protection_type == "backup" and not backup_storage:
+            return False, "Backup protection selected but no backup storage is configured"
 
-        if mastodon_guest_2:
-            ok, msg = snapshot_guest(mastodon_guest_2)
-            log(f"Snapshot {mastodon_guest_2.name}: {msg}")
+        if protection_type == "backup":
+            backup_mode = config.get("backup_mode", "snapshot")
+            log(f"=== Step 1: Creating vzdump backups to storage '{backup_storage}' (mode: {backup_mode}) ===")
+            log("(This may take several minutes — please be patient)")
+
+            ok, msg = backup_guest(mastodon_guest, backup_storage, mode=backup_mode)
+            log(f"Backup {mastodon_guest.name}: {msg}")
             if not ok:
                 return False, "\n".join(log_lines)
 
-        ok, msg = snapshot_guest(db_guest)
-        log(f"Snapshot {db_guest.name}: {msg}")
-        if not ok:
-            return False, "\n".join(log_lines)
+            if mastodon_guest_2:
+                ok, msg = backup_guest(mastodon_guest_2, backup_storage, mode=backup_mode)
+                log(f"Backup {mastodon_guest_2.name}: {msg}")
+                if not ok:
+                    return False, "\n".join(log_lines)
+
+            ok, msg = backup_guest(db_guest, backup_storage, mode=backup_mode)
+            log(f"Backup {db_guest.name}: {msg}")
+            if not ok:
+                return False, "\n".join(log_lines)
+        else:
+            log("=== Step 1: Creating Proxmox snapshots ===")
+
+            ok, msg = snapshot_guest(mastodon_guest)
+            log(f"Snapshot {mastodon_guest.name}: {msg}")
+            if not ok:
+                return False, "\n".join(log_lines)
+
+            if mastodon_guest_2:
+                ok, msg = snapshot_guest(mastodon_guest_2)
+                log(f"Snapshot {mastodon_guest_2.name}: {msg}")
+                if not ok:
+                    return False, "\n".join(log_lines)
+
+            ok, msg = snapshot_guest(db_guest)
+            log(f"Snapshot {db_guest.name}: {msg}")
+            if not ok:
+                return False, "\n".join(log_lines)
 
     # --- Step 2: SSH upgrade sequence ---
     log("=== Step 2: Connecting to Mastodon guest via SSH ===")

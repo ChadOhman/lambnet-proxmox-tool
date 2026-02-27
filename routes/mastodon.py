@@ -304,10 +304,17 @@ def preflight():
 def upgrade():
     from mastodon import run_mastodon_upgrade
     from flask import current_app
+    from flask_login import current_user
 
     if _upgrade_job["running"]:
         flash("An upgrade is already in progress.", "warning")
         return redirect(url_for("mastodon.upgrade_page"))
+
+    # Only super-admins may skip the snapshot/backup step
+    skip_protection = (
+        current_user.is_super_admin
+        and request.form.get("skip_protection") == "1"
+    )
 
     _upgrade_job.update({"running": True, "success": None, "log": []})
 
@@ -320,7 +327,7 @@ def upgrade():
         ok = False
         try:
             with _app.app_context():
-                ok, _ = run_mastodon_upgrade(log_callback=_cb)
+                ok, _ = run_mastodon_upgrade(log_callback=_cb, skip_protection=skip_protection)
         except Exception as e:
             _cb(f"FATAL ERROR: {e}")
             ok = False
