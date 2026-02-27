@@ -28,8 +28,8 @@ def _require_login():
 def _get_ghost_settings():
     return {
         "guest_id": Setting.get("ghost_guest_id", ""),
-        "user": Setting.get("ghost_user", "ghost"),
-        "ghost_dir": Setting.get("ghost_dir", "/var/www/ghost"),
+        "user": Setting.get("ghost_user", "ghost_user"),
+        "ghost_dir": Setting.get("ghost_dir", "/opt/ghost"),
         "url": Setting.get("ghost_url", ""),
         "auto_upgrade": Setting.get("ghost_auto_upgrade", "false"),
         "current_version": Setting.get("ghost_current_version", ""),
@@ -106,8 +106,8 @@ def upgrade_page():
 @bp.route("/save", methods=["POST"])
 def save():
     Setting.set("ghost_guest_id", request.form.get("ghost_guest_id", "").strip())
-    Setting.set("ghost_user", request.form.get("ghost_user", "ghost").strip() or "ghost")
-    Setting.set("ghost_dir", request.form.get("ghost_dir", "/var/www/ghost").strip() or "/var/www/ghost")
+    Setting.set("ghost_user", request.form.get("ghost_user", "ghost_user").strip() or "ghost_user")
+    Setting.set("ghost_dir", request.form.get("ghost_dir", "/opt/ghost").strip() or "/opt/ghost")
     Setting.set("ghost_url", request.form.get("ghost_url", "").strip())
     Setting.set("ghost_current_version", request.form.get("ghost_current_version", "").strip())
     Setting.set("ghost_auto_upgrade", "true" if "ghost_auto_upgrade" in request.form else "false")
@@ -259,8 +259,8 @@ def detect_versions():
     from ghost import detect_ghost_version
 
     guest_id = Setting.get("ghost_guest_id", "")
-    ghost_dir = Setting.get("ghost_dir", "/var/www/ghost")
-    ghost_user = Setting.get("ghost_user", "ghost")
+    ghost_dir = Setting.get("ghost_dir", "/opt/ghost")
+    ghost_user = Setting.get("ghost_user", "ghost_user")
 
     if not guest_id:
         flash("Ghost guest is not configured.", "warning")

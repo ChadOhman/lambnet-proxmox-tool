@@ -99,13 +99,13 @@
                         <div class="col-md-6">
                             <label class="form-label">Ghost System User</label>
                             <input type="text" class="form-control font-monospace" name="ghost_user"
-                                   value="{{ settings.user or 'ghost' }}" placeholder="ghost">
-                            <div class="form-text">User that owns the Ghost installation.</div>
+                                   value="{{ settings.user or 'ghost_user' }}" placeholder="ghost_user">
+                            <div class="form-text">User that owns the Ghost installation (TurnKey: <code>ghost_user</code>).</div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Install Directory</label>
                             <input type="text" class="form-control font-monospace" name="ghost_dir"
-                                   value="{{ settings.ghost_dir or '/var/www/ghost' }}" placeholder="/var/www/ghost">
+                                   value="{{ settings.ghost_dir or '/opt/ghost' }}" placeholder="/opt/ghost">
                         </div>
                     </div>
 

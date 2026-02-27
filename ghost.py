@@ -129,8 +129,8 @@ def _get_ghost_config():
     """Read all Ghost-related settings."""
     return {
         "guest_id": Setting.get("ghost_guest_id", ""),
-        "user": Setting.get("ghost_user", "ghost"),
-        "ghost_dir": Setting.get("ghost_dir", "/var/www/ghost"),
+        "user": Setting.get("ghost_user", "ghost_user"),
+        "ghost_dir": Setting.get("ghost_dir", "/opt/ghost"),
         "current_version": Setting.get("ghost_current_version", ""),
         "latest_version": Setting.get("ghost_latest_version", ""),
         "protection_type": Setting.get("ghost_protection_type", "snapshot"),
