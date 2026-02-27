@@ -303,7 +303,12 @@ def _swap_env_db(ssh, app_dir, new_host, new_port):
         stdout, stderr, code = ssh.execute_sudo(cmd, timeout=10)
         if code != 0:
             return False, f"Failed to update .env.production: {stderr}"
-    return True, "DB config swapped"
+    # Read back and verify the swap actually took effect
+    verify_out, _, _ = ssh.execute_sudo(
+        f"grep -E '^DB_HOST=|^DB_PORT=' {env_file}", timeout=10
+    )
+    actual = verify_out.strip().replace("\n", "  ")
+    return True, f"DB config swapped → {new_host}:{new_port}  (actual: {actual})"
 
 
 def _check_env_compliance(ssh, user, app_dir, branch, log):
