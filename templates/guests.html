@@ -48,22 +48,22 @@
 <div class="card bg-dark">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-dark table-hover mb-0">
+            <table class="table table-dark table-hover mb-0" aria-label="Managed guests">
                 <thead>
                     <tr>
-                        <th>Status</th>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th>VMID</th>
-                        <th>IP Address</th>
-                        <th>Host</th>
-                        <th>Tags</th>
-                        <th>Connection</th>
-                        <th>Updates</th>
-                        <th>Security</th>
-                        <th>Auto-Update</th>
-                        <th>Last Scan</th>
-                        <th>Actions</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Name</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">VMID</th>
+                        <th scope="col">IP Address</th>
+                        <th scope="col">Host</th>
+                        <th scope="col">Tags</th>
+                        <th scope="col">Connection</th>
+                        <th scope="col">Updates</th>
+                        <th scope="col">Security</th>
+                        <th scope="col">Auto-Update</th>
+                        <th scope="col">Last Scan</th>
+                        <th scope="col">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -71,13 +71,13 @@
                     <tr>
                         <td>
                             {% if guest.power_state == 'running' %}
-                            <span class="text-success" title="Running"><i class="bi bi-circle-fill"></i></span>
+                            <span class="text-success"><i class="bi bi-circle-fill" aria-hidden="true"></i><span class="visually-hidden">Running</span></span>
                             {% elif guest.power_state == 'stopped' %}
-                            <span class="text-danger" title="Stopped"><i class="bi bi-circle-fill"></i></span>
+                            <span class="text-danger"><i class="bi bi-circle-fill" aria-hidden="true"></i><span class="visually-hidden">Stopped</span></span>
                             {% elif guest.power_state == 'paused' %}
-                            <span class="text-warning" title="Paused"><i class="bi bi-pause-circle-fill"></i></span>
+                            <span class="text-warning"><i class="bi bi-pause-circle-fill" aria-hidden="true"></i><span class="visually-hidden">Paused</span></span>
                             {% else %}
-                            <span class="text-muted" title="Unknown"><i class="bi bi-circle"></i></span>
+                            <span class="text-muted"><i class="bi bi-circle" aria-hidden="true"></i><span class="visually-hidden">Unknown</span></span>
                             {% endif %}
                         </td>
                         <td>
@@ -131,9 +131,9 @@
                         </td>
                         <td>
                             {% if guest.auto_update %}
-                            <span class="text-success"><i class="bi bi-check-lg"></i></span>
+                            <span class="text-success"><i class="bi bi-check-lg" aria-hidden="true"></i><span class="visually-hidden">Enabled</span></span>
                             {% else %}
-                            <span class="text-muted"><i class="bi bi-dash"></i></span>
+                            <span class="text-muted"><i class="bi bi-dash" aria-hidden="true"></i><span class="visually-hidden">Disabled</span></span>
                             {% endif %}
                         </td>
                         <td>
@@ -144,19 +144,19 @@
                             {% endif %}
                         </td>
                         <td>
-                            <div class="btn-group btn-group-sm">
-                                <a href="/guests/{{ guest.id }}" class="btn btn-outline-light" title="View">
-                                    <i class="bi bi-eye"></i>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Actions for {{ guest.name }}">
+                                <a href="/guests/{{ guest.id }}" class="btn btn-outline-light" aria-label="View {{ guest.name }}">
+                                    <i class="bi bi-eye" aria-hidden="true"></i>
                                 </a>
                                 <form method="post" action="/api/scan/{{ guest.id }}" class="d-inline">
-                                    <button type="submit" class="btn btn-outline-primary" title="Scan">
-                                        <i class="bi bi-arrow-clockwise"></i>
+                                    <button type="submit" class="btn btn-outline-primary" aria-label="Scan {{ guest.name }} for updates">
+                                        <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
                                     </button>
                                 </form>
                                 {% if guest.pending_updates()|length > 0 %}
                                 <form method="post" action="/api/apply/{{ guest.id }}" class="d-inline" onsubmit="return confirm('Apply all updates to {{ guest.name }}?')">
-                                    <button type="submit" class="btn btn-outline-warning" title="Apply Updates">
-                                        <i class="bi bi-download"></i>
+                                    <button type="submit" class="btn btn-outline-warning" aria-label="Apply updates to {{ guest.name }}">
+                                        <i class="bi bi-download" aria-hidden="true"></i>
                                     </button>
                                 </form>
                                 {% endif %}
@@ -177,13 +177,13 @@
 </div>
 
 <!-- Add Guest Modal -->
-<div class="modal fade" id="addGuestModal" tabindex="-1">
+<div class="modal fade" id="addGuestModal" tabindex="-1" aria-labelledby="addGuestModal-title" aria-modal="true" role="dialog">
     <div class="modal-dialog">
         <div class="modal-content bg-dark">
             <form method="post" action="/guests/add">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Add Guest Manually</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="addGuestModal-title">Add Guest Manually</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close Add Guest Manually"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">

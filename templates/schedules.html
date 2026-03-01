@@ -12,16 +12,16 @@
 <div class="card bg-dark">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-dark table-hover mb-0">
+            <table class="table table-dark table-hover mb-0" aria-label="Maintenance schedules">
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Day</th>
-                        <th>Window</th>
-                        <th>Update Type</th>
-                        <th>Enabled</th>
-                        <th>Assigned Guests</th>
-                        <th>Actions</th>
+                        <th scope="col">Name</th>
+                        <th scope="col">Day</th>
+                        <th scope="col">Window</th>
+                        <th scope="col">Update Type</th>
+                        <th scope="col">Enabled</th>
+                        <th scope="col">Assigned Guests</th>
+                        <th scope="col">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -66,13 +66,13 @@
 </div>
 
 <!-- Add Schedule Modal -->
-<div class="modal fade" id="addScheduleModal" tabindex="-1">
+<div class="modal fade" id="addScheduleModal" tabindex="-1" aria-labelledby="addScheduleModal-title" aria-modal="true" role="dialog">
     <div class="modal-dialog">
         <div class="modal-content bg-dark">
             <form method="post" action="/schedules/add">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Add Maintenance Schedule</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="addScheduleModal-title">Add Maintenance Schedule</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close Add Maintenance Schedule"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">

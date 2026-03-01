@@ -13,12 +13,12 @@
             <div class="card-body">
                 <form method="post" action="/settings/discord">
                     <div class="mb-3">
-                        <label class="form-label">Webhook URL</label>
+                        <label class="form-label" for="discordWebhookUrl">Webhook URL</label>
                         {% if safety_mode %}
                         <input type="hidden" name="discord_webhook_url" value="{{ settings.discord_webhook_url or '' }}">
-                        <input type="text" class="form-control text-muted" value="hidden" disabled>
+                        <input type="text" class="form-control text-muted" id="discordWebhookUrl" value="hidden" disabled>
                         {% else %}
-                        <input type="text" class="form-control" name="discord_webhook_url"
+                        <input type="text" class="form-control" id="discordWebhookUrl" name="discord_webhook_url"
                             value="{{ settings.discord_webhook_url or '' }}"
                             placeholder="https://discord.com/api/webhooks/...">
                         {% endif %}
@@ -84,27 +84,27 @@
                         <label class="form-check-label" for="unifiEnabled"><strong>Enable UniFi Integration</strong></label>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Controller URL</label>
+                        <label class="form-label" for="unifiBaseUrl">Controller URL</label>
                         {% if safety_mode %}
                         <input type="hidden" name="unifi_base_url" value="{{ settings.unifi_base_url or '' }}">
-                        <input type="text" class="form-control text-muted" value="hidden" disabled>
+                        <input type="text" class="form-control text-muted" id="unifiBaseUrl" value="hidden" disabled>
                         {% else %}
-                        <input type="text" class="form-control" name="unifi_base_url" value="{{ settings.unifi_base_url or '' }}" placeholder="https://10.0.4.1">
+                        <input type="text" class="form-control" id="unifiBaseUrl" name="unifi_base_url" value="{{ settings.unifi_base_url or '' }}" placeholder="https://10.0.4.1">
                         {% endif %}
                     </div>
                     <div class="row mb-3">
                         <div class="col-6">
-                            <label class="form-label">Username</label>
+                            <label class="form-label" for="unifiUsername">Username</label>
                             {% if safety_mode %}
                             <input type="hidden" name="unifi_username" value="{{ settings.unifi_username or '' }}">
-                            <input type="text" class="form-control text-muted" value="hidden" disabled>
+                            <input type="text" class="form-control text-muted" id="unifiUsername" value="hidden" disabled>
                             {% else %}
-                            <input type="text" class="form-control" name="unifi_username" value="{{ settings.unifi_username or '' }}" placeholder="admin">
+                            <input type="text" class="form-control" id="unifiUsername" name="unifi_username" value="{{ settings.unifi_username or '' }}" placeholder="admin">
                             {% endif %}
                         </div>
                         <div class="col-6">
-                            <label class="form-label">Password</label>
-                            <input type="password" class="form-control" name="unifi_password" placeholder="{{ '********' if settings.unifi_password else '' }}">
+                            <label class="form-label" for="unifiPassword">Password</label>
+                            <input type="password" class="form-control" id="unifiPassword" name="unifi_password" placeholder="{{ '********' if settings.unifi_password else '' }}">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -159,8 +159,8 @@
                         <div class="form-text">Fetches events and alarms from the UniFi controller on a schedule.</div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Poll interval (minutes)</label>
-                        <input type="number" class="form-control" name="unifi_api_poll_interval"
+                        <label class="form-label" for="apiPollInterval">Poll interval (minutes)</label>
+                        <input type="number" class="form-control" id="apiPollInterval" name="unifi_api_poll_interval"
                                value="{{ settings.unifi_api_poll_interval or '5' }}" min="1" max="1440"
                                placeholder="5">
                     </div>
@@ -211,7 +211,9 @@
                         <div id="geoip-progress-wrap" class="mt-2 d-none">
                             <div class="progress" style="height:6px">
                                 <div id="geoip-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                                     role="progressbar" style="width:0%"></div>
+                                     role="progressbar" style="width:0%"
+                                     aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
+                                     aria-label="Upload progress"></div>
                             </div>
                             <small id="geoip-progress-label" class="text-muted mt-1 d-block"></small>
                         </div>
@@ -295,6 +297,7 @@
                                 var loadedMb = (evt.loaded / 1048576).toFixed(1);
                                 var totalMb  = (evt.total  / 1048576).toFixed(1);
                                 progressBar.style.width = pct + '%';
+                                progressBar.setAttribute('aria-valuenow', pct);
                                 progressLabel.textContent = loadedMb + ' MB / ' + totalMb + ' MB (' + pct + '%)';
                             };
 
@@ -501,7 +504,7 @@
                 <h5 class="mb-0"><i class="bi bi-info-circle"></i> Application</h5>
             </div>
             <div class="card-body">
-                <table class="table table-dark table-sm mb-3">
+                <table class="table table-dark table-sm mb-3" aria-label="Application information">
                     <tr>
                         <td class="text-muted">Running</td>
                         <td>

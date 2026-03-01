@@ -81,6 +81,38 @@ a.stat-card {
     color: #6c757d;
 }
 
+/* WCAG 2.4.1: Skip-to-main-content link */
+.skip-link {
+    position: absolute;
+    top: -100%;
+    left: 0;
+    padding: 0.5rem 1rem;
+    background: var(--bs-primary);
+    color: #fff;
+    z-index: 10000;
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: 0 0 4px 0;
+}
+.skip-link:focus {
+    top: 0;
+}
+
+/* WCAG 2.3.3 / 1.4.3: Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+    .stat-card,
+    .collab-ghost-cursor,
+    .collab-avatar,
+    .fade {
+        transition: none !important;
+    }
+}
+
+/* WCAG 1.4.1 note: severity-* and status-* classes must NEVER be the sole
+   indicator of state. Every element using these classes must also include a
+   visible text label or an icon with aria-label / aria-hidden + adjacent
+   visually-hidden text. */
+
 .htmx-indicator {
     display: none;
 }

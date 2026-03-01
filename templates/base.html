@@ -39,6 +39,7 @@
     </style>
 </head>
 <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     <nav class="navbar navbar-expand-xl navbar-dark bg-dark border-bottom border-secondary">
         <div class="container-fluid">
             <a class="navbar-brand lh-sm" href="/" style="white-space:normal">
@@ -50,67 +51,77 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}" href="/">
+                        <a class="nav-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}" href="/"
+                           {% if request.endpoint == 'dashboard.index' %}aria-current="page"{% endif %}>
                             <i class="bi bi-speedometer2"></i> Dashboard
                         </a>
                     </li>
                     {% if current_user.can_view_hosts or current_user.can_manage_hosts %}
                     <li class="nav-item">
-                        <a class="nav-link {% if request.blueprint == 'hosts' %}active{% endif %}" href="/hosts">
+                        <a class="nav-link {% if request.blueprint == 'hosts' %}active{% endif %}" href="/hosts"
+                           {% if request.blueprint == 'hosts' %}aria-current="page"{% endif %}>
                             <i class="bi bi-server"></i> Hosts
                         </a>
                     </li>
                     {% endif %}
                     <li class="nav-item">
-                        <a class="nav-link {% if request.blueprint == 'guests' %}active{% endif %}" href="/guests">
+                        <a class="nav-link {% if request.blueprint == 'guests' %}active{% endif %}" href="/guests"
+                           {% if request.blueprint == 'guests' %}aria-current="page"{% endif %}>
                             <i class="bi bi-pc-display"></i> Guests
                         </a>
                     </li>
                     {% if current_user.can_ssh %}
                     <li class="nav-item">
-                        <a class="nav-link {% if request.blueprint == 'terminal' %}active{% endif %}" href="/terminal">
+                        <a class="nav-link {% if request.blueprint == 'terminal' %}active{% endif %}" href="/terminal"
+                           {% if request.blueprint == 'terminal' %}aria-current="page"{% endif %}>
                             <i class="bi bi-terminal"></i> Terminal
                         </a>
                     </li>
                     {% endif %}
                     {% if current_user.can_view_unifi %}
                     <li class="nav-item">
-                        <a class="nav-link {% if request.blueprint == 'unifi' %}active{% endif %}" href="/unifi">
+                        <a class="nav-link {% if request.blueprint == 'unifi' %}active{% endif %}" href="/unifi"
+                           {% if request.blueprint == 'unifi' %}aria-current="page"{% endif %}>
                             <i class="bi bi-router"></i> Network
                         </a>
                     </li>
                     {% endif %}
                     {% if current_user.is_admin %}
                     <li class="nav-item">
-                        <a class="nav-link {% if request.blueprint == 'schedules' %}active{% endif %}" href="/schedules">
+                        <a class="nav-link {% if request.blueprint == 'schedules' %}active{% endif %}" href="/schedules"
+                           {% if request.blueprint == 'schedules' %}aria-current="page"{% endif %}>
                             <i class="bi bi-calendar-check"></i> Schedules
                         </a>
                     </li>
                     {% endif %}
                     {% if current_user.can_view_services %}
                     <li class="nav-item dropdown">
-                        <a class="nav-link {% if request.blueprint == 'services' %}active{% endif %}" href="/services">
+                        <a class="nav-link {% if request.blueprint == 'services' %}active{% endif %}" href="/services"
+                           {% if request.blueprint == 'services' %}aria-current="page"{% endif %}>
                             <i class="bi bi-gear-wide-connected"></i> Services
                         </a>
                     </li>
                     {% endif %}
                     {% if current_user.can_update %}
                     <li class="nav-item">
-                        <a class="nav-link {% if request.blueprint == 'applications' %}active{% endif %}" href="/applications">
+                        <a class="nav-link {% if request.blueprint == 'applications' %}active{% endif %}" href="/applications"
+                           {% if request.blueprint == 'applications' %}aria-current="page"{% endif %}>
                             <i class="bi bi-window-stack"></i> Applications
                         </a>
                     </li>
                     {% endif %}
                     {% if current_user.can_manage_users %}
                     <li class="nav-item">
-                        <a class="nav-link {% if request.blueprint == 'security' %}active{% endif %}" href="/security">
+                        <a class="nav-link {% if request.blueprint == 'security' %}active{% endif %}" href="/security"
+                           {% if request.blueprint == 'security' %}aria-current="page"{% endif %}>
                             <i class="bi bi-shield-lock"></i> Security
                         </a>
                     </li>
                     {% endif %}
                     {% if current_user.is_super_admin %}
                     <li class="nav-item">
-                        <a class="nav-link {% if request.blueprint == 'settings' %}active{% endif %}" href="/settings">
+                        <a class="nav-link {% if request.blueprint == 'settings' %}active{% endif %}" href="/settings"
+                           {% if request.blueprint == 'settings' %}aria-current="page"{% endif %}>
                             <i class="bi bi-gear"></i> Settings
                         </a>
                     </li>
@@ -120,8 +131,10 @@
                 <ul class="navbar-nav ms-auto align-items-center">
                     <li class="nav-item me-2">
                         <form method="post" action="/toggle-safety-mode">
-                            <button type="submit" class="btn btn-sm {% if safety_mode %}btn-warning{% else %}btn-outline-secondary{% endif %}" title="{% if safety_mode %}Safety mode on — click to disable{% else %}Safety mode off — click to enable{% endif %}">
-                                <i class="bi bi-{% if safety_mode %}eye-slash-fill{% else %}eye{% endif %}"></i>
+                            <button type="submit" class="btn btn-sm {% if safety_mode %}btn-warning{% else %}btn-outline-secondary{% endif %}"
+                                    title="{% if safety_mode %}Safety mode on — click to disable{% else %}Safety mode off — click to enable{% endif %}"
+                                    aria-label="{% if safety_mode %}Safety mode on — click to disable{% else %}Safety mode off — click to enable{% endif %}">
+                                <i class="bi bi-{% if safety_mode %}eye-slash-fill{% else %}eye{% endif %}" aria-hidden="true"></i>
                             </button>
                         </form>
                     </li>
@@ -146,18 +159,18 @@
     </nav>
 
     <!-- Presence bar: hidden until ≥1 other user is online -->
-    <div id="presenceBar" class="bg-dark border-bottom border-secondary px-3 d-flex align-items-center justify-content-end" style="min-height:28px; display:none;">
+    <div id="presenceBar" class="bg-dark border-bottom border-secondary px-3 d-flex align-items-center justify-content-end" style="min-height:28px; display:none;" role="status" aria-label="Online collaborators">
         <small class="text-muted me-2" style="font-size:0.7rem;"><i class="bi bi-people"></i> Online:</small>
         <div id="presenceAvatars" class="d-flex gap-1 align-items-center"></div>
     </div>
 
-    <main class="container-fluid py-4">
+    <main class="container-fluid py-4" id="main-content" tabindex="-1">
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
         {% for category, message in messages %}
         <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
             {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Dismiss alert"></button>
         </div>
         {% endfor %}
         {% endif %}
@@ -180,7 +193,7 @@
     </footer>
 
     <!-- Activity toast container (bottom-right) -->
-    <div id="collabToastStack" class="position-fixed bottom-0 end-0 p-3" style="z-index:1200; max-width:320px; pointer-events:none;"></div>
+    <div id="collabToastStack" class="position-fixed bottom-0 end-0 p-3" style="z-index:1200; max-width:320px; pointer-events:none;" aria-live="polite" aria-relevant="additions" aria-atomic="false"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -375,6 +388,7 @@
                 btn.style.background = color;
                 btn.dataset.username = u.username;
                 btn.textContent = initials;
+                btn.setAttribute('aria-label', (u.display_name || u.username) + ' — click to follow');
                 bar.appendChild(btn);
 
                 const uname = u.username; // stable closure key
@@ -507,7 +521,7 @@
             div.innerHTML = `
                 <div class="d-flex">
                     <div class="toast-body" style="font-size:.85rem;">${html}</div>
-                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Dismiss notification"></button>
                 </div>`;
             document.getElementById('collabToastStack').prepend(div);
             const t = new bootstrap.Toast(div, { delay: 5000 });
@@ -523,6 +537,7 @@
             if (!el) {
                 el = document.createElement('div');
                 el.className = 'collab-ghost-cursor';
+                el.setAttribute('aria-hidden', 'true');
                 el.innerHTML = '<div class="collab-cursor-dot"></div>' +
                                `<div class="collab-cursor-name">${escHtml(c.display_name || c.username)}</div>`;
                 el.style.setProperty('--cur-color', c.color);

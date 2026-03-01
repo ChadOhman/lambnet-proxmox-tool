@@ -6,36 +6,36 @@
 
 <ul class="nav nav-pills mb-4" id="securityTabs" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="users-tab" data-bs-toggle="pill" data-bs-target="#usersPane" type="button" role="tab">
-            <i class="bi bi-people"></i> Users
+        <button class="nav-link active" id="users-tab" data-bs-toggle="pill" data-bs-target="#usersPane" type="button" role="tab" aria-controls="usersPane" aria-selected="true">
+            <i class="bi bi-people" aria-hidden="true"></i> Users
         </button>
     </li>
     {% if current_user.is_super_admin %}
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="roles-tab" data-bs-toggle="pill" data-bs-target="#rolesPane" type="button" role="tab">
-            <i class="bi bi-key"></i> Roles
+        <button class="nav-link" id="roles-tab" data-bs-toggle="pill" data-bs-target="#rolesPane" type="button" role="tab" aria-controls="rolesPane" aria-selected="false">
+            <i class="bi bi-key" aria-hidden="true"></i> Roles
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="tags-tab" data-bs-toggle="pill" data-bs-target="#tagsPane" type="button" role="tab">
-            <i class="bi bi-tags"></i> Tags
+        <button class="nav-link" id="tags-tab" data-bs-toggle="pill" data-bs-target="#tagsPane" type="button" role="tab" aria-controls="tagsPane" aria-selected="false">
+            <i class="bi bi-tags" aria-hidden="true"></i> Tags
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="access-tab" data-bs-toggle="pill" data-bs-target="#accessPane" type="button" role="tab">
-            <i class="bi bi-shield-check"></i> Access
+        <button class="nav-link" id="access-tab" data-bs-toggle="pill" data-bs-target="#accessPane" type="button" role="tab" aria-controls="accessPane" aria-selected="false">
+            <i class="bi bi-shield-check" aria-hidden="true"></i> Access
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="credentials-tab" data-bs-toggle="pill" data-bs-target="#credentialsPane" type="button" role="tab">
-            <i class="bi bi-key"></i> Credentials
+        <button class="nav-link" id="credentials-tab" data-bs-toggle="pill" data-bs-target="#credentialsPane" type="button" role="tab" aria-controls="credentialsPane" aria-selected="false">
+            <i class="bi bi-key" aria-hidden="true"></i> Credentials
         </button>
     </li>
     {% endif %}
     {% if current_user.can_view_audit_log %}
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="audit-tab" data-bs-toggle="pill" data-bs-target="#auditPane" type="button" role="tab">
-            <i class="bi bi-journal-text"></i> Audit Log
+        <button class="nav-link" id="audit-tab" data-bs-toggle="pill" data-bs-target="#auditPane" type="button" role="tab" aria-controls="auditPane" aria-selected="false">
+            <i class="bi bi-journal-text" aria-hidden="true"></i> Audit Log
         </button>
     </li>
     {% endif %}
@@ -44,7 +44,7 @@
 <div class="tab-content">
 
     <!-- ============ USERS TAB ============ -->
-    <div class="tab-pane fade show active" id="usersPane" role="tabpanel">
+    <div class="tab-pane fade show active" id="usersPane" role="tabpanel" aria-labelledby="users-tab" tabindex="0">
         <div class="card bg-dark">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">Users</h5>
@@ -54,16 +54,16 @@
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0">
+                    <table class="table table-dark table-hover mb-0" aria-label="System users">
                         <thead>
                             <tr>
-                                <th>Username</th>
-                                <th>Display Name</th>
-                                <th>Role</th>
-                                <th>Source</th>
-                                <th>Tags</th>
-                                <th>Status</th>
-                                <th>Actions</th>
+                                <th scope="col">Username</th>
+                                <th scope="col">Display Name</th>
+                                <th scope="col">Role</th>
+                                <th scope="col">Source</th>
+                                <th scope="col">Tags</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -137,7 +137,7 @@
 
     {% if current_user.is_super_admin %}
     <!-- ============ ROLES TAB ============ -->
-    <div class="tab-pane fade" id="rolesPane" role="tabpanel">
+    <div class="tab-pane fade" id="rolesPane" role="tabpanel" aria-labelledby="roles-tab" tabindex="0">
         <div class="card bg-dark">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">Roles & Permissions</h5>
@@ -147,15 +147,15 @@
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0 align-middle">
+                    <table class="table table-dark table-hover mb-0 align-middle" aria-label="Roles and permissions">
                         <thead>
                             <tr>
-                                <th>Role</th>
-                                <th>Type</th>
-                                <th>Level</th>
-                                <th>Permissions</th>
-                                <th>Users</th>
-                                <th>Actions</th>
+                                <th scope="col">Role</th>
+                                <th scope="col">Type</th>
+                                <th scope="col">Level</th>
+                                <th scope="col">Permissions</th>
+                                <th scope="col">Users</th>
+                                <th scope="col">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -243,7 +243,7 @@
     </div>
 
     <!-- ============ TAGS TAB ============ -->
-    <div class="tab-pane fade" id="tagsPane" role="tabpanel">
+    <div class="tab-pane fade" id="tagsPane" role="tabpanel" aria-labelledby="tags-tab" tabindex="0">
         <div class="card bg-dark">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-tags"></i> Tags</h5>
@@ -317,12 +317,12 @@
     </div>
 
     <!-- Tag Networks Modal -->
-    <div class="modal fade" id="tagNetworksModal" tabindex="-1">
+    <div class="modal fade" id="tagNetworksModal" tabindex="-1" aria-labelledby="tagNetworksModal-title" aria-modal="true" role="dialog">
         <div class="modal-dialog">
             <div class="modal-content bg-dark">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title"><i class="bi bi-router"></i> UniFi Networks for <span id="tagNetworksModalName"></span></h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="tagNetworksModal-title"><i class="bi bi-router" aria-hidden="true"></i> UniFi Networks for <span id="tagNetworksModalName"></span></h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close UniFi Networks"></button>
                 </div>
                 <form id="tagNetworksForm" method="post">
                     <div class="modal-body">
@@ -373,7 +373,7 @@
     </script>
 
     <!-- ============ ACCESS TAB ============ -->
-    <div class="tab-pane fade" id="accessPane" role="tabpanel">
+    <div class="tab-pane fade" id="accessPane" role="tabpanel" aria-labelledby="access-tab" tabindex="0">
         <div class="row g-4">
             <div class="col-lg-6">
                 <!-- Cloudflare Zero Trust -->
@@ -441,17 +441,17 @@
                         <hr class="border-secondary">
                         <h6>Setup Guide</h6>
 
-                        <ul class="nav nav-tabs nav-tabs-sm mb-3" role="tablist">
-                            <li class="nav-item">
-                                <button class="nav-link active small" data-bs-toggle="tab" data-bs-target="#cfExistingTunnel" type="button">Use Existing Tunnel</button>
+                        <ul class="nav nav-tabs nav-tabs-sm mb-3" role="tablist" aria-label="Cloudflare tunnel setup options">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active small" data-bs-toggle="tab" data-bs-target="#cfExistingTunnel" type="button" role="tab" id="cf-existing-tab" aria-controls="cfExistingTunnel" aria-selected="true">Use Existing Tunnel</button>
                             </li>
-                            <li class="nav-item">
-                                <button class="nav-link small" data-bs-toggle="tab" data-bs-target="#cfNewTunnel" type="button">Create New Tunnel</button>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link small" data-bs-toggle="tab" data-bs-target="#cfNewTunnel" type="button" role="tab" id="cf-new-tab" aria-controls="cfNewTunnel" aria-selected="false">Create New Tunnel</button>
                             </li>
                         </ul>
 
                         <div class="tab-content">
-                            <div class="tab-pane fade show active" id="cfExistingTunnel">
+                            <div class="tab-pane fade show active" id="cfExistingTunnel" role="tabpanel" aria-labelledby="cf-existing-tab" tabindex="0">
                                 <p class="small text-muted mb-2">If you already have <code>cloudflared</code> running elsewhere (another CT, VM, or the Proxmox host), add a route to your existing tunnel:</p>
                                 <ol class="small mb-0">
                                     <li>Open the <strong>Cloudflare Zero Trust dashboard</strong> > Networks > Tunnels</li>
@@ -468,7 +468,7 @@
                                     <li>Configure Access Policies (e.g. allow specific email domains)</li>
                                 </ol>
                             </div>
-                            <div class="tab-pane fade" id="cfNewTunnel">
+                            <div class="tab-pane fade" id="cfNewTunnel" role="tabpanel" aria-labelledby="cf-new-tab" tabindex="0">
                                 <p class="small text-muted mb-2">Install <code>cloudflared</code> directly on this CT and create a dedicated tunnel:</p>
                                 <ol class="small mb-0">
                                     <li>Install cloudflared: <code>bash setup.sh --cloudflared</code></li>
@@ -567,7 +567,7 @@
                         <h5 class="mb-0"><i class="bi bi-shield-lock"></i> Security Overview</h5>
                     </div>
                     <div class="card-body">
-                        <table class="table table-dark table-sm mb-0">
+                        <table class="table table-dark table-sm mb-0" aria-label="Security overview">
                             <tr>
                                 <td class="text-muted">Authentication</td>
                                 <td>
@@ -622,7 +622,7 @@
 
     {% if current_user.can_view_audit_log %}
     <!-- ============ AUDIT LOG TAB ============ -->
-    <div class="tab-pane fade" id="auditPane" role="tabpanel">
+    <div class="tab-pane fade" id="auditPane" role="tabpanel" aria-labelledby="audit-tab" tabindex="0">
         <div class="card bg-dark">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-journal-text"></i> Audit Log</h5>
@@ -631,15 +631,15 @@
             <div class="card-body p-0">
                 {% if audit_pagination and audit_pagination.items %}
                 <div class="table-responsive">
-                    <table class="table table-dark table-sm table-hover mb-0">
+                    <table class="table table-dark table-sm table-hover mb-0" aria-label="Audit log">
                         <thead>
                             <tr>
-                                <th>Time (UTC)</th>
-                                <th>User</th>
-                                <th>Action</th>
-                                <th>Resource</th>
-                                <th>Details</th>
-                                <th>IP</th>
+                                <th scope="col">Time (UTC)</th>
+                                <th scope="col">User</th>
+                                <th scope="col">Action</th>
+                                <th scope="col">Resource</th>
+                                <th scope="col">Details</th>
+                                <th scope="col">IP</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -703,7 +703,7 @@
 
     <!-- ============ CREDENTIALS TAB ============ -->
     {% if current_user.is_super_admin %}
-    <div class="tab-pane fade" id="credentialsPane" role="tabpanel">
+    <div class="tab-pane fade" id="credentialsPane" role="tabpanel" aria-labelledby="credentials-tab" tabindex="0">
         <div class="card bg-dark">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">Credentials</h5>
@@ -713,16 +713,16 @@
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0">
+                    <table class="table table-dark table-hover mb-0" aria-label="SSH credentials">
                         <thead>
                             <tr>
-                                <th>Name</th>
-                                <th>Username</th>
-                                <th>Auth Type</th>
-                                <th>Sudo</th>
-                                <th>Default</th>
-                                <th>Used By</th>
-                                <th>Actions</th>
+                                <th scope="col">Name</th>
+                                <th scope="col">Username</th>
+                                <th scope="col">Auth Type</th>
+                                <th scope="col">Sudo</th>
+                                <th scope="col">Default</th>
+                                <th scope="col">Used By</th>
+                                <th scope="col">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -782,13 +782,13 @@
 <!-- ============ MODALS ============ -->
 
 <!-- Add User Modal -->
-<div class="modal fade" id="addUserModal" tabindex="-1">
+<div class="modal fade" id="addUserModal" tabindex="-1" aria-labelledby="addUserModal-title" aria-modal="true" role="dialog">
     <div class="modal-dialog">
         <div class="modal-content bg-dark">
             <form method="post" action="/security/users/add">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Add User</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="addUserModal-title">Add User</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close Add User"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -838,13 +838,13 @@
 
 {% if current_user.is_super_admin %}
 <!-- Add Tag Modal -->
-<div class="modal fade" id="addTagModal" tabindex="-1">
+<div class="modal fade" id="addTagModal" tabindex="-1" aria-labelledby="addTagModal-title" aria-modal="true" role="dialog">
     <div class="modal-dialog modal-sm">
         <div class="modal-content bg-dark">
             <form method="post" action="/security/tags/add">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Add Tag</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="addTagModal-title">Add Tag</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close Add Tag"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -866,13 +866,13 @@
 </div>
 
 <!-- Add Custom Role Modal -->
-<div class="modal fade" id="addRoleModal" tabindex="-1">
+<div class="modal fade" id="addRoleModal" tabindex="-1" aria-labelledby="addRoleModal-title" aria-modal="true" role="dialog">
     <div class="modal-dialog">
         <div class="modal-content bg-dark">
             <form method="post" action="/security/roles/add">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Add Custom Role</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="addRoleModal-title">Add Custom Role</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close Add Custom Role"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -914,13 +914,13 @@
 <!-- Edit Role Modals -->
 {% for role in roles %}
 {% if role.name != 'super_admin' %}
-<div class="modal fade" id="editRole{{ role.id }}" tabindex="-1">
+<div class="modal fade" id="editRole{{ role.id }}" tabindex="-1" aria-labelledby="editRole{{ role.id }}-title" aria-modal="true" role="dialog">
     <div class="modal-dialog">
         <div class="modal-content bg-dark">
             <form method="post" action="/security/roles/{{ role.id }}/edit">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Edit Role: {{ role.display_name }}</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="editRole{{ role.id }}-title">Edit Role: {{ role.display_name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close Edit Role"></button>
                 </div>
                 <div class="modal-body">
                     {% if not role.is_builtin %}
@@ -963,13 +963,13 @@
 <!-- Edit User Modals -->
 {% for user in users %}
 {% if current_user.can_edit_user(user) %}
-<div class="modal fade" id="editUser{{ user.id }}" tabindex="-1">
+<div class="modal fade" id="editUser{{ user.id }}" tabindex="-1" aria-labelledby="editUser{{ user.id }}-title" aria-modal="true" role="dialog">
     <div class="modal-dialog">
         <div class="modal-content bg-dark">
             <form method="post" action="/security/users/{{ user.id }}/edit">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Edit: {{ display_username }}</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="editUser{{ user.id }}-title">Edit: {{ display_username }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close Edit User"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -1024,13 +1024,13 @@
 
 <!-- Add Credential Modal -->
 {% if current_user.is_super_admin %}
-<div class="modal fade" id="addCredModal" tabindex="-1">
+<div class="modal fade" id="addCredModal" tabindex="-1" aria-labelledby="addCredModal-sec-title" aria-modal="true" role="dialog">
     <div class="modal-dialog">
         <div class="modal-content bg-dark">
             <form method="post" action="/credentials/add">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Add Credential</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="addCredModal-sec-title">Add Credential</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close Add Credential"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -1077,13 +1077,13 @@
 
 <!-- Edit Credential Modals -->
 {% for cred in credentials %}
-<div class="modal fade" id="editCredModal{{ cred.id }}" tabindex="-1">
+<div class="modal fade" id="editCredModal{{ cred.id }}" tabindex="-1" aria-labelledby="editCredModal{{ cred.id }}-sec-title" aria-modal="true" role="dialog">
     <div class="modal-dialog">
         <div class="modal-content bg-dark">
             <form method="post" action="/credentials/{{ cred.id }}/edit">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Edit Credential: {{ cred.name }}</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="editCredModal{{ cred.id }}-sec-title">Edit Credential: {{ cred.name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close Edit Credential"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
