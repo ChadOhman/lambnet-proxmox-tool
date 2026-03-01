@@ -33,7 +33,10 @@ def _send_discord(embeds):
     req = urllib.request.Request(
         config["webhook_url"],
         data=payload,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "MCAT/1.0",
+        },
         method="POST",
     )
     try:
