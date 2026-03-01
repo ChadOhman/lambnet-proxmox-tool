@@ -152,8 +152,8 @@
         {% if stats.indices %}
         <h6 class="text-muted mt-3 mb-2">Indices</h6>
         <div class="table-responsive">
-            <table class="table table-dark table-sm mb-0">
-                <thead><tr><th>Index</th><th>Health</th><th>Docs</th><th>Size</th></tr></thead>
+            <table class="table table-dark table-sm mb-0" aria-label="Elasticsearch indices">
+                <thead><tr><th scope="col">Index</th><th scope="col">Health</th><th scope="col">Docs</th><th scope="col">Size</th></tr></thead>
                 <tbody>
                 {% for idx in stats.indices %}
                 <tr>
@@ -217,8 +217,8 @@
         {% if stats.keyspace %}
         <h6 class="text-muted mt-2 mb-2">Keyspace</h6>
         <div class="table-responsive">
-            <table class="table table-dark table-sm mb-0">
-                <thead><tr><th>Database</th><th>Details</th></tr></thead>
+            <table class="table table-dark table-sm mb-0" aria-label="Redis keyspace">
+                <thead><tr><th scope="col">Database</th><th scope="col">Details</th></tr></thead>
                 <tbody>
                 {% for db_name, details in stats.keyspace.items() %}
                 <tr><td class="font-monospace">{{ db_name }}</td><td>{{ details }}</td></tr>
@@ -255,8 +255,8 @@
         {% if stats.databases %}
         <h6 class="text-muted mt-2 mb-2">Databases</h6>
         <div class="table-responsive">
-            <table class="table table-dark table-sm mb-0">
-                <thead><tr><th>Database</th><th>Size</th></tr></thead>
+            <table class="table table-dark table-sm mb-0" aria-label="PostgreSQL databases">
+                <thead><tr><th scope="col">Database</th><th scope="col">Size</th></tr></thead>
                 <tbody>
                 {% for db_item in stats.databases %}
                 <tr><td class="font-monospace">{{ db_item.name }}</td><td>{{ db_item.size }}</td></tr>
@@ -270,9 +270,9 @@
         {% if stats.active_query_list %}
         <h6 class="text-muted mt-3 mb-2">Active Queries</h6>
         <div class="table-responsive">
-            <table class="table table-dark table-sm mb-0">
+            <table class="table table-dark table-sm mb-0" aria-label="Active PostgreSQL queries">
                 <thead>
-                    <tr><th>Database</th><th>User</th><th>State</th><th>Duration</th><th>Query</th><th></th></tr>
+                    <tr><th scope="col">Database</th><th scope="col">User</th><th scope="col">State</th><th scope="col">Duration</th><th scope="col">Query</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
                 </thead>
                 <tbody>
                 {% for q in stats.active_query_list %}
@@ -428,8 +428,8 @@
         {% if stats.queues %}
         <h6 class="text-muted mt-2 mb-2">Queues</h6>
         <div class="table-responsive">
-            <table class="table table-dark table-sm mb-0">
-                <thead><tr><th>Queue</th><th>Size</th><th>Latency</th></tr></thead>
+            <table class="table table-dark table-sm mb-0" aria-label="Sidekiq queues">
+                <thead><tr><th scope="col">Queue</th><th scope="col">Size</th><th scope="col">Latency</th></tr></thead>
                 <tbody id="sidekiq-queues-tbody">
                 {% for q in stats.queues|sort(attribute='size', reverse=True) %}
                 <tr>
@@ -451,8 +451,8 @@
         {% if stats.instances %}
         <h6 class="text-muted mt-3 mb-2">Instances</h6>
         <div class="table-responsive">
-            <table class="table table-dark table-sm mb-0">
-                <thead><tr><th>Unit</th><th>Status</th><th>Memory</th><th>PID</th></tr></thead>
+            <table class="table table-dark table-sm mb-0" aria-label="Service instances">
+                <thead><tr><th scope="col">Unit</th><th scope="col">Status</th><th scope="col">Memory</th><th scope="col">PID</th></tr></thead>
                 <tbody>
                 {% for inst in stats.instances %}
                 <tr>
@@ -534,12 +534,12 @@
 </div>
 
 <!-- LibreTranslate Available Packages Modal -->
-<div class="modal fade" id="ltAvailableModal" tabindex="-1" aria-labelledby="ltAvailableTitle" aria-hidden="true">
+<div class="modal fade" id="ltAvailableModal" tabindex="-1" aria-labelledby="ltAvailableTitle" aria-modal="true" role="dialog">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content bg-dark text-light border-secondary">
             <div class="modal-header border-secondary">
-                <h5 class="modal-title" id="ltAvailableTitle"><i class="bi bi-cloud-download"></i> Available Language Packages</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="ltAvailableTitle"><i class="bi bi-cloud-download" aria-hidden="true"></i> Available Language Packages</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close Available Language Packages"></button>
             </div>
             <div class="modal-body" id="ltAvailableContent">
                 <div class="text-center py-4">
@@ -558,12 +558,12 @@
 </div>
 
 <!-- Sidekiq Job Browser Modal -->
-<div class="modal fade" id="jobBrowserModal" tabindex="-1" aria-labelledby="jobBrowserTitle" aria-hidden="true">
+<div class="modal fade" id="jobBrowserModal" tabindex="-1" aria-labelledby="jobBrowserTitle" aria-modal="true" role="dialog">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content bg-dark text-light border-secondary">
             <div class="modal-header border-secondary">
                 <h5 class="modal-title" id="jobBrowserTitle">Jobs</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close Jobs Browser"></button>
             </div>
             <div class="modal-body" id="jobBrowserContent">
                 <div class="text-center py-4">
@@ -676,8 +676,8 @@ function refreshStats() {
                         }).join('');
                         container.innerHTML = `<h6 class="text-muted mt-3 mb-2">Active Queries</h6>
                             <div class="table-responsive">
-                                <table class="table table-dark table-sm mb-0">
-                                    <thead><tr><th>Database</th><th>User</th><th>State</th><th>Duration</th><th>Query</th><th></th></tr></thead>
+                                <table class="table table-dark table-sm mb-0" aria-label="Active PostgreSQL queries">
+                                    <thead><tr><th scope="col">Database</th><th scope="col">User</th><th scope="col">State</th><th scope="col">Duration</th><th scope="col">Query</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
                                     <tbody>${rows}</tbody>
                                 </table>
                             </div>`;
@@ -929,11 +929,11 @@ function renderJobTable(data) {
     }).join('');
 
     container.innerHTML = `
-        <table class="table table-dark table-sm mb-0">
+        <table class="table table-dark table-sm mb-0" aria-label="Sidekiq jobs">
             <thead><tr>
-                <th>Job</th>
-                <th style="width:160px">${escHtml(timeHeader)}</th>
-                <th style="width:76px"></th>
+                <th scope="col">Job</th>
+                <th scope="col" style="width:160px">${escHtml(timeHeader)}</th>
+                <th scope="col" style="width:76px"><span class="visually-hidden">Actions</span></th>
             </tr></thead>
             <tbody>${rows}</tbody>
         </table>
@@ -1014,8 +1014,8 @@ function ltLoadInstalled() {
                 ? `<p class="text-warning small px-3 pt-2 mb-0"><i class="bi bi-exclamation-triangle"></i> Some packages have updates available. Use <strong>Update All</strong> to apply them.</p>`
                 : '';
             container.innerHTML = `${outdatedNote}<div class="table-responsive">
-                <table class="table table-dark table-sm mb-0">
-                    <thead><tr><th>From</th><th>Code</th><th>To</th><th>Code</th><th>Version</th></tr></thead>
+                <table class="table table-dark table-sm mb-0" aria-label="LibreTranslate installed language pairs">
+                    <thead><tr><th scope="col">From</th><th scope="col">Code</th><th scope="col">To</th><th scope="col">Code</th><th scope="col">Version</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
             </div>`;
@@ -1059,8 +1059,8 @@ function ltShowAvailable() {
                 </td>
             </tr>`).join('');
             content.innerHTML = `<div class="table-responsive">
-                <table class="table table-dark table-sm mb-0">
-                    <thead><tr><th>From</th><th>Code</th><th>To</th><th>Code</th><th>Version</th><th></th></tr></thead>
+                <table class="table table-dark table-sm mb-0" aria-label="Available LibreTranslate language pairs">
+                    <thead><tr><th scope="col">From</th><th scope="col">Code</th><th scope="col">To</th><th scope="col">Code</th><th scope="col">Version</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
             </div>`;

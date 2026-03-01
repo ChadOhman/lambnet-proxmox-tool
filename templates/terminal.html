@@ -35,14 +35,14 @@
             <span class="badge bg-info" id="liveSessionCount">0</span>
         </div>
         <div class="card-body p-0">
-            <table class="table table-dark table-hover mb-0">
+            <table class="table table-dark table-hover mb-0" aria-label="SSH terminal sessions">
                 <thead>
                     <tr>
-                        <th class="ps-3">Guest</th>
-                        <th>Owner</th>
-                        <th>Started</th>
-                        <th>Followers</th>
-                        <th></th>
+                        <th scope="col" class="ps-3">Guest</th>
+                        <th scope="col">Owner</th>
+                        <th scope="col">Started</th>
+                        <th scope="col">Followers</th>
+                        <th scope="col"><span class="visually-hidden">Actions</span></th>
                     </tr>
                 </thead>
                 <tbody id="liveSessionsBody"></tbody>

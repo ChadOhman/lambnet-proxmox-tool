@@ -93,13 +93,13 @@
 </div>
 
 <!-- Add Host Modal -->
-<div class="modal fade" id="addHostModal" tabindex="-1">
+<div class="modal fade" id="addHostModal" tabindex="-1" aria-labelledby="addHostModal-title" aria-modal="true" role="dialog">
     <div class="modal-dialog">
         <div class="modal-content bg-dark">
             <form method="post" action="/hosts/add">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Add Proxmox Host</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="addHostModal-title">Add Proxmox Host</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close Add Proxmox Host"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">

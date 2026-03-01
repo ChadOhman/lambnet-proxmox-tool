@@ -35,20 +35,20 @@
         <span id="connStatus" class="badge bg-warning">Connecting...</span>
         {% if not follow_mode %}
             {% if has_sudo_password %}
-            <button id="btnSudo" class="btn btn-sm btn-outline-warning ms-2" onclick="sendSudo()" title="Send stored sudo password to the terminal">
-                <i class="bi bi-shield-lock"></i> Sudo
+            <button id="btnSudo" class="btn btn-sm btn-outline-warning ms-2" onclick="sendSudo()" aria-label="Send stored sudo password to the terminal">
+                <i class="bi bi-shield-lock" aria-hidden="true"></i> Sudo
             </button>
             {% endif %}
-            <button class="btn btn-sm btn-outline-light ms-2" onclick="popOut()" title="Open in a new window">
-                <i class="bi bi-box-arrow-up-right"></i> Pop Out
+            <button class="btn btn-sm btn-outline-light ms-2" onclick="popOut()" aria-label="Open terminal in new window">
+                <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Pop Out
             </button>
-            <button id="btnDisconnect" class="btn btn-sm btn-outline-danger ms-2" onclick="disconnect()">
-                <i class="bi bi-x-lg"></i> Disconnect
+            <button id="btnDisconnect" class="btn btn-sm btn-outline-danger ms-2" onclick="disconnect()" aria-label="Disconnect terminal session">
+                <i class="bi bi-x-lg" aria-hidden="true"></i> Disconnect
             </button>
         {% else %}
             <span class="badge bg-info me-2">Read-only</span>
-            <button id="btnDisconnect" class="btn btn-sm btn-outline-secondary ms-2" onclick="disconnect()">
-                <i class="bi bi-x-lg"></i> Stop Following
+            <button id="btnDisconnect" class="btn btn-sm btn-outline-secondary ms-2" onclick="disconnect()" aria-label="Stop following session">
+                <i class="bi bi-x-lg" aria-hidden="true"></i> Stop Following
             </button>
         {% endif %}
     </div>
@@ -92,7 +92,14 @@
 {% endif %}
 {% endif %}
 
-<div id="terminal-container" style="background: #000; border-radius: 8px; padding: 4px; min-height: 500px;"></div>
+<div id="terminal-container" style="background: #000; border-radius: 8px; padding: 4px; min-height: 500px;"
+     role="application"
+     aria-label="SSH terminal for {{ guest.name }}"
+     aria-describedby="terminal-sr-note"></div>
+<p class="visually-hidden" id="terminal-sr-note">
+    This is an interactive SSH terminal for {{ guest.name }}. Screen reader access to terminal output is limited.
+    Use the keyboard to interact with the terminal session.
+</p>
 {% endblock %}
 
 {% block scripts %}
