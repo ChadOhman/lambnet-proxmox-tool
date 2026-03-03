@@ -2112,7 +2112,7 @@ try:
         if _key not in _pairs:
             _pairs[_key] = (_p, _pver)
         elif _avail and _norm(_pver) == _norm(_avail):
-            # This entry matches the current index — prefer it over the stale one.
+            # This entry matches the current index - prefer it over the stale one.
             _pairs[_key] = (_p, _pver)
     _pkgs = []
     for _key, (_p, _ver) in _pairs.items():
