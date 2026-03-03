@@ -169,6 +169,13 @@ def save_scan():
 
     log_action("settings_scan_save", "settings", resource_name="scan_discovery")
     db.session.commit()
+
+    try:
+        from scheduler import reschedule_jobs
+        reschedule_jobs(int(interval), int(discovery_interval), int(service_check_interval))
+    except Exception:
+        pass  # Scheduler not running (e.g. tests or CLI context)
+
     flash("Scan & discovery settings saved.", "success")
     return redirect(url_for("settings.index"))
 
