@@ -59,6 +59,26 @@ jobs:
       - name: Run ruff
         run: ruff check .
 
+  pytest:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests with coverage
+        env:
+          FLASK_SECRET_KEY: ci-test-secret
+          DATABASE_URL: "sqlite:////tmp/ci-test.db"
+          LAMBNET_DATA_DIR: /tmp/lambnet-ci
+        run: pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=18
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
@@ -70,3 +90,21 @@ jobs:
         with:
           severity: warning
           scandir: .
+
+  html-validate:
+    name: Template Accessibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run html-validate on templates
+        # continue-on-error until Jinja2 syntax exclusions are fully tuned
+        continue-on-error: true
+        run: >
+          npx --yes html-validate@9
+          --config .htmlvalidate.json
+          "templates/**/*.html"
