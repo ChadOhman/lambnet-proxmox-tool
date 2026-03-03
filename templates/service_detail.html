@@ -29,6 +29,7 @@
         {% if stats.redis_version %}<span class="ms-2 badge bg-secondary">Redis {{ stats.redis_version }}</span>{% endif %}
         {% if stats.pg_version %}<span class="ms-2 badge bg-secondary">PostgreSQL {{ stats.pg_version }}</span>{% endif %}
         {% if stats.lt_version %}<span class="ms-2 badge bg-secondary">LibreTranslate {{ stats.lt_version }}</span>{% endif %}
+        {% if stats.es_version %}<span class="ms-2 badge bg-secondary">Elasticsearch {{ stats.es_version }}</span>{% endif %}
     </div>
     <div class="d-flex gap-2">
         <button class="btn btn-outline-primary btn-sm" id="refreshBtn" onclick="refreshStats()">
@@ -109,10 +110,15 @@
 
 {% if stats.type == 'elasticsearch' %}
 <div class="card bg-dark mb-4">
-    <div class="card-header"><h5 class="mb-0"><i class="bi bi-search"></i> Elasticsearch Cluster</h5></div>
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-search"></i> Elasticsearch Cluster
+            {% if stats.cluster_name %}<small class="text-muted fw-normal ms-2">{{ stats.cluster_name }}</small>{% endif %}
+        </h5>
+    </div>
     <div class="card-body">
         <div class="row g-3 mb-3">
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Cluster Health</div>
                 <span class="badge fs-6
                     {% if stats.cluster_status == 'green' %}bg-success
@@ -122,25 +128,33 @@
                     {{ stats.cluster_status|default('unknown')|upper }}
                 </span>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Nodes</div>
                 <div class="fs-5" id="stat-nodes">{{ stats.node_count|default(0) }}</div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Indices</div>
                 <div class="fs-5" id="stat-indices">{{ stats.index_count|default(0) }}</div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Documents</div>
                 <div class="fs-5" id="stat-docs">{{ '{:,}'.format(stats.doc_count|default(0)) }}</div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Store Size</div>
                 <div class="fs-5" id="stat-store">{{ stats.store_size|default('N/A') }}</div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Active Shards</div>
                 <div class="fs-5">{{ stats.active_shards|default(0) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Relocating</div>
+                <div class="fs-5 {% if stats.relocating_shards %}text-warning{% endif %}" id="stat-relocating">{{ stats.relocating_shards|default(0) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Unassigned</div>
+                <div class="fs-5 {% if stats.unassigned_shards %}text-danger{% endif %}" id="stat-unassigned">{{ stats.unassigned_shards|default(0) }}</div>
             </div>
         </div>
         {% if stats.jvm_heap_percent is defined %}
@@ -152,11 +166,69 @@
             </div>
         </div>
         {% endif %}
+        {% if stats.cpu_percent is defined %}
+        <div class="mb-2">
+            <div class="text-muted small mb-1">CPU: {{ stats.cpu_percent }}% (avg across nodes)</div>
+            <div class="progress" style="height: 8px;">
+                <div class="progress-bar {% if stats.cpu_percent > 85 %}bg-danger{% elif stats.cpu_percent > 70 %}bg-warning{% else %}bg-success{% endif %}"
+                     style="width: {{ stats.cpu_percent }}%"></div>
+            </div>
+        </div>
+        {% endif %}
+        {% if stats.disk_percent is defined %}
+        <div class="mb-2">
+            <div class="text-muted small mb-1">Disk: {{ stats.disk_used }} / {{ stats.disk_total }} ({{ stats.disk_percent }}%)</div>
+            <div class="progress" style="height: 8px;">
+                <div class="progress-bar {% if stats.disk_percent > 85 %}bg-danger{% elif stats.disk_percent > 70 %}bg-warning{% else %}bg-info{% endif %}"
+                     style="width: {{ stats.disk_percent }}%"></div>
+            </div>
+        </div>
+        {% endif %}
+        {% if stats.nodes %}
+        <h6 class="text-muted mt-3 mb-2">Nodes</h6>
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0" aria-label="Elasticsearch nodes">
+                <thead><tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">IP</th>
+                    <th scope="col">Role</th>
+                    <th scope="col">Heap %</th>
+                    <th scope="col">CPU %</th>
+                    <th scope="col">Load (1m)</th>
+                </tr></thead>
+                <tbody>
+                {% for node in stats.nodes %}
+                <tr>
+                    <td class="font-monospace">{{ node.name }}</td>
+                    <td class="font-monospace">{{ node.ip }}</td>
+                    <td><span class="badge bg-secondary">{{ node['node.role'] }}</span></td>
+                    <td>
+                        {% set hp = node['heap.percent']|int(0) %}
+                        <span class="{% if hp > 85 %}text-danger{% elif hp > 70 %}text-warning{% else %}text-success{% endif %}">
+                            {{ node['heap.percent'] }}%
+                        </span>
+                    </td>
+                    <td>{{ node.cpu }}%</td>
+                    <td>{{ node['load_1m'] }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
         {% if stats.indices %}
         <h6 class="text-muted mt-3 mb-2">Indices</h6>
         <div class="table-responsive">
             <table class="table table-dark table-sm mb-0" aria-label="Elasticsearch indices">
-                <thead><tr><th scope="col">Index</th><th scope="col">Health</th><th scope="col">Docs</th><th scope="col">Size</th></tr></thead>
+                <thead><tr>
+                    <th scope="col">Index</th>
+                    <th scope="col">Health</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Pri</th>
+                    <th scope="col">Rep</th>
+                    <th scope="col">Docs</th>
+                    <th scope="col">Size</th>
+                </tr></thead>
                 <tbody>
                 {% for idx in stats.indices %}
                 <tr>
@@ -166,6 +238,9 @@
                             {{ idx.health }}
                         </span>
                     </td>
+                    <td>{{ idx.status|default('') }}</td>
+                    <td>{{ idx.pri|default('') }}</td>
+                    <td>{{ idx.rep|default('') }}</td>
                     <td>{{ idx['docs.count']|default(0) }}</td>
                     <td>{{ idx['store.size']|default('') }}</td>
                 </tr>
@@ -1395,6 +1470,16 @@ function refreshStats() {
                 setEl('stat-indices', data.index_count || 0);
                 setEl('stat-docs',    (data.doc_count  || 0).toLocaleString());
                 setEl('stat-store',   data.store_size  || 'N/A');
+                const relocEl = document.getElementById('stat-relocating');
+                if (relocEl) {
+                    relocEl.textContent = data.relocating_shards || 0;
+                    relocEl.className = 'fs-5' + (data.relocating_shards ? ' text-warning' : '');
+                }
+                const unassEl = document.getElementById('stat-unassigned');
+                if (unassEl) {
+                    unassEl.textContent = data.unassigned_shards || 0;
+                    unassEl.className = 'fs-5' + (data.unassigned_shards ? ' text-danger' : '');
+                }
             }
 
             // Redis

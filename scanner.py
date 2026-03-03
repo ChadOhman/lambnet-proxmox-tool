@@ -1422,6 +1422,15 @@ def _stats_elasticsearch(guest, service):
     port = service.port or 9200
     stats = {}
 
+    # Version from root endpoint
+    out, _ = _execute_command(guest, f"curl -s localhost:{port}/ 2>/dev/null", timeout=10)
+    if out:
+        try:
+            root = _json.loads(out)
+            stats["es_version"] = root.get("version", {}).get("number", "")
+        except _json.JSONDecodeError:
+            pass
+
     # Cluster health
     out, _ = _execute_command(guest, f"curl -s localhost:{port}/_cluster/health 2>/dev/null", timeout=15)
     if out:
@@ -1451,27 +1460,57 @@ def _stats_elasticsearch(guest, service):
         except _json.JSONDecodeError:
             pass
 
-    # JVM heap
-    out, _ = _execute_command(guest, f"curl -s localhost:{port}/_nodes/stats/jvm 2>/dev/null", timeout=15)
+    # JVM heap + OS CPU + disk FS (combined call)
+    out, _ = _execute_command(guest, f"curl -s localhost:{port}/_nodes/stats/jvm,os,fs 2>/dev/null", timeout=15)
     if out:
         try:
             jvm_data = _json.loads(out)
             nodes = jvm_data.get("nodes", {})
             total_heap_used = 0
             total_heap_max = 0
+            total_cpu = 0
+            node_count_for_avg = 0
+            total_disk_free = 0
+            total_disk_total = 0
             for node_info in nodes.values():
                 jvm = node_info.get("jvm", {}).get("mem", {})
                 total_heap_used += jvm.get("heap_used_in_bytes", 0)
                 total_heap_max += jvm.get("heap_max_in_bytes", 0)
+                cpu_pct = node_info.get("os", {}).get("cpu", {}).get("percent", None)
+                if cpu_pct is not None:
+                    total_cpu += cpu_pct
+                    node_count_for_avg += 1
+                fs = node_info.get("fs", {}).get("total", {})
+                total_disk_free += fs.get("free_in_bytes", 0)
+                total_disk_total += fs.get("total_in_bytes", 0)
             stats["jvm_heap_used"] = _human_bytes(total_heap_used)
             stats["jvm_heap_max"] = _human_bytes(total_heap_max)
             if total_heap_max > 0:
                 stats["jvm_heap_percent"] = round(total_heap_used / total_heap_max * 100, 1)
+            if node_count_for_avg > 0:
+                stats["cpu_percent"] = round(total_cpu / node_count_for_avg, 1)
+            if total_disk_total > 0:
+                disk_used = total_disk_total - total_disk_free
+                stats["disk_total"] = _human_bytes(total_disk_total)
+                stats["disk_used"] = _human_bytes(disk_used)
+                stats["disk_percent"] = round(disk_used / total_disk_total * 100, 1)
+        except _json.JSONDecodeError:
+            pass
+
+    # Per-node stats
+    out, _ = _execute_command(
+        guest,
+        f"curl -s 'localhost:{port}/_cat/nodes?format=json&h=name,ip,heap.percent,cpu,load_1m,node.role' 2>/dev/null",
+        timeout=15,
+    )
+    if out:
+        try:
+            stats["nodes"] = _json.loads(out)
         except _json.JSONDecodeError:
             pass
 
     # Per-index stats
-    out, _ = _execute_command(guest, f"curl -s 'localhost:{port}/_cat/indices?format=json&h=index,health,docs.count,store.size' 2>/dev/null", timeout=15)
+    out, _ = _execute_command(guest, f"curl -s 'localhost:{port}/_cat/indices?format=json&h=index,health,status,docs.count,store.size,pri,rep' 2>/dev/null", timeout=15)
     if out:
         try:
             stats["indices"] = _json.loads(out)
