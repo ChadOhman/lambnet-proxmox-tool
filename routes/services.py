@@ -346,10 +346,14 @@ def pg_vacuum(service_id):
     data = request.get_json(silent=True) or {}
     database = (data.get("database") or "").strip()
     analyze = bool(data.get("analyze", False))
+    verbose = bool(data.get("verbose", False))
     if not database:
         return jsonify({"ok": False, "message": "database is required"}), 400
     from scanner import _execute_command
-    verb = "VACUUM ANALYZE" if analyze else "VACUUM"
+    options = ["VERBOSE"] if verbose else []
+    if analyze:
+        options.append("ANALYZE")
+    verb = "VACUUM " + " ".join(options) if options else "VACUUM"
     stdout, error = _execute_command(
         guest,
         f"sudo -u postgres psql -d {database} -c \"{verb}\" 2>&1",
@@ -359,7 +363,7 @@ def pg_vacuum(service_id):
     if error:
         return jsonify({"ok": False, "message": f"SSH error: {error[:300]}"})
     log_action("pg_vacuum", "guest", resource_id=guest.id, resource_name=guest.name,
-               details={"service": svc.service_name, "database": database, "analyze": analyze})
+               details={"service": svc.service_name, "database": database, "analyze": analyze, "verbose": verbose})
     db.session.commit()
     output = (stdout or "").strip() or f"{verb} completed."
     return jsonify({"ok": True, "message": output})

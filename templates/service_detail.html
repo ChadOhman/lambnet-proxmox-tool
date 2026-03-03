@@ -575,6 +575,10 @@
                             <input class="form-check-input" type="checkbox" id="pgVacuumAnalyze" value="1">
                             <label class="form-check-label small" for="pgVacuumAnalyze">ANALYZE</label>
                         </div>
+                        <div class="form-check form-check-inline mt-4">
+                            <input class="form-check-input" type="checkbox" id="pgVacuumVerbose" value="1" checked>
+                            <label class="form-check-label small" for="pgVacuumVerbose">VERBOSE</label>
+                        </div>
                     </div>
                     <div class="col-auto">
                         <button class="btn btn-sm btn-outline-secondary" onclick="pgRunVacuum()">
@@ -582,7 +586,7 @@
                         </button>
                     </div>
                 </div>
-                <div id="pgVacuumResult" class="mt-2 font-monospace small" style="display:none"></div>
+                <div id="pgVacuumResult" class="mt-2 font-monospace small" style="display:none; white-space: pre-wrap; max-height: 300px; overflow-y: auto;"></div>
             </div>
 
             <!-- EXPLAIN -->
@@ -1638,6 +1642,7 @@ function refreshLogs() {
 function pgRunVacuum() {
     const db = document.getElementById('pgVacuumDb').value;
     const analyze = document.getElementById('pgVacuumAnalyze').checked;
+    const verbose = document.getElementById('pgVacuumVerbose').checked;
     const resultDiv = document.getElementById('pgVacuumResult');
     resultDiv.style.display = 'block';
     resultDiv.className = 'mt-2 font-monospace small text-muted';
@@ -1645,7 +1650,7 @@ function pgRunVacuum() {
     fetch('/services/{{ service.id }}/pg/vacuum', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({database: db, analyze: analyze}),
+        body: JSON.stringify({database: db, analyze: analyze, verbose: verbose}),
     })
     .then(r => r.json())
     .then(data => {
