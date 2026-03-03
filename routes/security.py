@@ -158,7 +158,8 @@ def edit_user(user_id):
         return redirect(url_for("security.index"))
 
     user.display_name = request.form.get("display_name", user.display_name).strip()
-    user.is_active_user = "is_active" in request.form
+    if user.id != current_user.id:
+        user.is_active_user = "is_active" in request.form
 
     # Role change (only if not editing self)
     new_role_id = request.form.get("role_id", "")
@@ -187,6 +188,9 @@ def edit_user(user_id):
 
     new_password = request.form.get("new_password", "").strip()
     if new_password:
+        if user.created_via == "cloudflare":
+            flash("Cannot set a password for a Cloudflare-authenticated user.", "error")
+            return redirect(url_for("security.index"))
         if len(new_password) < 8:
             flash("Password must be at least 8 characters.", "error")
             return redirect(url_for("security.index"))

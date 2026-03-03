@@ -976,10 +976,12 @@
                         <label class="form-label">Display Name</label>
                         <input type="text" class="form-control" name="display_name" value="{{ user.display_name or '' }}">
                     </div>
+                    {% if user.created_via != 'cloudflare' %}
                     <div class="mb-3">
                         <label class="form-label">New Password (leave blank to keep)</label>
                         <input type="password" class="form-control" name="new_password" minlength="8">
                     </div>
+                    {% endif %}
                     {% if user.id != current_user.id %}
                     <div class="mb-3">
                         <label class="form-label">Role</label>

@@ -98,6 +98,10 @@ def logout():
 @bp.route("/change-password", methods=["GET", "POST"])
 @login_required
 def change_password():
+    if current_user.created_via == "cloudflare":
+        flash("Password management is not available for Cloudflare-authenticated accounts.", "error")
+        return redirect(url_for("auth.profile"))
+
     if request.method == "POST":
         current_pw = request.form.get("current_password", "")
         new_pw = request.form.get("new_password", "")
