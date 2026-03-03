@@ -287,7 +287,7 @@
                     <td class="text-nowrap {% if q.duration_secs >= 30 %}text-danger{% elif q.duration_secs >= 5 %}text-warning{% endif %}">
                         {{ q.duration }}
                     </td>
-                    <td class="font-monospace small text-truncate" style="max-width: 420px" title="{{ q.query | e }}">{{ q.query }}</td>
+                    <td class="font-monospace small text-truncate" style="max-width: 420px; cursor: pointer" title="{{ q.query | e }}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">{{ q.query }}</td>
                     <td class="text-end">
                         {% if current_user.can_edit_services %}
                         <button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn"
@@ -670,7 +670,7 @@ function refreshStats() {
                                 <td class="font-monospace text-nowrap">${escHtml(q.usename)}</td>
                                 <td><span class="badge ${badge}">${escHtml(q.state)}</span></td>
                                 <td class="text-nowrap ${durCls}">${escHtml(q.duration)}</td>
-                                <td class="font-monospace small text-truncate" style="max-width:420px" title="${escHtml(q.query)}">${escHtml(q.query)}</td>
+                                <td class="font-monospace small text-truncate" style="max-width:420px; cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
                                 <td class="text-end">${canEditServices ? `<button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill backend ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i> Kill</button>` : ''}</td>
                             </tr>`;
                         }).join('');
@@ -1130,6 +1130,25 @@ function ltUpdateAll() {
 // Auto-load installed packages on page load
 ltLoadInstalled();
 {% endif %}
+
+function copyQuery(el) {
+    const text = el.title || el.textContent.trim();
+    navigator.clipboard.writeText(text).then(() => {
+        let toast = document.getElementById('copy-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'copy-toast';
+            toast.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;' +
+                'background:#198754;color:#fff;padding:.45rem .9rem;border-radius:.375rem;' +
+                'font-size:.875rem;opacity:0;transition:opacity .2s';
+            toast.textContent = 'Query copied';
+            document.body.appendChild(toast);
+        }
+        clearTimeout(toast._t);
+        toast.style.opacity = '1';
+        toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 1800);
+    });
+}
 
 function refreshLogs() {
     const btn = document.getElementById('refreshLogsBtn');
