@@ -31,7 +31,6 @@
         {% if stats.lt_version %}<span class="ms-2 badge bg-secondary">LibreTranslate {{ stats.lt_version }}</span>{% endif %}
         {% if stats.es_version %}<span class="ms-2 badge bg-secondary">Elasticsearch {{ stats.es_version }}</span>{% endif %}
         {% if stats.puma_version %}<span class="ms-2 badge bg-secondary">Puma {{ stats.puma_version }}</span>{% endif %}
-        {% if stats.mastodon_version %}<span class="ms-2 badge bg-secondary">Mastodon {{ stats.mastodon_version }}</span>{% endif %}
     </div>
     <div class="d-flex gap-2">
         <button class="btn btn-outline-primary btn-sm" id="refreshBtn" onclick="refreshStats()">
@@ -910,10 +909,6 @@
                     <span class="text-danger">{{ stats.health_status|default('N/A') }}</span>
                     {% endif %}
                 </div>
-            </div>
-            <div class="col-md-2">
-                <div class="text-muted small">Mastodon Version</div>
-                <div class="font-monospace small">{{ stats.mastodon_version|default('N/A') }}</div>
             </div>
             <div class="col-md-2">
                 <div class="text-muted small">Workers</div>

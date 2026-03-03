@@ -1974,18 +1974,7 @@ def _stats_puma(guest, service):
     )
     pid = (out or "").strip()
 
-    mastodon_dir = None
     if pid and pid.isdigit() and pid != "0":
-        # Discover Mastodon install dir from the puma process's working directory.
-        # readlink /proc/{pid}/cwd works for root or the process owner; the
-        # || true guarantees exit 0 so auto-mode never falls through to the agent.
-        out, _ = _execute_command(
-            guest,
-            f"readlink /proc/{pid}/cwd 2>/dev/null || true",
-            timeout=5,
-        )
-        mastodon_dir = (out or "").strip() or None
-
         # ── 4a. Thread + worker config from process environment ───────────────
         for env_var, stat_key in [
             ("WEB_CONCURRENCY", "workers"),
@@ -2011,53 +2000,6 @@ def _stats_puma(guest, service):
         stats["max_threads"] = 5
     if "min_threads" not in stats:
         stats["min_threads"] = stats["max_threads"]
-
-    # ── 4b. Mastodon version — version.rb ────────────────────────────────────
-    # Build candidate directory list: puma cwd → known locations → find fallback.
-    _ver_dirs = []
-    if mastodon_dir:
-        _ver_dirs.append(mastodon_dir)
-    _ver_dirs.extend([
-        "/home/mastodon/live", "/home/mastodon/mastodon",
-        "/var/www/mastodon", "/opt/mastodon", "/srv/mastodon",
-    ])
-    # find-based fallback: locate version.rb anywhere under common prefixes
-    # head -1 and 2>/dev/null ensure exit 0 so auto-mode never falls through.
-    if not mastodon_dir:
-        out, _ = _execute_command(
-            guest,
-            "find /home /var/www /opt /srv -maxdepth 8 -name version.rb"
-            " -path '*/mastodon/version.rb' 2>/dev/null | head -1",
-            timeout=15,
-        )
-        found = (out or "").strip()
-        if found:
-            # strip lib/mastodon/version.rb to get base dir
-            import re as _re
-            m = _re.match(r"^(.*)/lib/mastodon/version\.rb$", found)
-            if m:
-                _ver_dirs.insert(0, m.group(1))
-    for base_dir in _ver_dirs:
-        vf = f"{base_dir}/lib/mastodon/version.rb"
-        out, _ = _execute_command(
-            guest,
-            f"grep -E 'MAJOR|MINOR|PATCH' {vf} 2>/dev/null | head -5",
-            timeout=5,
-        )
-        if not (out and out.strip()):
-            continue
-        parts = {}
-        for line in out.strip().split("\n"):
-            for key in ("MAJOR", "MINOR", "PATCH"):
-                if key in line and "=" in line:
-                    val = line.split("=")[-1].strip()
-                    if val.isdigit():
-                        parts[key] = val
-        if "MAJOR" in parts:
-            stats["mastodon_version"] = "{}.{}.{}".format(
-                parts["MAJOR"], parts.get("MINOR", "0"), parts.get("PATCH", "0")
-            )
-            break
 
     # ── 5. Worker process listing — grep+head replaces awk ───────────────────
     # grep '[p]uma' | grep worker | head avoids awk (which may exit non-zero on
