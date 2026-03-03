@@ -197,6 +197,23 @@
     <!-- Activity toast container (bottom-right) -->
     <div id="collabToastStack" class="position-fixed bottom-0 end-0 p-3" style="z-index:1200; max-width:320px; pointer-events:none;" aria-live="polite" aria-relevant="additions" aria-atomic="false"></div>
 
+    <!-- Accessible confirm modal (replaces browser confirm() dialogs) -->
+    <div class="modal fade" id="confirmModal" tabindex="-1" aria-modal="true" role="dialog" aria-labelledby="confirmModalLabel">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title" id="confirmModalLabel">Confirm Action</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cancel"></button>
+                </div>
+                <div class="modal-body" id="confirmModalBody"></div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmModalOk">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     (function() {
@@ -218,6 +235,30 @@
         } else {
             localizeTimestamps();
         }
+    })();
+    </script>
+    <script>
+    // ── Accessible confirm modal ──────────────────────────────────────────────
+    // Forms with data-confirm="..." use this instead of browser confirm().
+    (function() {
+        var _pendingForm = null;
+        document.addEventListener('submit', function(e) {
+            var msg = e.target.dataset.confirm;
+            if (!msg) return;
+            e.preventDefault();
+            _pendingForm = e.target;
+            document.getElementById('confirmModalBody').textContent = msg;
+            var modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+            document.getElementById('confirmModalOk').onclick = function() {
+                modal.hide();
+                var f = _pendingForm;
+                _pendingForm = null;
+                // Remove data-confirm so the re-submit doesn't loop
+                delete f.dataset.confirm;
+                f.submit();
+            };
+            modal.show();
+        });
     })();
     </script>
     <script>

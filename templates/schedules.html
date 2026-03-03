@@ -45,7 +45,7 @@
                                     <i class="bi bi-{{ 'pause' if schedule.enabled else 'play' }}"></i>
                                 </button>
                             </form>
-                            <form method="post" action="/schedules/{{ schedule.id }}/delete" class="d-inline" onsubmit="return confirm('Delete this schedule?')">
+                            <form method="post" action="/schedules/{{ schedule.id }}/delete" class="d-inline" data-confirm="Delete this schedule?">
                                 <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
                                     <i class="bi bi-trash"></i>
                                 </button>

@@ -79,24 +79,24 @@
                                 {% if current_user.can_edit_services %}
                                 {% if svc.status != 'running' %}
                                 <form method="post" action="/services/{{ svc.id }}/start" class="d-inline">
-                                    <button type="submit" class="btn btn-outline-success" title="Start"><i class="bi bi-play-fill"></i></button>
+                                    <button type="submit" class="btn btn-outline-success" aria-label="Start {{ svc.service_name }} on {{ svc.guest.name }}"><i class="bi bi-play-fill" aria-hidden="true"></i></button>
                                 </form>
                                 {% endif %}
                                 {% if svc.status == 'running' %}
-                                <form method="post" action="/services/{{ svc.id }}/stop" class="d-inline" onsubmit="return confirm('Stop {{ svc.service_name }} on {{ svc.guest.name }}?')">
-                                    <button type="submit" class="btn btn-outline-danger" title="Stop"><i class="bi bi-stop-fill"></i></button>
+                                <form method="post" action="/services/{{ svc.id }}/stop" class="d-inline" data-confirm="Stop {{ svc.service_name }} on {{ svc.guest.name }}?">
+                                    <button type="submit" class="btn btn-outline-danger" aria-label="Stop {{ svc.service_name }} on {{ svc.guest.name }}"><i class="bi bi-stop-fill" aria-hidden="true"></i></button>
                                 </form>
                                 {% endif %}
-                                <form method="post" action="/services/{{ svc.id }}/restart" class="d-inline" onsubmit="return confirm('Restart {{ svc.service_name }} on {{ svc.guest.name }}?')">
-                                    <button type="submit" class="btn btn-outline-warning" title="Restart"><i class="bi bi-arrow-clockwise"></i></button>
+                                <form method="post" action="/services/{{ svc.id }}/restart" class="d-inline" data-confirm="Restart {{ svc.service_name }} on {{ svc.guest.name }}?">
+                                    <button type="submit" class="btn btn-outline-warning" aria-label="Restart {{ svc.service_name }} on {{ svc.guest.name }}"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button>
                                 </form>
                                 {% endif %}
-                                <button type="button" class="btn btn-outline-light" title="Logs" onclick="fetchLogs({{ svc.id }})">
-                                    <i class="bi bi-journal-text"></i>
+                                <button type="button" class="btn btn-outline-light" aria-label="View logs for {{ svc.service_name }}" onclick="fetchLogs({{ svc.id }})">
+                                    <i class="bi bi-journal-text" aria-hidden="true"></i>
                                 </button>
                                 {% if current_user.can_edit_services %}
-                                <form method="post" action="/services/{{ svc.id }}/remove" class="d-inline" onsubmit="return confirm('Remove {{ svc.service_name }} from {{ svc.guest.name }}?')">
-                                    <button type="submit" class="btn btn-outline-danger" title="Remove"><i class="bi bi-trash"></i></button>
+                                <form method="post" action="/services/{{ svc.id }}/remove" class="d-inline" data-confirm="Remove {{ svc.service_name }} from {{ svc.guest.name }}?">
+                                    <button type="submit" class="btn btn-outline-danger" aria-label="Remove {{ svc.service_name }} from {{ svc.guest.name }}"><i class="bi bi-trash" aria-hidden="true"></i></button>
                                 </form>
                                 {% endif %}
                             </div>
