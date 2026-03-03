@@ -1962,18 +1962,31 @@ def _stats_puma(guest, service):
     if v:
         stats["puma_version"] = v
 
-    # ── 3. Thread + worker config from running process environment ────────────
-    # Strategy: get MainPID in Python first, then use the literal PID in each
-    # subsequent command.  Every command is a simple pipeline ending with head
-    # (head always exits 0 even with empty input), so _execute_command never
-    # falls through to the QEMU agent due to a non-zero grep exit code.
+    # ── 3. MainPID — parsed robustly for all systemd versions ────────────────
+    # --value is not available on all systemd versions; grep -oP '\d+' handles
+    # both "1744132" and "MainPID=1744132" output formats.
+    # head -1 ensures exit code 0 even if grep finds nothing.
     out, _ = _execute_command(
         guest,
-        "systemctl show mastodon-web.service --property=MainPID --value 2>/dev/null",
+        "systemctl show mastodon-web.service --property=MainPID 2>/dev/null"
+        " | grep -oP '\\d+' | head -1",
         timeout=10,
     )
     pid = (out or "").strip()
+
+    mastodon_dir = None
     if pid and pid.isdigit() and pid != "0":
+        # Discover Mastodon install dir from the puma process's working directory.
+        # readlink /proc/{pid}/cwd works for root or the process owner; the
+        # || true guarantees exit 0 so auto-mode never falls through to the agent.
+        out, _ = _execute_command(
+            guest,
+            f"readlink /proc/{pid}/cwd 2>/dev/null || true",
+            timeout=5,
+        )
+        mastodon_dir = (out or "").strip() or None
+
+        # ── 4a. Thread + worker config from process environment ───────────────
         for env_var, stat_key in [
             ("WEB_CONCURRENCY", "workers"),
             ("RAILS_MAX_THREADS", "max_threads"),
@@ -1992,17 +2005,21 @@ def _stats_puma(guest, service):
                     stats[stat_key] = int(val)
                 except ValueError:
                     pass
+
     # If max_threads set but min_threads absent, Mastodon defaults min = max
     if "max_threads" in stats and "min_threads" not in stats:
         stats["min_threads"] = stats["max_threads"]
 
-    # ── 4. Mastodon version — version.rb ─────────────────────────────────────
-    # Try each known install path; grep -E outputs MAJOR/MINOR/PATCH lines,
-    # head -5 ensures exit 0 even when the file doesn't exist.
-    for base_dir in (
+    # ── 4b. Mastodon version — version.rb ────────────────────────────────────
+    # Use the puma process's cwd as primary path; fall back to known locations.
+    _ver_dirs = []
+    if mastodon_dir:
+        _ver_dirs.append(mastodon_dir)
+    _ver_dirs.extend([
         "/home/mastodon/live", "/home/mastodon/mastodon",
         "/var/www/mastodon", "/opt/mastodon", "/srv/mastodon",
-    ):
+    ])
+    for base_dir in _ver_dirs:
         vf = f"{base_dir}/lib/mastodon/version.rb"
         out, _ = _execute_command(
             guest,
@@ -2024,30 +2041,31 @@ def _stats_puma(guest, service):
             )
             break
 
-    # ── 5. Worker process listing — lightweight ps snapshot ──────────────────
+    # ── 5. Worker process listing — grep+head replaces awk ───────────────────
+    # grep '[p]uma' | grep worker | head avoids awk (which may exit non-zero on
+    # some implementations) and always produces exit 0 via head.
     out, _ = _execute_command(
         guest,
-        "ps aux --sort=pid 2>/dev/null"
-        r" | awk 'NR>1 && /puma/ && /worker/ {printf \"%s %s %s\n\", $2, $3, $6}'",
+        "ps aux 2>/dev/null | grep '[p]uma' | grep worker | head -200",
         timeout=10,
     )
     if out and out.strip():
         procs = []
         for line in out.strip().split("\n"):
+            # ps aux columns (0-indexed): USER PID %CPU %MEM VSZ RSS ...
             parts = line.split()
-            if len(parts) >= 3:
+            if len(parts) >= 6:
                 try:
-                    rss_kb = int(parts[2])
+                    rss_kb = int(parts[5])
                     procs.append({
-                        "pid": parts[0],
-                        "cpu_pct": parts[1],
+                        "pid": parts[1],
+                        "cpu_pct": parts[2],
                         "mem_human": _human_bytes(rss_kb * 1024),
                     })
                 except (ValueError, IndexError):
                     pass
         if procs:
             stats["worker_processes"] = procs
-            # Derive workers from running processes if .env.production didn't set it
             if "workers" not in stats:
                 stats["workers"] = len(procs)
 
