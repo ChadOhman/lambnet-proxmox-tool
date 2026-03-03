@@ -2100,14 +2100,28 @@ try:
                       for p in _pkg.get_available_packages()}
     except Exception:
         pass
+    # Deduplicate by language pair: argostranslate leaves old package directories
+    # in place after installing a new version, so get_installed_packages() may
+    # return multiple entries for the same pair.  Prefer the entry whose version
+    # matches the available index (i.e. the current version).
+    _pairs = {}  # (from, to) -> (InstalledPackage, version_str)
+    for _p in _pkg.get_installed_packages():
+        _key = (_p.from_code, _p.to_code)
+        _pver = getattr(_p, 'package_version', None)
+        _avail = _avail_ver.get(_key)
+        if _key not in _pairs:
+            _pairs[_key] = (_p, _pver)
+        elif _avail and _norm(_pver) == _norm(_avail):
+            # This entry matches the current index — prefer it over the stale one.
+            _pairs[_key] = (_p, _pver)
     _pkgs = []
-    for p in _pkg.get_installed_packages():
-        _ver = getattr(p, 'package_version', None)
-        _avail = _avail_ver.get((p.from_code, p.to_code))
+    for _key, (_p, _ver) in _pairs.items():
+        _avail = _avail_ver.get(_key)
         _pkgs.append({
-            'from_code': p.from_code, 'to_code': p.to_code,
-            'from_name': p.from_name, 'to_name': p.to_name,
+            'from_code': _p.from_code, 'to_code': _p.to_code,
+            'from_name': _p.from_name, 'to_name': _p.to_name,
             'version': _ver,
+            'available_version': _avail,
             'outdated': bool(_avail and _ver and _norm(_avail) != _norm(_ver)),
         })
     print(json.dumps({'packages': _pkgs}))
@@ -2157,15 +2171,20 @@ try:
     _avail = {(p.from_code, p.to_code): p for p in _pkg.get_available_packages()}
     _n = 0
     _errors = []
+    _seen = set()  # deduplicate language pairs across multiple installed versions
     for _inst in _pkg.get_installed_packages():
         _key = (_inst.from_code, _inst.to_code)
+        if _key in _seen:
+            continue
         _avail_pkg = _avail.get(_key)
         if _avail_pkg is None:
             continue
         _inst_ver = getattr(_inst, 'package_version', None)
         _avail_ver = getattr(_avail_pkg, 'package_version', None)
         if _inst_ver and _avail_ver and _norm(_inst_ver) == _norm(_avail_ver):
+            _seen.add(_key)
             continue
+        _seen.add(_key)
         try:
             _avail_pkg.install()
             _n += 1
@@ -2190,15 +2209,20 @@ try:
     _pkg.update_package_index()
     _avail = {(p.from_code, p.to_code): p for p in _pkg.get_available_packages()}
     _to_update = []
+    _seen = set()  # deduplicate language pairs across multiple installed versions
     for _inst in _pkg.get_installed_packages():
         _key = (_inst.from_code, _inst.to_code)
+        if _key in _seen:
+            continue
         _avail_pkg = _avail.get(_key)
         if _avail_pkg is None:
             continue
         _inst_ver = getattr(_inst, 'package_version', None)
         _avail_ver = getattr(_avail_pkg, 'package_version', None)
         if _inst_ver and _avail_ver and _norm(_inst_ver) == _norm(_avail_ver):
+            _seen.add(_key)
             continue
+        _seen.add(_key)
         _to_update.append((_key, _avail_pkg, _avail_ver))
     print(json.dumps({'type': 'start', 'total': len(_to_update)}), flush=True)
     _n = 0

@@ -1510,7 +1510,7 @@ function ltLoadInstalled() {
             const rows = pkgs.map(p => {
                 const verHtml = p.version
                     ? (p.outdated
-                        ? `${escHtml(p.version)} <span class="badge bg-warning text-dark ms-1" title="Update available">update available</span>`
+                        ? `${escHtml(p.version)} <span class="badge bg-warning text-dark ms-1" title="Update available: ${escHtml(p.available_version || '?')}">update available</span>`
                         : escHtml(p.version))
                     : '<span class="text-muted">—</span>';
                 return `<tr>
