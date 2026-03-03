@@ -154,7 +154,7 @@
                                     </button>
                                 </form>
                                 {% if guest.pending_updates()|length > 0 %}
-                                <form method="post" action="/api/apply/{{ guest.id }}" class="d-inline" onsubmit="return confirm('Apply all updates to {{ guest.name }}?')">
+                                <form method="post" action="/api/apply/{{ guest.id }}" class="d-inline" data-confirm="Apply all updates to {{ guest.name }}?">
                                     <button type="submit" class="btn btn-outline-warning" aria-label="Apply updates to {{ guest.name }}">
                                         <i class="bi bi-download" aria-hidden="true"></i>
                                     </button>

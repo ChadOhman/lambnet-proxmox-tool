@@ -44,11 +44,11 @@
         </form>
         {% endif %}
         {% if service.status == 'running' %}
-        <form method="post" action="/services/{{ service.id }}/stop" class="d-inline" onsubmit="return confirm('Stop {{ service.service_name }}?')">
+        <form method="post" action="/services/{{ service.id }}/stop" class="d-inline" data-confirm="Stop {{ service.service_name }}?">
             <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-stop-fill"></i> Stop</button>
         </form>
         {% endif %}
-        <form method="post" action="/services/{{ service.id }}/restart" class="d-inline" onsubmit="return confirm('Restart {{ service.service_name }}?')">
+        <form method="post" action="/services/{{ service.id }}/restart" class="d-inline" data-confirm="Restart {{ service.service_name }}?">
             <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-arrow-clockwise"></i> Restart</button>
         </form>
         {% endif %}
@@ -600,11 +600,11 @@
             <div class="row g-3 mt-1" id="pg-charts-row">
                 <div class="col-md-6">
                     <div class="text-muted small mb-1">Connections (last 12h)</div>
-                    <canvas id="pg-chart-connections" height="100"></canvas>
+                    <canvas id="pg-chart-connections" height="100" role="img" aria-label="PostgreSQL connection count over the last 12 hours"></canvas>
                 </div>
                 <div class="col-md-6">
                     <div class="text-muted small mb-1">Cache Hit Ratio % (last 12h)</div>
-                    <canvas id="pg-chart-cache" height="100"></canvas>
+                    <canvas id="pg-chart-cache" height="100" role="img" aria-label="PostgreSQL cache hit ratio percentage over the last 12 hours"></canvas>
                 </div>
             </div>
         </div><!-- /overview -->

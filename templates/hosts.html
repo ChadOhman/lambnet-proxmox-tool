@@ -33,8 +33,8 @@
                     <span id="upd-{{ host.id }}" class="d-none ms-1"></span>
                 </h5>
                 <div class="dropdown">
-                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
-                        <i class="bi bi-three-dots-vertical"></i>
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-label="Actions for {{ host.name }}" type="button">
+                        <i class="bi bi-three-dots-vertical" aria-hidden="true"></i>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-dark">
                         {% if current_user.is_super_admin and not host.is_pbs %}
@@ -55,7 +55,7 @@
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
-                            <form method="post" action="/hosts/{{ host.id }}/delete" onsubmit="return confirm('Delete this host and all its guests?')">
+                            <form method="post" action="/hosts/{{ host.id }}/delete" data-confirm="Delete this host and all its guests?">
                                 <button type="submit" class="dropdown-item text-danger">
                                     <i class="bi bi-trash"></i> Delete
                                 </button>

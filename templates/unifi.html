@@ -56,7 +56,11 @@
                 <h6 class="mb-0 text-muted"><i class="bi bi-bar-chart"></i> Traffic by Direction (24h)</h6>
             </div>
             <div class="card-body" style="height:180px">
-                <canvas id="chartDirection" role="img" aria-label="Traffic by direction chart (24h)"></canvas>
+                <canvas id="chartDirection" role="img" aria-label="Traffic by direction chart (24h)" aria-describedby="chartDirectionData"></canvas>
+            </div>
+            <div id="chartDirectionData" class="visually-hidden">
+                Traffic by direction (24h):
+                {% for d in chart_direction %}{{ d.label }}: {{ d.count }} events{% if not loop.last %}, {% endif %}{% endfor %}.
             </div>
         </div>
     </div>
@@ -68,7 +72,13 @@
                 <h6 class="mb-0 text-muted"><i class="bi bi-shield-x"></i> Top Blocked Sources (24h)</h6>
             </div>
             <div class="card-body" style="height:180px">
-                <canvas id="chartBlocked" role="img" aria-label="Top blocked sources chart (24h)"></canvas>
+                <canvas id="chartBlocked" role="img" aria-label="Top blocked sources chart (24h)" aria-describedby="chartBlockedData"></canvas>
+            </div>
+            <div id="chartBlockedData" class="visually-hidden">
+                Top blocked sources (24h):
+                {% if safety_mode %}Data hidden in safety mode.{% else %}
+                {% for d in chart_blocked %}{{ d.ip }}: {{ d.count }} events{% if not loop.last %}, {% endif %}{% endfor %}.
+                {% endif %}
             </div>
         </div>
     </div>
@@ -164,9 +174,9 @@
                                 {% if current_user.can_restart_unifi %}
                                 <td>
                                     {% if device.state == 1 %}
-                                    <form method="post" action="/unifi/restart/{{ device.mac }}" class="d-inline" onsubmit="return confirm('Restart {{ device.name }}?')">
-                                        <button type="submit" class="btn btn-sm btn-outline-warning" title="Restart">
-                                            <i class="bi bi-arrow-repeat"></i>
+                                    <form method="post" action="/unifi/restart/{{ device.mac }}" class="d-inline" data-confirm="Restart {{ device.name }}?">
+                                        <button type="submit" class="btn btn-sm btn-outline-warning" aria-label="Restart {{ device.name }}">
+                                            <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
                                         </button>
                                     </form>
                                     {% endif %}

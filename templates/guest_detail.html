@@ -35,11 +35,11 @@
             <button type="submit" class="btn btn-outline-primary"><i class="bi bi-arrow-clockwise"></i> Scan</button>
         </form>
         {% if guest.pending_updates()|length > 0 %}
-        <form method="post" action="/api/apply/{{ guest.id }}" class="d-inline" onsubmit="return confirm('Apply all updates?')">
+        <form method="post" action="/api/apply/{{ guest.id }}" class="d-inline" data-confirm="Apply all updates?">
             <button type="submit" class="btn btn-warning"><i class="bi bi-download"></i> Apply All Updates</button>
         </form>
         {% endif %}
-        <form method="post" action="/guests/{{ guest.id }}/delete" class="d-inline" onsubmit="return confirm('Delete this guest?')">
+        <form method="post" action="/guests/{{ guest.id }}/delete" class="d-inline" data-confirm="Delete this guest?">
             <button type="submit" class="btn btn-outline-danger" aria-label="Delete guest"><i class="bi bi-trash" aria-hidden="true"></i></button>
         </form>
     </div>
@@ -51,7 +51,7 @@
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         <strong>Reboot required.</strong> This guest needs a reboot to complete pending updates.
     </div>
-    <form method="post" action="/guests/{{ guest.id }}/power/reboot" class="d-inline" onsubmit="return confirm('Reboot {{ guest.name }}?')">
+    <form method="post" action="/guests/{{ guest.id }}/power/reboot" class="d-inline" data-confirm="Reboot {{ guest.name }}?">
         <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-arrow-repeat"></i> Reboot Now</button>
     </form>
 </div>
@@ -192,13 +192,13 @@
             </form>
             {% endif %}
             {% if guest.power_state == 'running' %}
-            <form method="post" action="/guests/{{ guest.id }}/power/shutdown" class="d-inline" onsubmit="return confirm('Gracefully shutdown {{ guest.name }}?')">
+            <form method="post" action="/guests/{{ guest.id }}/power/shutdown" class="d-inline" data-confirm="Gracefully shutdown {{ guest.name }}?">
                 <button type="submit" class="btn btn-sm btn-warning"><i class="bi bi-stop-fill"></i> Shutdown</button>
             </form>
-            <form method="post" action="/guests/{{ guest.id }}/power/reboot" class="d-inline" onsubmit="return confirm('Reboot {{ guest.name }}?')">
+            <form method="post" action="/guests/{{ guest.id }}/power/reboot" class="d-inline" data-confirm="Reboot {{ guest.name }}?">
                 <button type="submit" class="btn btn-sm btn-outline-warning"><i class="bi bi-arrow-clockwise"></i> Reboot</button>
             </form>
-            <form method="post" action="/guests/{{ guest.id }}/power/stop" class="d-inline" onsubmit="return confirm('Force stop {{ guest.name }}? This may cause data loss.')">
+            <form method="post" action="/guests/{{ guest.id }}/power/stop" class="d-inline" data-confirm="Force stop {{ guest.name }}? This may cause data loss.">
                 <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i> Force Stop</button>
             </form>
             {% endif %}
@@ -373,22 +373,22 @@
                         <div class="btn-group btn-group-sm">
                             {% if svc.status != 'running' %}
                             <form method="post" action="/services/{{ svc.id }}/start" class="d-inline">
-                                <button type="submit" class="btn btn-outline-success" title="Start"><i class="bi bi-play-fill"></i></button>
+                                <button type="submit" class="btn btn-outline-success" aria-label="Start {{ svc.service_name }}"><i class="bi bi-play-fill" aria-hidden="true"></i></button>
                             </form>
                             {% endif %}
                             {% if svc.status == 'running' %}
-                            <form method="post" action="/services/{{ svc.id }}/stop" class="d-inline" onsubmit="return confirm('Stop {{ svc.service_name }} on {{ guest.name }}?')">
-                                <button type="submit" class="btn btn-outline-danger" title="Stop"><i class="bi bi-stop-fill"></i></button>
+                            <form method="post" action="/services/{{ svc.id }}/stop" class="d-inline" data-confirm="Stop {{ svc.service_name }} on {{ guest.name }}?">
+                                <button type="submit" class="btn btn-outline-danger" aria-label="Stop {{ svc.service_name }}"><i class="bi bi-stop-fill" aria-hidden="true"></i></button>
                             </form>
                             {% endif %}
-                            <form method="post" action="/services/{{ svc.id }}/restart" class="d-inline" onsubmit="return confirm('Restart {{ svc.service_name }} on {{ guest.name }}?')">
-                                <button type="submit" class="btn btn-outline-warning" title="Restart"><i class="bi bi-arrow-clockwise"></i></button>
+                            <form method="post" action="/services/{{ svc.id }}/restart" class="d-inline" data-confirm="Restart {{ svc.service_name }} on {{ guest.name }}?">
+                                <button type="submit" class="btn btn-outline-warning" aria-label="Restart {{ svc.service_name }}"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button>
                             </form>
-                            <button type="button" class="btn btn-outline-light" title="Logs" onclick="fetchLogs({{ svc.id }})">
-                                <i class="bi bi-journal-text"></i>
+                            <button type="button" class="btn btn-outline-light" aria-label="View logs for {{ svc.service_name }}" onclick="fetchLogs({{ svc.id }})">
+                                <i class="bi bi-journal-text" aria-hidden="true"></i>
                             </button>
-                            <form method="post" action="/services/{{ svc.id }}/remove" class="d-inline" onsubmit="return confirm('Remove {{ svc.service_name }}?')">
-                                <button type="submit" class="btn btn-outline-danger" title="Remove service" aria-label="Remove service"><i class="bi bi-trash" aria-hidden="true"></i></button>
+                            <form method="post" action="/services/{{ svc.id }}/remove" class="d-inline" data-confirm="Remove {{ svc.service_name }}?">
+                                <button type="submit" class="btn btn-outline-danger" aria-label="Remove {{ svc.service_name }}"><i class="bi bi-trash" aria-hidden="true"></i></button>
                             </form>
                         </div>
                     </td>
@@ -426,7 +426,7 @@
                     <td>{{ job.target }}</td>
                     <td><code>{{ job.schedule or '*/15' }}</code></td>
                     <td>
-                        <form method="post" action="/guests/{{ guest.id }}/replication/{{ job.id }}/delete" class="d-inline" onsubmit="return confirm('Remove replication to {{ job.target }}?')">
+                        <form method="post" action="/guests/{{ guest.id }}/replication/{{ job.id }}/delete" class="d-inline" data-confirm="Remove replication to {{ job.target }}?">
                             <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Remove</button>
                         </form>
                     </td>
@@ -528,10 +528,10 @@
                         </td>
                         {% if current_user.can_manage_guests %}
                         <td>
-                            <form method="post" action="/guests/{{ guest.id }}/snapshot/{{ snap.name }}/rollback" class="d-inline" onsubmit="return confirm('Rollback {{ guest.name }} to snapshot {{ snap.name }}? This will revert the guest to that point in time.')">
+                            <form method="post" action="/guests/{{ guest.id }}/snapshot/{{ snap.name }}/rollback" class="d-inline" data-confirm="Rollback {{ guest.name }} to snapshot {{ snap.name }}? This will revert the guest to that point in time.">
                                 <button type="submit" class="btn btn-outline-warning btn-sm" title="Rollback to {{ snap.name }}" aria-label="Rollback to {{ snap.name }}"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
                             </form>
-                            <form method="post" action="/guests/{{ guest.id }}/snapshot/{{ snap.name }}/delete" class="d-inline" onsubmit="return confirm('Delete snapshot {{ snap.name }}?')">
+                            <form method="post" action="/guests/{{ guest.id }}/snapshot/{{ snap.name }}/delete" class="d-inline" data-confirm="Delete snapshot {{ snap.name }}?">
                                 <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete snapshot {{ snap.name }}" aria-label="Delete snapshot {{ snap.name }}"><i class="bi bi-trash" aria-hidden="true"></i></button>
                             </form>
                         </td>
@@ -659,7 +659,7 @@
                                     <button type="submit" class="btn btn-outline-success" title="Protect backup" aria-label="Protect backup"><i class="bi bi-lock" aria-hidden="true"></i></button>
                                 </form>
                                 {% endif %}
-                                <form method="post" action="/guests/{{ guest.id }}/backup/{{ backup.volid }}/delete" class="d-inline" onsubmit="return confirm('Delete this backup? This cannot be undone.')">
+                                <form method="post" action="/guests/{{ guest.id }}/backup/{{ backup.volid }}/delete" class="d-inline" data-confirm="Delete this backup? This cannot be undone.">
                                     <button type="submit" class="btn btn-outline-danger" title="Delete backup" aria-label="Delete backup"><i class="bi bi-trash" aria-hidden="true"></i></button>
                                 </form>
                             </div>
@@ -732,7 +732,7 @@
             </tr>
         </table>
         <div class="d-flex gap-2">
-            <form method="post" action="/guests/{{ guest.id }}/unifi/block" class="d-inline" onsubmit="return confirm('Block {{ guest.name }} from the network?')">
+            <form method="post" action="/guests/{{ guest.id }}/unifi/block" class="d-inline" data-confirm="Block {{ guest.name }} from the network?">
                 <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-slash-circle"></i> Block</button>
             </form>
         </div>
