@@ -264,7 +264,7 @@
                                     </span>
                                     {{ guest.name }}
                                     {% if guest.reboot_required %}
-                                    <span class="text-warning" title="Reboot required"><i class="bi bi-arrow-repeat"></i></span>
+                                    <span class="text-warning" title="Reboot required"><i class="bi bi-arrow-repeat" aria-hidden="true"></i><span class="visually-hidden"> (reboot required)</span></span>
                                     {% endif %}
                                 </td>
                                 <td>
@@ -276,7 +276,7 @@
                                 <td>
                                     {% set sec = guest.security_updates()|length %}
                                     {% if sec > 0 %}
-                                    <span class="severity-critical">{{ sec }}</span>
+                                    <span class="severity-critical">{{ sec }}<span class="visually-hidden"> critical security update{{ 's' if sec != 1 else '' }}</span></span>
                                     {% else %}
                                     <span class="text-muted">0</span>
                                     {% endif %}
