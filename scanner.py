@@ -2193,7 +2193,7 @@ def _lt_run(guest, script_bytes, timeout=60):
         raise RuntimeError(err)
     # Parse the last JSON object line — guards against any progress text printed
     # to stdout by argostranslate during package installs.
-    lines = [l for l in (out or "").strip().splitlines() if l.strip().startswith("{")]
+    lines = [line for line in (out or "").strip().splitlines() if line.strip().startswith("{")]
     if not lines:
         raise RuntimeError(f"No JSON output from script; stdout={out!r}")
     return json.loads(lines[-1])
