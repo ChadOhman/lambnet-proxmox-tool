@@ -1963,17 +1963,21 @@ def _stats_puma(guest, service):
         stats["puma_version"] = v
 
     # ── 3. Thread + worker config from running process environment ────────────
-    # /proc/<MainPID>/environ contains variables loaded via EnvironmentFile=
-    # (e.g. .env.production) which systemctl --property=Environment does NOT
-    # expose.  Requires root; gracefully returns nothing if access is denied.
+    # /proc/<MainPID>/environ has variables from EnvironmentFile (.env.production)
+    # which systemctl --property=Environment does NOT expose.
+    # Pipe tr directly to grep — avoids storing in a shell variable, which would
+    # cause word-splitting (newlines→spaces) and break ^-anchored grep patterns.
     env_cmd = (
         "PID=$(systemctl show mastodon-web.service --property=MainPID --value"
         " 2>/dev/null | tr -d '\\n');"
-        " [ -z \"$PID\" ] || [ \"$PID\" = '0' ] && exit 0;"
-        " E=$(tr '\\0' '\\n' < /proc/$PID/environ 2>/dev/null);"
-        r" echo \"$E\" | grep -oP '^RAILS_MAX_THREADS=\K[0-9]+' | sed 's/^/max_threads=/';"
-        r" echo \"$E\" | grep -oP '^RAILS_MIN_THREADS=\K[0-9]+' | sed 's/^/min_threads=/';"
-        r" echo \"$E\" | grep -oP '^WEB_CONCURRENCY=\K[0-9]+' | sed 's/^/workers=/';"
+        " [ -n \"$PID\" ] && [ \"$PID\" != '0' ] && {"
+        " tr '\\0' '\\n' < /proc/$PID/environ 2>/dev/null"
+        " | grep -oP '^RAILS_MAX_THREADS=\\K[0-9]+' | sed 's/^/max_threads=/';"
+        " tr '\\0' '\\n' < /proc/$PID/environ 2>/dev/null"
+        " | grep -oP '^RAILS_MIN_THREADS=\\K[0-9]+' | sed 's/^/min_threads=/';"
+        " tr '\\0' '\\n' < /proc/$PID/environ 2>/dev/null"
+        " | grep -oP '^WEB_CONCURRENCY=\\K[0-9]+' | sed 's/^/workers=/';"
+        " }; true"
     )
     out, _ = _execute_command(guest, env_cmd, timeout=10)
     edata = {}
@@ -1991,34 +1995,24 @@ def _stats_puma(guest, service):
     if "max_threads" in stats and "min_threads" not in stats:
         stats["min_threads"] = stats["max_threads"]
 
-    # ── 4. Mastodon version — instance API, then version.rb fallback ─────────
-    # Use grep instead of python3 pipe to avoid subprocess overhead / quoting.
-    out, _ = _execute_command(
-        guest,
-        f"curl -s --max-time 8 localhost:{port}/api/v1/instance 2>/dev/null"
-        r" | grep -oP '\"version\":\"\K[^\"]+' | head -1",
-        timeout=12,
+    # ── 4. Mastodon version — version.rb ─────────────────────────────────────
+    # The /api/v1/instance curl returns empty on bare localhost (Host header
+    # restrictions in production Rails).  Read the source file directly.
+    masto_ver_cmd = (
+        "for d in /home/mastodon/live /home/mastodon/mastodon"
+        "          /var/www/mastodon /opt/mastodon /srv/mastodon; do"
+        "  vf=\"$d/lib/mastodon/version.rb\";"
+        "  [ -f \"$vf\" ] || continue;"
+        "  maj=$(grep -oP 'MAJOR\\s*=\\s*\\K[0-9]+' \"$vf\" | head -1);"
+        "  mino=$(grep -oP 'MINOR\\s*=\\s*\\K[0-9]+' \"$vf\" | head -1);"
+        "  pat=$(grep -oP 'PATCH\\s*=\\s*\\K[0-9]+' \"$vf\" | head -1);"
+        "  [ -n \"$maj\" ] && echo \"$maj.$mino.$pat\" && break;"
+        " done"
     )
+    out, _ = _execute_command(guest, masto_ver_cmd, timeout=10)
     v = (out or "").strip()
     if v:
         stats["mastodon_version"] = v
-    else:
-        # Fallback: parse MAJOR/MINOR/PATCH from version.rb source file
-        masto_ver_cmd = (
-            "for d in /home/mastodon/live /home/mastodon/mastodon"
-            "          /var/www/mastodon /opt/mastodon /srv/mastodon; do"
-            "  vf=\"$d/lib/mastodon/version.rb\";"
-            "  [ -f \"$vf\" ] || continue;"
-            r"  maj=$(grep -oP 'MAJOR\s*=\s*\K[0-9]+' \"$vf\" | head -1);"
-            r"  mino=$(grep -oP 'MINOR\s*=\s*\K[0-9]+' \"$vf\" | head -1);"
-            r"  pat=$(grep -oP 'PATCH\s*=\s*\K[0-9]+' \"$vf\" | head -1);"
-            "  [ -n \"$maj\" ] && echo \"$maj.$mino.$pat\" && break;"
-            " done"
-        )
-        out, _ = _execute_command(guest, masto_ver_cmd, timeout=10)
-        v = (out or "").strip()
-        if v:
-            stats["mastodon_version"] = v
 
     # ── 5. Worker process listing — lightweight ps snapshot ──────────────────
     out, _ = _execute_command(
