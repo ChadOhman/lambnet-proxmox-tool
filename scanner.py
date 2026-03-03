@@ -1948,74 +1948,59 @@ def _stats_puma(guest, service):
     if out:
         stats["health_status"] = "OK" if out.strip() == "200" else f"HTTP {out.strip()}"
 
-    # ── 2. Puma startup metadata — single journalctl call ────────────────────
-    # Reads journal once into $J, then uses grep -oP (POSIX + Perl extensions,
-    # available everywhere via grep) to extract each field.  Avoids the GNU awk
-    # three-argument match() which is absent from mawk (Debian/Ubuntu default).
-    # Puma 5+ logs Min/Max threads on separate lines, so we match them separately.
-    journal_cmd = (
-        "J=$(journalctl -u mastodon-web.service -n 200 --no-pager 2>/dev/null);"
-        " echo \"$J\" | grep -m1 'Puma version:'"
-        r"   | grep -oP 'Puma version: \K[^ ]+' | sed 's/^/puma_version=/'; "
-        " echo \"$J\" | grep -m1 '\\* Workers:'"
-        r"   | grep -oP 'Workers: \K[0-9]+' | sed 's/^/workers=/'; "
-        " echo \"$J\" | grep -m1 'Min threads:'"
-        r"   | grep -oP 'Min threads: \K[0-9]+' | sed 's/^/min_threads=/'; "
-        " echo \"$J\" | grep -m1 'Max threads:'"
-        r"   | grep -oP 'Max threads: \K[0-9]+' | sed 's/^/max_threads=/'"
+    # ── 2. Puma version — Gemfile.lock ───────────────────────────────────────
+    # journalctl is unreliable: -n 200 only covers recent lines; startup messages
+    # from a long-running service will have aged out.  Read from files instead.
+    puma_ver_cmd = (
+        "for d in /home/mastodon/live /home/mastodon/mastodon"
+        "          /var/www/mastodon /opt/mastodon /srv/mastodon; do"
+        "  gl=\"$d/Gemfile.lock\";"
+        "  [ -f \"$gl\" ] || continue;"
+        r"  grep -oP '    puma \(\K[^)]+' \"$gl\" 2>/dev/null | head -1 && break;"
+        " done"
     )
-    out, _ = _execute_command(guest, journal_cmd, timeout=15)
-    jdata = {}
+    out, _ = _execute_command(guest, puma_ver_cmd, timeout=10)
+    v = (out or "").strip()
+    if v:
+        stats["puma_version"] = v
+
+    # ── 3. Thread + worker config from .env.production ───────────────────────
+    # systemctl show --property=Environment does NOT expose EnvironmentFile vars,
+    # so we read the .env.production file directly alongside the Gemfile.lock.
+    env_cmd = (
+        "for d in /home/mastodon/live /home/mastodon/mastodon"
+        "          /var/www/mastodon /opt/mastodon /srv/mastodon; do"
+        "  ef=\"$d/.env.production\";"
+        "  [ -f \"$ef\" ] || continue;"
+        r"  grep -oP '^RAILS_MAX_THREADS=\K[0-9]+' \"$ef\" | sed 's/^/max_threads=/';"
+        r"  grep -oP '^RAILS_MIN_THREADS=\K[0-9]+' \"$ef\" | sed 's/^/min_threads=/';"
+        r"  grep -oP '^WEB_CONCURRENCY=\K[0-9]+'   \"$ef\" | sed 's/^/workers=/';"
+        "  break;"
+        " done"
+    )
+    out, _ = _execute_command(guest, env_cmd, timeout=10)
+    edata = {}
     for line in (out or "").strip().split("\n"):
         if "=" in line:
             k, _, v = line.partition("=")
-            jdata[k.strip()] = v.strip()
+            edata[k.strip()] = v.strip()
+    for key in ("max_threads", "min_threads", "workers"):
+        if edata.get(key):
+            try:
+                stats[key] = int(edata[key])
+            except ValueError:
+                pass
 
-    if jdata.get("puma_version"):
-        stats["puma_version"] = jdata["puma_version"]
-    else:
-        # Fallback: parse Gemfile.lock at standard Mastodon install paths
-        out2, _ = _execute_command(
-            guest,
-            "grep -oP 'puma \\(\\K[^)]+' /home/mastodon/live/Gemfile.lock 2>/dev/null"
-            " || grep -oP 'puma \\(\\K[^)]+' /var/www/mastodon/Gemfile.lock 2>/dev/null"
-            " || grep -oP 'puma \\(\\K[^)]+' /opt/mastodon/Gemfile.lock 2>/dev/null"
-            " | head -1",
-            timeout=10,
-        )
-        v = (out2 or "").strip()
-        if v:
-            stats["puma_version"] = v
-
-    if jdata.get("workers"):
-        try:
-            stats["workers"] = int(jdata["workers"])
-        except ValueError:
-            pass
-
-    if jdata.get("min_threads"):
-        try:
-            stats["min_threads"] = int(jdata["min_threads"])
-        except ValueError:
-            pass
-
-    if jdata.get("max_threads"):
-        try:
-            stats["max_threads"] = int(jdata["max_threads"])
-        except ValueError:
-            pass
-
-    # ── 3. Mastodon version — read from version.rb source file ───────────────
-    # Avoids the API curl which requires a valid Host header matching the
-    # instance domain (Rails rejects bare localhost requests in production).
+    # ── 4. Mastodon version — version.rb ─────────────────────────────────────
     masto_ver_cmd = (
-        "for d in /home/mastodon/live /var/www/mastodon /opt/mastodon; do"
-        "  f=\"$d/lib/mastodon/version.rb\";"
-        "  [ -f \"$f\" ] || continue;"
-        r"  maj=$(grep -oP 'MAJOR\s*=\s*\K[0-9]+' \"$f\" | head -1);"
-        r"  min=$(grep -oP 'MINOR\s*=\s*\K[0-9]+' \"$f\" | head -1);"
-        r"  pat=$(grep -oP 'PATCH\s*=\s*\K[0-9]+' \"$f\" | head -1);"
-        "  [ -n \"$maj\" ] && echo \"$maj.$min.$pat\" && break;"
+        "for d in /home/mastodon/live /home/mastodon/mastodon"
+        "          /var/www/mastodon /opt/mastodon /srv/mastodon; do"
+        "  vf=\"$d/lib/mastodon/version.rb\";"
+        "  [ -f \"$vf\" ] || continue;"
+        r"  maj=$(grep -oP 'MAJOR\s*=\s*\K[0-9]+' \"$vf\" | head -1);"
+        r"  mino=$(grep -oP 'MINOR\s*=\s*\K[0-9]+' \"$vf\" | head -1);"
+        r"  pat=$(grep -oP 'PATCH\s*=\s*\K[0-9]+' \"$vf\" | head -1);"
+        "  [ -n \"$maj\" ] && echo \"$maj.$mino.$pat\" && break;"
         " done"
     )
     out, _ = _execute_command(guest, masto_ver_cmd, timeout=10)
@@ -2023,7 +2008,7 @@ def _stats_puma(guest, service):
     if v:
         stats["mastodon_version"] = v
 
-    # ── 4. Worker process listing — lightweight ps snapshot ──────────────────
+    # ── 5. Worker process listing — lightweight ps snapshot ──────────────────
     out, _ = _execute_command(
         guest,
         "ps aux --sort=pid 2>/dev/null"
@@ -2046,6 +2031,9 @@ def _stats_puma(guest, service):
                     pass
         if procs:
             stats["worker_processes"] = procs
+            # Derive workers from running processes if .env.production didn't set it
+            if "workers" not in stats:
+                stats["workers"] = len(procs)
 
     return stats
 
