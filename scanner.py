@@ -2091,6 +2091,7 @@ except ImportError:
 _LT_LIST_INSTALLED_SCRIPT = _LT_PATH_SETUP + b"""\
 try:
     from argostranslate import package as _pkg
+    def _norm(v): return str(v).replace('_', '.').strip().lower() if v else ''
     # Compare against locally-cached available packages (no network call) to
     # detect outdated versions. If no local cache exists, outdated stays False.
     _avail_ver = {}
@@ -2107,7 +2108,7 @@ try:
             'from_code': p.from_code, 'to_code': p.to_code,
             'from_name': p.from_name, 'to_name': p.to_name,
             'version': _ver,
-            'outdated': bool(_avail and _ver and _avail != _ver),
+            'outdated': bool(_avail and _ver and _norm(_avail) != _norm(_ver)),
         })
     print(json.dumps({'packages': _pkgs}))
 except Exception as _e:
@@ -2151,6 +2152,7 @@ except Exception as _e:
 _LT_UPDATE_ALL_SCRIPT = _LT_PATH_SETUP + b"""\
 try:
     from argostranslate import package as _pkg
+    def _norm(v): return str(v).replace('_', '.').strip().lower() if v else ''
     _pkg.update_package_index()
     _avail = {(p.from_code, p.to_code): p for p in _pkg.get_available_packages()}
     _n = 0
@@ -2162,7 +2164,7 @@ try:
             continue
         _inst_ver = getattr(_inst, 'package_version', None)
         _avail_ver = getattr(_avail_pkg, 'package_version', None)
-        if _inst_ver and _avail_ver and _inst_ver == _avail_ver:
+        if _inst_ver and _avail_ver and _norm(_inst_ver) == _norm(_avail_ver):
             continue
         try:
             _avail_pkg.install()
@@ -2183,6 +2185,7 @@ _LT_UPDATE_STREAMING_SCRIPT = _LT_PATH_SETUP + b"""\
 import sys
 try:
     from argostranslate import package as _pkg
+    def _norm(v): return str(v).replace('_', '.').strip().lower() if v else ''
     print(json.dumps({'type': 'status', 'message': 'Updating package index\u2026'}), flush=True)
     _pkg.update_package_index()
     _avail = {(p.from_code, p.to_code): p for p in _pkg.get_available_packages()}
@@ -2194,7 +2197,7 @@ try:
             continue
         _inst_ver = getattr(_inst, 'package_version', None)
         _avail_ver = getattr(_avail_pkg, 'package_version', None)
-        if _inst_ver and _avail_ver and _inst_ver == _avail_ver:
+        if _inst_ver and _avail_ver and _norm(_inst_ver) == _norm(_avail_ver):
             continue
         _to_update.append((_key, _avail_pkg, _avail_ver))
     print(json.dumps({'type': 'start', 'total': len(_to_update)}), flush=True)
