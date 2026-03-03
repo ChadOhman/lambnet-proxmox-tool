@@ -3,7 +3,7 @@
   "rules": {
     "no-missing-references": "error",
     "aria-label-misuse": "error",
-    "button-type": "error",
+    "no-implicit-button-type": "error",
     "empty-heading": "error",
     "require-sri": "off",
     "long-title": "off",
