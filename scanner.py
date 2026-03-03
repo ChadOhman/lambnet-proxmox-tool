@@ -2006,12 +2006,14 @@ def _stats_puma(guest, service):
                 except ValueError:
                     pass
 
-    # If max_threads set but min_threads absent, Mastodon defaults min = max
-    if "max_threads" in stats and "min_threads" not in stats:
+    # Mastodon's compiled-in default is 5 threads when RAILS_MAX_THREADS is unset
+    if "max_threads" not in stats:
+        stats["max_threads"] = 5
+    if "min_threads" not in stats:
         stats["min_threads"] = stats["max_threads"]
 
     # ── 4b. Mastodon version — version.rb ────────────────────────────────────
-    # Use the puma process's cwd as primary path; fall back to known locations.
+    # Build candidate directory list: puma cwd → known locations → find fallback.
     _ver_dirs = []
     if mastodon_dir:
         _ver_dirs.append(mastodon_dir)
@@ -2019,6 +2021,22 @@ def _stats_puma(guest, service):
         "/home/mastodon/live", "/home/mastodon/mastodon",
         "/var/www/mastodon", "/opt/mastodon", "/srv/mastodon",
     ])
+    # find-based fallback: locate version.rb anywhere under common prefixes
+    # head -1 and 2>/dev/null ensure exit 0 so auto-mode never falls through.
+    if not mastodon_dir:
+        out, _ = _execute_command(
+            guest,
+            "find /home /var/www /opt /srv -maxdepth 8 -name version.rb"
+            " -path '*/mastodon/version.rb' 2>/dev/null | head -1",
+            timeout=15,
+        )
+        found = (out or "").strip()
+        if found:
+            # strip lib/mastodon/version.rb to get base dir
+            import re as _re
+            m = _re.match(r"^(.*)/lib/mastodon/version\.rb$", found)
+            if m:
+                _ver_dirs.insert(0, m.group(1))
     for base_dir in _ver_dirs:
         vf = f"{base_dir}/lib/mastodon/version.rb"
         out, _ = _execute_command(
