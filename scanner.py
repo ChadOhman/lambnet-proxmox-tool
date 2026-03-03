@@ -2031,6 +2031,17 @@ def _stats_libretranslate(guest, service):
     else:
         stats["health_status"] = "unreachable"
 
+    # Package version from dist-info (works for venv, pipx, and system installs)
+    ver_out, _ = _execute_command(
+        guest,
+        "find /home /opt /root /srv /var /usr/local /usr/lib -maxdepth 10"
+        " -name 'METADATA' -path '*/libretranslate-*.dist-info/*' 2>/dev/null"
+        " | head -1 | xargs -r grep '^Version:' 2>/dev/null | awk '{print $2}'",
+        timeout=10,
+    )
+    if ver_out and ver_out.strip():
+        stats["lt_version"] = ver_out.strip()
+
     return stats
 
 
@@ -2111,6 +2122,7 @@ try:
     print(json.dumps({'packages': [
         {'from_code': p.from_code, 'to_code': p.to_code,
          'from_name': p.from_name, 'to_name': p.to_name,
+         'version': getattr(p, 'package_version', None),
          'installed': (p.from_code, p.to_code) in _installed}
         for p in _pkg.get_available_packages()
     ]}))
@@ -2142,12 +2154,25 @@ try:
     _pkg.update_package_index()
     _avail = {(p.from_code, p.to_code): p for p in _pkg.get_available_packages()}
     _n = 0
+    _errors = []
     for _inst in _pkg.get_installed_packages():
         _key = (_inst.from_code, _inst.to_code)
-        if _key in _avail:
-            _avail[_key].install()
+        _avail_pkg = _avail.get(_key)
+        if _avail_pkg is None:
+            continue
+        _inst_ver = getattr(_inst, 'package_version', None)
+        _avail_ver = getattr(_avail_pkg, 'package_version', None)
+        if _inst_ver and _avail_ver and _inst_ver == _avail_ver:
+            continue
+        try:
+            _avail_pkg.install()
             _n += 1
-    print(json.dumps({'ok': True, 'updated': _n, 'message': 'Updated {} package(s)'.format(_n)}))
+        except Exception as _ie:
+            _errors.append('{}->{}: {}'.format(_key[0], _key[1], str(_ie)))
+    _msg = 'Updated {} package(s)'.format(_n)
+    if _errors:
+        _msg += '; {} error(s): {}'.format(len(_errors), '; '.join(_errors))
+    print(json.dumps({'ok': True, 'updated': _n, 'message': _msg}))
 except Exception as _e:
     print(json.dumps({'ok': False, 'updated': 0, 'message': str(_e)}))
 """
@@ -2166,7 +2191,12 @@ def _lt_run(guest, script_bytes, timeout=60):
     out, err = _execute_command(guest, cmd, timeout=timeout)
     if err and not out:
         raise RuntimeError(err)
-    return json.loads((out or "").strip())
+    # Parse the last JSON object line — guards against any progress text printed
+    # to stdout by argostranslate during package installs.
+    lines = [l for l in (out or "").strip().splitlines() if l.strip().startswith("{")]
+    if not lines:
+        raise RuntimeError(f"No JSON output from script; stdout={out!r}")
+    return json.loads(lines[-1])
 
 
 def lt_list_installed(guest, service):

@@ -27,6 +27,7 @@
         <span class="text-muted font-monospace">{{ service.unit_name }}</span>
         {% if service.port %}<span class="ms-2 badge bg-secondary">Port {{ service.port }}</span>{% endif %}
         {% if stats.pg_version %}<span class="ms-2 badge bg-secondary">PostgreSQL {{ stats.pg_version }}</span>{% endif %}
+        {% if stats.lt_version %}<span class="ms-2 badge bg-secondary">LibreTranslate {{ stats.lt_version }}</span>{% endif %}
     </div>
     <div class="d-flex gap-2">
         <button class="btn btn-outline-primary btn-sm" id="refreshBtn" onclick="refreshStats()">
