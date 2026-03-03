@@ -1545,6 +1545,13 @@ def _stats_postgresql(guest):
     """Collect PostgreSQL stats."""
     stats = {}
 
+    # Server version
+    out, _ = _execute_command(guest,
+        "sudo -u postgres psql -t -A -c \"SHOW server_version\" 2>/dev/null",
+        timeout=10, sudo=True)
+    if out:
+        stats["pg_version"] = out.strip()
+
     # Database sizes + per-db commits/rollbacks/temp files
     out, _ = _execute_command(guest,
         "sudo -u postgres psql -t -A -c \""
