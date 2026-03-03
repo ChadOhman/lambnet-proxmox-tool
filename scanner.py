@@ -2144,8 +2144,8 @@ def scan_guest(guest):
 
 
 def scan_all_guests():
-    """Scan all enabled guests."""
-    guests = Guest.query.filter_by(enabled=True).all()
+    """Scan all enabled, running guests."""
+    guests = Guest.query.filter_by(enabled=True, power_state="running").all()
     results = []
     for guest in guests:
         try:

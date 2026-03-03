@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, session, current_app
 from flask_login import login_required, current_user
 from collections import Counter
-from models import db, ProxmoxHost, Guest, GuestService, UpdatePackage, ScanResult, Setting, Tag
+from models import db, ProxmoxHost, Guest, GuestService, UpdatePackage, Setting, Tag
 
 bp = Blueprint("dashboard", __name__)
 
@@ -63,16 +63,9 @@ def index():
             UpdatePackage.severity == "critical",
             UpdatePackage.guest_id.in_(filtered_guest_ids),
         ).count()
-        recent_scans = (
-            ScanResult.query.filter(ScanResult.guest_id.in_(filtered_guest_ids))
-            .order_by(ScanResult.scanned_at.desc())
-            .limit(20)
-            .all()
-        )
     else:
         total_updates = 0
         security_updates = 0
-        recent_scans = []
 
     reboot_required = [g for g in filtered_guests if g.reboot_required]
 
@@ -141,7 +134,6 @@ def index():
         stats=stats,
         guests_with_updates=guests_with_updates,
         guests_needing_reboot=reboot_required,
-        recent_scans=recent_scans,
         app_update_available=app_update_available,
         tags=tags,
         current_tag=tag_filter,

@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
-from models import db, User, Role, Tag, TagUnifiNetwork, Setting, AuditLog, Credential
+from models import db, User, Role, Tag, TagUnifiNetwork, Setting, AuditLog, Credential, ScanResult
 from audit import log_action
 
 bp = Blueprint("security", __name__)
@@ -81,10 +81,17 @@ def index():
     if current_user.is_super_admin:
         credentials = Credential.query.order_by(Credential.is_default.desc(), Credential.name).all()
 
+    recent_scans = (
+        ScanResult.query
+        .order_by(ScanResult.scanned_at.desc())
+        .limit(50)
+        .all()
+    )
+
     return render_template("security.html", users=users, roles=roles, tags=tags,
                            settings=settings, audit_pagination=audit_pagination,
                            unifi_networks_available=unifi_networks_available,
-                           credentials=credentials)
+                           credentials=credentials, recent_scans=recent_scans)
 
 
 # --- User management ---

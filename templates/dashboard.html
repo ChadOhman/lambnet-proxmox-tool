@@ -233,7 +233,7 @@
 {% endif %}
 
 <div class="row g-4">
-    <div class="col-lg-8">
+    <div class="col-12">
         <div class="card bg-dark">
             <div class="card-header">
                 <h5 class="mb-0"><i class="bi bi-list-check"></i> Pending Updates</h5>
@@ -312,45 +312,6 @@
                             {% endfor %}
                         </tbody>
                     </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-lg-4">
-        <div class="card bg-dark">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Scans</h5>
-            </div>
-            <div class="card-body p-0">
-                <div class="list-group list-group-flush">
-                    {% if hosts_for_updates %}
-                    <div id="hostScanEntries"></div>
-                    {% endif %}
-                    {% for scan in recent_scans %}
-                    <div class="list-group-item bg-dark border-secondary">
-                        <div class="d-flex justify-content-between">
-                            <strong>{{ scan.guest.name }}</strong>
-                            <small class="text-muted">{{ scan.scanned_at | local_dt }}</small>
-                        </div>
-                        <small>
-                            {% if scan.status == 'error' %}
-                            <span class="text-danger"><i class="bi bi-x-circle"></i> Error</span>
-                            {% elif scan.total_updates == 0 %}
-                            <span class="text-success"><i class="bi bi-check-circle"></i> Up to date</span>
-                            {% else %}
-                            <span class="text-warning">{{ scan.total_updates }} updates</span>
-                            {% if scan.security_updates > 0 %}
-                            <span class="text-danger">({{ scan.security_updates }} security)</span>
-                            {% endif %}
-                            {% endif %}
-                        </small>
-                    </div>
-                    {% else %}
-                    <div {% if hosts_for_updates %}id="noScansYet" {% endif %}class="list-group-item bg-dark border-secondary text-center text-muted py-4">
-                        No scans yet
-                    </div>
-                    {% endfor %}
                 </div>
             </div>
         </div>
