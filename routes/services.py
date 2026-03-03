@@ -1,6 +1,8 @@
 import json
 import logging
 import queue
+import re
+import shlex
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -17,6 +19,10 @@ from scanner import (check_service_statuses, service_action, get_service_logs, g
                      lt_update_packages_stream)
 
 logger = logging.getLogger(__name__)
+
+# Allowlist for PostgreSQL database names: letters, digits, underscores only (max 63 chars).
+# Prevents command injection in shell commands that embed the database name.
+_PG_DB_NAME_RE = re.compile(r'^[A-Za-z0-9_]{1,63}$')
 
 bp = Blueprint("services", __name__)
 
@@ -362,6 +368,8 @@ def pg_vacuum(service_id):
     verbose = bool(data.get("verbose", False))
     if not database:
         return jsonify({"ok": False, "message": "database is required"}), 400
+    if not _PG_DB_NAME_RE.match(database):
+        return jsonify({"ok": False, "message": "Invalid database name."}), 400
     from scanner import _execute_command
     options = ["VERBOSE"] if verbose else []
     if analyze:
@@ -394,14 +402,17 @@ def pg_explain(service_id):
     query = (data.get("query") or "").strip()
     if not database or not query:
         return jsonify({"ok": False, "message": "database and query are required"}), 400
+    if not _PG_DB_NAME_RE.match(database):
+        return jsonify({"ok": False, "message": "Invalid database name."}), 400
     from scanner import _execute_command
     import uuid
     tmpfile = f"/tmp/.pg_explain_{uuid.uuid4().hex[:12]}.sql"  # nosec B108 — remote SSH path, not a local temp file
-    # Use a temp file to avoid shell-quoting issues with arbitrary SQL
-    safe_query = query.replace("'", "'\\''")
+    # Use shlex.quote() to safely shell-quote the SQL content; single quotes in the shell
+    # prevent all metacharacter expansion (backticks, $(), semicolons, etc.).
+    safe_content = shlex.quote(f"EXPLAIN {query}")
     _, write_err = _execute_command(
         guest,
-        f"printf '%s' 'EXPLAIN {safe_query}' > {tmpfile}",
+        f"printf %s {safe_content} > {tmpfile}",
         timeout=10,
     )
     if write_err:
