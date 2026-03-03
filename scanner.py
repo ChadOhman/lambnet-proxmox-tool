@@ -1939,10 +1939,102 @@ def _stats_puma(guest, service):
     stats = {}
     port = service.port or 3000
 
-    # Health endpoint
-    out, _ = _execute_command(guest, f"curl -s -o /dev/null -w '%{{http_code}}' localhost:{port}/health 2>/dev/null", timeout=10)
+    # ── 1. Health endpoint ────────────────────────────────────────────────────
+    out, _ = _execute_command(
+        guest,
+        f"curl -s -o /dev/null -w '%{{http_code}}' localhost:{port}/health 2>/dev/null",
+        timeout=10,
+    )
     if out:
         stats["health_status"] = "OK" if out.strip() == "200" else f"HTTP {out.strip()}"
+
+    # ── 2. Puma startup metadata — single journalctl call ────────────────────
+    # Extracts version, worker count, and thread range from Puma's boot log lines.
+    # awk exits early once all three values are found.
+    journal_cmd = (
+        "journalctl -u mastodon-web.service -n 200 --no-pager 2>/dev/null"
+        r" | awk '"
+        r"/Puma version:/ && !pv { match($0, /Puma version: ([^ ]+)/, a); print \"puma_version=\" a[1]; pv=1 }"
+        r" /\* Workers:/ && !wk  { match($0, /Workers: ([0-9]+)/, a); print \"workers=\" a[1]; wk=1 }"
+        r" /Min threads:/ && !th  { match($0, /Min threads: ([0-9]+), Max threads: ([0-9]+)/, a);"
+        r"                           print \"min_threads=\" a[1]; print \"max_threads=\" a[2]; th=1 }"
+        r" pv && wk && th { exit }'"
+    )
+    out, _ = _execute_command(guest, journal_cmd, timeout=15)
+    jdata = {}
+    for line in (out or "").strip().split("\n"):
+        if "=" in line:
+            k, _, v = line.partition("=")
+            jdata[k.strip()] = v.strip()
+
+    if jdata.get("puma_version"):
+        stats["puma_version"] = jdata["puma_version"]
+    else:
+        # Fallback: parse Gemfile.lock at standard Mastodon install paths
+        out2, _ = _execute_command(
+            guest,
+            "grep -oP 'puma \\(\\K[^)]+' /home/mastodon/live/Gemfile.lock 2>/dev/null"
+            " || grep -oP 'puma \\(\\K[^)]+' /var/www/mastodon/Gemfile.lock 2>/dev/null"
+            " || grep -oP 'puma \\(\\K[^)]+' /opt/mastodon/Gemfile.lock 2>/dev/null"
+            " | head -1",
+            timeout=10,
+        )
+        v = (out2 or "").strip()
+        if v:
+            stats["puma_version"] = v
+
+    if jdata.get("workers"):
+        try:
+            stats["workers"] = int(jdata["workers"])
+        except ValueError:
+            pass
+
+    if jdata.get("min_threads"):
+        try:
+            stats["min_threads"] = int(jdata["min_threads"])
+        except ValueError:
+            pass
+
+    if jdata.get("max_threads"):
+        try:
+            stats["max_threads"] = int(jdata["max_threads"])
+        except ValueError:
+            pass
+
+    # ── 3. Mastodon version — instance API ───────────────────────────────────
+    out, _ = _execute_command(
+        guest,
+        f"curl -s localhost:{port}/api/v1/instance 2>/dev/null"
+        " | python3 -c \"import json,sys; d=json.load(sys.stdin); print(d.get('version',''))\" 2>/dev/null",
+        timeout=10,
+    )
+    v = (out or "").strip()
+    if v:
+        stats["mastodon_version"] = v
+
+    # ── 4. Worker process listing — lightweight ps snapshot ──────────────────
+    out, _ = _execute_command(
+        guest,
+        "ps aux --sort=pid 2>/dev/null"
+        r" | awk 'NR>1 && /puma/ && /worker/ {printf \"%s %s %s\n\", $2, $3, $6}'",
+        timeout=10,
+    )
+    if out and out.strip():
+        procs = []
+        for line in out.strip().split("\n"):
+            parts = line.split()
+            if len(parts) >= 3:
+                try:
+                    rss_kb = int(parts[2])
+                    procs.append({
+                        "pid": parts[0],
+                        "cpu_pct": parts[1],
+                        "mem_human": _human_bytes(rss_kb * 1024),
+                    })
+                except (ValueError, IndexError):
+                    pass
+        if procs:
+            stats["worker_processes"] = procs
 
     return stats
 

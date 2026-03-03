@@ -30,6 +30,8 @@
         {% if stats.pg_version %}<span class="ms-2 badge bg-secondary">PostgreSQL {{ stats.pg_version }}</span>{% endif %}
         {% if stats.lt_version %}<span class="ms-2 badge bg-secondary">LibreTranslate {{ stats.lt_version }}</span>{% endif %}
         {% if stats.es_version %}<span class="ms-2 badge bg-secondary">Elasticsearch {{ stats.es_version }}</span>{% endif %}
+        {% if stats.puma_version %}<span class="ms-2 badge bg-secondary">Puma {{ stats.puma_version }}</span>{% endif %}
+        {% if stats.mastodon_version %}<span class="ms-2 badge bg-secondary">Mastodon {{ stats.mastodon_version }}</span>{% endif %}
     </div>
     <div class="d-flex gap-2">
         <button class="btn btn-outline-primary btn-sm" id="refreshBtn" onclick="refreshStats()">
@@ -898,8 +900,8 @@
 <div class="card bg-dark mb-4">
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-globe"></i> Puma (Mastodon Web)</h5></div>
     <div class="card-body">
-        <div class="row g-3">
-            <div class="col-md-4">
+        <div class="row g-3 mb-3">
+            <div class="col-md-2">
                 <div class="text-muted small">Health Check</div>
                 <div class="fs-5" id="stat-puma-health">
                     {% if stats.health_status == 'OK' %}
@@ -909,15 +911,57 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="text-muted small">Started At</div>
-                <div>{{ stats.started_at|default('N/A') }}</div>
+            <div class="col-md-2">
+                <div class="text-muted small">Mastodon Version</div>
+                <div class="font-monospace small">{{ stats.mastodon_version|default('N/A') }}</div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-2">
+                <div class="text-muted small">Workers</div>
+                <div class="fs-5">{{ stats.workers|default('N/A') }}</div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Threads</div>
+                <div class="fs-5">
+                    {% if stats.min_threads is defined and stats.max_threads is defined %}
+                    {{ stats.min_threads }}–{{ stats.max_threads }}
+                    {% else %}
+                    N/A
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-md-2">
                 <div class="text-muted small">Port</div>
                 <div class="fs-5">{{ service.port or 'N/A' }}</div>
             </div>
+            <div class="col-md-2">
+                <div class="text-muted small">Started At</div>
+                <div class="small">{{ stats.started_at|default('N/A') }}</div>
+            </div>
         </div>
+
+        {% if stats.worker_processes %}
+        <h6 class="text-muted mt-2 mb-2">Worker Processes</h6>
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0" aria-label="Puma worker processes">
+                <thead>
+                    <tr>
+                        <th scope="col">PID</th>
+                        <th scope="col">CPU %</th>
+                        <th scope="col">Memory</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for proc in stats.worker_processes %}
+                <tr>
+                    <td class="font-monospace">{{ proc.pid }}</td>
+                    <td>{{ proc.cpu_pct }}</td>
+                    <td>{{ proc.mem_human }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
     </div>
 </div>
 
