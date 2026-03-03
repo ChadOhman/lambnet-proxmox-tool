@@ -128,7 +128,7 @@
                     {% if stats.guests_error > 0 %}Scan Errors{% elif stats.guests_never_scanned > 0 %}Never Scanned{% else %}Scan Health{% endif %}
                 </div>
                 {% if stats.guests_error > 0 and stats.guests_never_scanned > 0 %}
-                <a href="/guests?filter=never_scanned" class="small text-warning d-block mt-1">{{ stats.guests_never_scanned }} never scanned</a>
+                <div class="small text-warning mt-1">{{ stats.guests_never_scanned }} never scanned</div>
                 {% endif %}
             </div>
         </a>
