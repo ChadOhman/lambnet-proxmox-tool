@@ -1792,9 +1792,18 @@ def _stats_postgresql(guest):
                 stats["tables"] = tables
                 stats["tables_database"] = _table_target_db
 
-    # Historical slow queries from pg_stat_statements (graceful if extension absent)
+    # Historical slow queries from pg_stat_statements (graceful if extension absent).
+    # pg_stat_statements must be queried from the database where the extension is
+    # installed — typically the application DB, not the default "postgres" DB.
+    # Use the largest non-template DB we already collected; fall back to "postgres".
+    _ss_db = "postgres"
+    for _db in stats.get("databases", []):
+        _db_name = _db.get("name", "")
+        if _db_name and _db_name not in ("postgres", "template0", "template1"):
+            _ss_db = _db_name
+            break
     out, _ = _execute_command(guest,
-        "sudo -u postgres psql -t -A -c \""
+        f"sudo -u postgres psql -d {_ss_db} -t -A -c \""  # noqa: S608
         "SELECT round(mean_exec_time::numeric,2), calls, "
         "round(total_exec_time::numeric,2), rows, "
         "replace(replace(left(query,200),chr(10),' '),chr(13),' ') "

@@ -1570,23 +1570,39 @@ function ltUpdateAll() {
 ltLoadInstalled();
 {% endif %}
 
+function _showCopyToast() {
+    let toast = document.getElementById('copy-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'copy-toast';
+        toast.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;' +
+            'background:#198754;color:#fff;padding:.45rem .9rem;border-radius:.375rem;' +
+            'font-size:.875rem;opacity:0;transition:opacity .2s';
+        toast.textContent = 'Query copied';
+        document.body.appendChild(toast);
+    }
+    clearTimeout(toast._t);
+    toast.style.opacity = '1';
+    toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 1800);
+}
+
+function _copyFallback(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); _showCopyToast(); } catch (e) { /* silent */ }
+    document.body.removeChild(ta);
+}
+
 function copyQuery(el) {
     const text = el.title || el.textContent.trim();
-    navigator.clipboard.writeText(text).then(() => {
-        let toast = document.getElementById('copy-toast');
-        if (!toast) {
-            toast = document.createElement('div');
-            toast.id = 'copy-toast';
-            toast.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;' +
-                'background:#198754;color:#fff;padding:.45rem .9rem;border-radius:.375rem;' +
-                'font-size:.875rem;opacity:0;transition:opacity .2s';
-            toast.textContent = 'Query copied';
-            document.body.appendChild(toast);
-        }
-        clearTimeout(toast._t);
-        toast.style.opacity = '1';
-        toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 1800);
-    });
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(_showCopyToast).catch(() => _copyFallback(text));
+    } else {
+        _copyFallback(text);
+    }
 }
 
 function refreshLogs() {
