@@ -1,9 +1,11 @@
+import json
 import logging
+from datetime import datetime, timezone
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from audit import log_action
-from models import db, Guest, GuestService
+from models import db, Guest, GuestService, ServiceMetricSnapshot
 from scanner import (check_service_statuses, service_action, get_service_logs, get_service_stats,
                      sidekiq_clear_dead, sidekiq_retry_dead,
                      sidekiq_clear_retry, sidekiq_retry_retry,
@@ -312,11 +314,232 @@ def pg_kill_query(service_id, pid):
     return jsonify({"ok": False, "message": f"Unexpected result: {(result or error or '')[:100]}"})
 
 
+def _safe_int(v):
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_float(v):
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _pg_guard(service_id):
+    """Return (svc, guest) or raise 404. Also checks service type."""
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "postgresql":
+        return None, None
+    return svc, svc.guest
+
+
+@bp.route("/<int:service_id>/pg/vacuum", methods=["POST"])
+def pg_vacuum(service_id):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
+    svc, guest = _pg_guard(service_id)
+    if svc is None:
+        return jsonify({"ok": False, "message": "Not a PostgreSQL service"}), 400
+    data = request.get_json(silent=True) or {}
+    database = (data.get("database") or "").strip()
+    analyze = bool(data.get("analyze", False))
+    if not database:
+        return jsonify({"ok": False, "message": "database is required"}), 400
+    from scanner import _execute_command
+    verb = "VACUUM ANALYZE" if analyze else "VACUUM"
+    stdout, error = _execute_command(
+        guest,
+        f"sudo -u postgres psql -d {database} -c \"{verb}\" 2>&1",
+        timeout=120,
+        sudo=True,
+    )
+    if error:
+        return jsonify({"ok": False, "message": f"SSH error: {error[:300]}"})
+    log_action("pg_vacuum", "guest", resource_id=guest.id, resource_name=guest.name,
+               details={"service": svc.service_name, "database": database, "analyze": analyze})
+    db.session.commit()
+    output = (stdout or "").strip() or f"{verb} completed."
+    return jsonify({"ok": True, "message": output})
+
+
+@bp.route("/<int:service_id>/pg/explain", methods=["POST"])
+def pg_explain(service_id):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
+    svc, guest = _pg_guard(service_id)
+    if svc is None:
+        return jsonify({"ok": False, "message": "Not a PostgreSQL service"}), 400
+    data = request.get_json(silent=True) or {}
+    database = (data.get("database") or "").strip()
+    query = (data.get("query") or "").strip()
+    if not database or not query:
+        return jsonify({"ok": False, "message": "database and query are required"}), 400
+    from scanner import _execute_command
+    import uuid
+    tmpfile = f"/tmp/.pg_ea_{uuid.uuid4().hex[:12]}.sql"
+    # Use a temp file to avoid shell-quoting issues with arbitrary SQL
+    safe_query = query.replace("'", "'\\''")
+    _, write_err = _execute_command(
+        guest,
+        f"printf '%s' 'EXPLAIN ANALYZE {safe_query}' > {tmpfile}",
+        timeout=10,
+    )
+    if write_err:
+        return jsonify({"ok": False, "message": f"Could not write temp file: {write_err[:200]}"})
+    stdout, error = _execute_command(
+        guest,
+        f"sudo -u postgres psql -d {database} -f {tmpfile} 2>&1; rm -f {tmpfile}",
+        timeout=60,
+        sudo=True,
+    )
+    if error:
+        _execute_command(guest, f"rm -f {tmpfile}", timeout=5)
+        return jsonify({"ok": False, "message": f"SSH error: {error[:300]}"})
+    log_action("pg_explain_analyze", "guest", resource_id=guest.id, resource_name=guest.name,
+               details={"service": svc.service_name, "database": database})
+    db.session.commit()
+    return jsonify({"ok": True, "plan": (stdout or "").strip()})
+
+
+@bp.route("/<int:service_id>/pg/roles")
+def pg_roles(service_id):
+    svc, guest = _pg_guard(service_id)
+    if svc is None:
+        return jsonify({"error": "Not a PostgreSQL service"}), 400
+    from scanner import _execute_command
+    stdout, error = _execute_command(
+        guest,
+        "sudo -u postgres psql -t -A -c \""
+        "SELECT rolname, rolsuper, rolcreaterole, rolcreatedb, rolcanlogin, rolreplication, rolconnlimit "
+        "FROM pg_roles ORDER BY rolname"
+        "\" 2>/dev/null",
+        timeout=10,
+        sudo=True,
+    )
+    if error:
+        return jsonify({"error": error[:200]}), 500
+    roles = []
+    for line in (stdout or "").strip().split("\n"):
+        parts = line.strip().split("|")
+        if len(parts) == 7:
+            roles.append({
+                "name": parts[0],
+                "superuser": parts[1] == "t",
+                "create_role": parts[2] == "t",
+                "create_db": parts[3] == "t",
+                "can_login": parts[4] == "t",
+                "replication": parts[5] == "t",
+                "conn_limit": parts[6],
+            })
+    return jsonify({"roles": roles})
+
+
+@bp.route("/<int:service_id>/pg/settings")
+def pg_settings(service_id):
+    svc, guest = _pg_guard(service_id)
+    if svc is None:
+        return jsonify({"error": "Not a PostgreSQL service"}), 400
+    from scanner import _execute_command
+    # Fetch a curated set of important settings
+    names = (
+        "max_connections,shared_buffers,work_mem,maintenance_work_mem,"
+        "effective_cache_size,wal_level,max_wal_size,checkpoint_completion_target,"
+        "log_min_duration_statement,autovacuum,autovacuum_vacuum_scale_factor,"
+        "autovacuum_analyze_scale_factor,random_page_cost,effective_io_concurrency,"
+        "max_worker_processes,max_parallel_workers"
+    )
+    stdout, error = _execute_command(
+        guest,
+        f"sudo -u postgres psql -t -A -c \""
+        f"SELECT name, setting, unit, short_desc FROM pg_settings "
+        f"WHERE name = ANY(ARRAY[{','.join(repr(n) for n in names.split(','))}]) "
+        f"ORDER BY name"
+        f"\" 2>/dev/null",
+        timeout=10,
+        sudo=True,
+    )
+    if error:
+        return jsonify({"error": error[:200]}), 500
+    settings = []
+    for line in (stdout or "").strip().split("\n"):
+        parts = line.strip().split("|", 3)
+        if len(parts) == 4:
+            settings.append({
+                "name": parts[0],
+                "setting": parts[1],
+                "unit": parts[2],
+                "description": parts[3],
+            })
+    return jsonify({"settings": settings})
+
+
+@bp.route("/<int:service_id>/pg/metrics-history")
+def pg_metrics_history(service_id):
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "postgresql":
+        return jsonify({"error": "Not a PostgreSQL service"}), 400
+    limit = min(int(request.args.get("limit", 144)), 288)  # default 12h at 5-min
+    rows = (
+        ServiceMetricSnapshot.query
+        .filter_by(service_id=svc.id)
+        .order_by(ServiceMetricSnapshot.captured_at.asc())
+        .limit(limit)
+        .all()
+    )
+    result = []
+    for row in rows:
+        try:
+            d = json.loads(row.data or "{}")
+        except (json.JSONDecodeError, TypeError):
+            d = {}
+        d["captured_at"] = row.captured_at.isoformat()
+        result.append(d)
+    return jsonify({"snapshots": result})
+
+
 @bp.route("/<int:service_id>/stats")
 def stats(service_id):
     svc = GuestService.query.get_or_404(service_id)
     guest = svc.guest
     data = get_service_stats(guest, svc)
+
+    # Persist a metric snapshot for PostgreSQL services
+    if svc.service_name == "postgresql" and data.get("type") == "postgresql":
+        try:
+            snapshot_data = {
+                "total_connections": _safe_int(data.get("total_connections")),
+                "cache_hit_ratio": _safe_float(str(data.get("cache_hit_ratio", "")).rstrip("%")),
+                "active_queries": _safe_int(data.get("active_queries")),
+                "lock_waits": data.get("lock_waits", 0),
+                "total_commits": _safe_int(data.get("total_commits")),
+                "total_rollbacks": _safe_int(data.get("total_rollbacks")),
+            }
+            snap = ServiceMetricSnapshot(
+                service_id=svc.id,
+                captured_at=datetime.now(timezone.utc),
+                data=json.dumps(snapshot_data),
+            )
+            db.session.add(snap)
+            # Prune: keep most recent 288 rows per service (≈24h at 5-min intervals)
+            old_ids = (
+                db.session.query(ServiceMetricSnapshot.id)
+                .filter_by(service_id=svc.id)
+                .order_by(ServiceMetricSnapshot.captured_at.desc())
+                .offset(288)
+                .all()
+            )
+            if old_ids:
+                ServiceMetricSnapshot.query.filter(
+                    ServiceMetricSnapshot.id.in_([r[0] for r in old_ids])
+                ).delete(synchronize_session=False)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception("Failed to save PostgreSQL metric snapshot for service %s", svc.id)
+
     return jsonify(data)
 
 

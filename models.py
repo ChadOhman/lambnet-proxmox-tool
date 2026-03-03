@@ -481,6 +481,20 @@ class GuestService(db.Model):
         return f"<GuestService {self.service_name} on guest {self.guest_id}>"
 
 
+class ServiceMetricSnapshot(db.Model):
+    """Time-series snapshots of key scalar metrics for a service (currently PostgreSQL)."""
+    __tablename__ = "service_metric_snapshots"
+
+    id = db.Column(db.Integer, primary_key=True)
+    service_id = db.Column(db.Integer, db.ForeignKey("guest_services.id", ondelete="CASCADE"), nullable=False, index=True)
+    captured_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    # JSON blob: {"total_connections": 5, "cache_hit_ratio": 99.2, "active_queries": 1, ...}
+    data = db.Column(db.Text, nullable=True)
+
+    def __repr__(self):
+        return f"<ServiceMetricSnapshot service={self.service_id} at={self.captured_at}>"
+
+
 class Setting(db.Model):
     __tablename__ = "settings"
 
