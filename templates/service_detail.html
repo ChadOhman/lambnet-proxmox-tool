@@ -390,7 +390,7 @@
                 {% for db_name, entry in stats.keyspace.items() %}
                 <tr>
                     <td class="font-monospace">{{ db_name }}</td>
-                    <td>{{ '{:,}'.format(entry.keys|default(0)) }}</td>
+                    <td>{{ '{:,}'.format(entry['keys']|default(0)) }}</td>
                     <td>{{ '{:,}'.format(entry.expires|default(0)) }}</td>
                     <td>
                         {% set ttl_ms = entry.avg_ttl|default(0) %}
