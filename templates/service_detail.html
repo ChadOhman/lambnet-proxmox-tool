@@ -429,6 +429,12 @@
         <!-- ── Queries tab ── -->
         <div class="tab-pane fade" id="pg-queries" role="tabpanel" aria-labelledby="pg-queries-tab">
 
+            <div class="d-flex justify-content-end mt-2 mb-1">
+                <button class="btn btn-outline-secondary btn-sm" id="pgRefreshQueriesBtn" onclick="pgRefreshQueries()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+
             <!-- Slow running queries -->
             <div class="mt-2 mb-3">
                 <h6 class="text-muted mb-2 small"><i class="bi bi-stopwatch"></i> Slow Running Queries <span class="text-muted fw-normal">(≥ 5s)</span></h6>
@@ -534,7 +540,7 @@
                             <td>{{ '{:,}'.format(s.calls) }}</td>
                             <td class="text-nowrap">{{ '{:,.0f}'.format(s.total_ms) }}</td>
                             <td>{{ '{:,}'.format(s.rows) }}</td>
-                            <td class="font-monospace small text-truncate" style="max-width:420px" title="{{ s.query | e }}">{{ s.query }}</td>
+                            <td class="font-monospace small text-truncate" style="max-width:420px; cursor:pointer" title="{{ s.query | e }}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">{{ s.query }}</td>
                         </tr>
                         {% endfor %}
                         </tbody>
@@ -1070,7 +1076,7 @@ function refreshStats() {
                                 <td>${Number(s.calls).toLocaleString()}</td>
                                 <td class="text-nowrap">${Math.round(s.total_ms).toLocaleString()}</td>
                                 <td>${Number(s.rows).toLocaleString()}</td>
-                                <td class="font-monospace small text-truncate" style="max-width:420px" title="${escHtml(s.query)}">${escHtml(s.query)}</td>
+                                <td class="font-monospace small text-truncate" style="max-width:420px; cursor:pointer" title="${escHtml(s.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(s.query)}</td>
                             </tr>`;
                         }).join('');
                         stmtsContainer.innerHTML = `<h6 class="text-muted mb-2 small"><i class="bi bi-clock-history"></i> Top Queries by Mean Time <span class="badge bg-secondary ms-1">pg_stat_statements</span></h6>
@@ -1731,6 +1737,115 @@ function pgLoadSettings() {
         document.getElementById('pgSettingsLoadBtn').style.display = 'none';
     })
     .catch(e => { container.innerHTML = `<div class="text-danger small">Failed: ${escHtml(String(e))}</div>`; });
+}
+
+// --- Queries tab refresh ---
+function pgRefreshQueries() {
+    const btn = document.getElementById('pgRefreshQueriesBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    fetch('/services/{{ service.id }}/stats', {cache: 'no-store'})
+        .then(r => r.json())
+        .then(data => {
+            const svcId = {{ service.id }};
+
+            // Slow queries
+            const slowContainer = document.getElementById('pg-slow-queries-container');
+            if (slowContainer) {
+                const slow = (data.active_query_list || []).filter(q => q.duration_secs >= 5)
+                    .sort((a, b) => b.duration_secs - a.duration_secs);
+                if (slow.length > 0) {
+                    const killTh = canEditServices ? '<th scope="col"><span class="visually-hidden">Actions</span></th>' : '';
+                    const rows = slow.map(q => {
+                        const durCls = q.duration_secs >= 30 ? 'text-danger fw-bold' : 'text-warning';
+                        const killBtn = canEditServices
+                            ? `<td><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill PID ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i></button></td>`
+                            : '';
+                        return `<tr>
+                            <td class="font-monospace text-nowrap small">${escHtml(q.datname)}</td>
+                            <td class="font-monospace text-nowrap small">${escHtml(q.usename)}</td>
+                            <td class="text-nowrap small ${durCls}">${escHtml(q.duration)}</td>
+                            <td class="font-monospace small text-truncate" style="max-width:360px; cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
+                            ${killBtn}
+                        </tr>`;
+                    }).join('');
+                    slowContainer.innerHTML = `<div class="table-responsive">
+                        <table class="table table-dark table-sm mb-0">
+                            <thead><tr><th scope="col">DB</th><th scope="col">User</th><th scope="col">Duration</th><th scope="col">Query</th>${killTh}</tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>`;
+                } else {
+                    slowContainer.innerHTML = '<p class="text-success small mb-0"><i class="bi bi-check-circle"></i> No slow queries</p>';
+                }
+            }
+
+            // Active queries
+            const activeContainer = document.getElementById('pg-active-queries-container');
+            if (activeContainer) {
+                const list = data.active_query_list || [];
+                if (list.length > 0) {
+                    const rows = list.map(q => {
+                        const badge = q.state === 'active' ? 'bg-success'
+                            : (q.state || '').includes('transaction') ? 'bg-warning text-dark' : 'bg-secondary';
+                        const durCls = q.duration_secs >= 30 ? 'text-danger' : q.duration_secs >= 5 ? 'text-warning' : '';
+                        return `<tr>
+                            <td class="font-monospace text-nowrap">${escHtml(q.datname)}</td>
+                            <td class="font-monospace text-nowrap">${escHtml(q.usename)}</td>
+                            <td><span class="badge ${badge}">${escHtml(q.state)}</span></td>
+                            <td class="text-nowrap ${durCls}">${escHtml(q.duration)}</td>
+                            <td class="font-monospace small text-truncate" style="max-width:420px; cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
+                            <td class="text-end">${canEditServices ? `<button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill backend ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i> Kill</button>` : ''}</td>
+                        </tr>`;
+                    }).join('');
+                    activeContainer.innerHTML = `<h6 class="text-muted mb-2 small">All Active Queries</h6>
+                        <div class="table-responsive">
+                            <table class="table table-dark table-sm mb-0" aria-label="Active PostgreSQL queries">
+                                <thead><tr><th scope="col">Database</th><th scope="col">User</th><th scope="col">State</th><th scope="col">Duration</th><th scope="col">Query</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                                <tbody>${rows}</tbody>
+                            </table>
+                        </div>`;
+                } else {
+                    activeContainer.innerHTML = '<p class="text-muted small mt-2"><i class="bi bi-check-circle"></i> No active queries</p>';
+                }
+            }
+
+            // pg_stat_statements
+            const stmtsContainer = document.getElementById('pg-stat-statements-container');
+            if (stmtsContainer) {
+                if (Array.isArray(data.slow_query_stats) && data.slow_query_stats.length > 0) {
+                    const rows = data.slow_query_stats.map(s => {
+                        const meanCls = s.mean_ms >= 1000 ? 'text-danger' : s.mean_ms >= 100 ? 'text-warning' : '';
+                        return `<tr>
+                            <td class="${meanCls} text-nowrap">${Number(s.mean_ms).toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1})}</td>
+                            <td>${Number(s.calls).toLocaleString()}</td>
+                            <td class="text-nowrap">${Math.round(s.total_ms).toLocaleString()}</td>
+                            <td>${Number(s.rows).toLocaleString()}</td>
+                            <td class="font-monospace small text-truncate" style="max-width:420px; cursor:pointer" title="${escHtml(s.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(s.query)}</td>
+                        </tr>`;
+                    }).join('');
+                    stmtsContainer.innerHTML = `<h6 class="text-muted mb-2 small"><i class="bi bi-clock-history"></i> Top Queries by Mean Time <span class="badge bg-secondary ms-1">pg_stat_statements</span></h6>
+                        <div class="table-responsive">
+                            <table class="table table-dark table-sm mb-0">
+                                <thead><tr><th>Mean (ms)</th><th>Calls</th><th>Total (ms)</th><th>Rows</th><th>Query</th></tr></thead>
+                                <tbody>${rows}</tbody>
+                            </table>
+                        </div>`;
+                } else {
+                    stmtsContainer.innerHTML = '<h6 class="text-muted mb-2 small"><i class="bi bi-clock-history"></i> Top Queries by Mean Time <span class="badge bg-secondary ms-1">pg_stat_statements</span></h6>'
+                        + '<p class="text-muted small mb-0"><i class="bi bi-info-circle"></i> No data \u2014 <code>pg_stat_statements</code> extension may not be installed.</p>';
+                }
+            }
+
+            // Update the active query count badge in the Overview tab too
+            const activeEl = document.getElementById('stat-pg-active');
+            if (activeEl && data.active_queries != null) activeEl.textContent = data.active_queries;
+        })
+        .catch(() => { /* fail silently — user can try again */ })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh';
+        });
 }
 
 // --- TABLES tab helper (reload on tab activation after refresh) ---
