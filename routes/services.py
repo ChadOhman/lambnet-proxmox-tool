@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from sqlalchemy import func
 from flask_login import login_required, current_user
 from audit import log_action
 from models import db, AuditLog, Guest, GuestService, ServiceMetricSnapshot
@@ -166,9 +167,10 @@ def detail(service_id):
     log_text = get_service_logs(guest, svc, lines=30)
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     recent_logs = (AuditLog.query
-                   .filter(AuditLog.resource_type == "service",
-                           AuditLog.resource_id == svc.id,
-                           AuditLog.timestamp >= cutoff)
+                   .filter(AuditLog.resource_type == "guest",
+                           AuditLog.resource_id == guest.id,
+                           AuditLog.timestamp >= cutoff,
+                           func.json_extract(AuditLog.details, "$.service") == svc.service_name)
                    .order_by(AuditLog.timestamp.desc())
                    .limit(25).all())
     return render_template("service_detail.html", service=svc, guest=guest, stats=stats, logs=log_text,
