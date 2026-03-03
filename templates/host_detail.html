@@ -9,7 +9,7 @@
     </ol>
 </nav>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-wrap gap-3 justify-content-between align-items-start mb-4">
     <div>
         <h2>
             {% if node_status %}
@@ -34,7 +34,7 @@
         <span class="badge bg-info ms-1">{{ node_status.pveversion }}</span>
         {% endif %}
     </div>
-    <div>
+    <div class="flex-shrink-0">
         {% if current_user.is_super_admin and not host.is_pbs %}
         <form method="post" action="/hosts/{{ host.id }}/discover" class="d-inline">
             <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i> Discover Guests</button>

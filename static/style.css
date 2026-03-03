@@ -129,3 +129,21 @@ a.stat-card {
 .table > :not(caption) > * > * {
     vertical-align: middle;
 }
+
+/* Constrain query text in table cells so text-truncate can take effect */
+.query-cell {
+    max-width: min(420px, 50vw);
+}
+
+@media (max-width: 575.98px) {
+    /* Slightly larger touch targets for small buttons */
+    .btn-sm {
+        min-height: 2rem;
+        min-width: 2rem;
+    }
+
+    /* Reclaim horizontal space on narrow screens */
+    .card-body {
+        padding: 0.75rem;
+    }
+}

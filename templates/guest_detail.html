@@ -9,7 +9,7 @@
     </ol>
 </nav>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-wrap gap-3 justify-content-between align-items-start mb-4">
     <div>
         <h2>
             {% if guest.power_state == 'running' %}
@@ -25,7 +25,7 @@
             <span class="badge bg-{{ 'primary' if guest.guest_type == 'vm' else 'success' }}">{{ guest.guest_type|upper }}</span>
         </h2>
     </div>
-    <div>
+    <div class="flex-shrink-0">
         {% if guest.ip_address and (current_user.can_ssh or current_user.can_manage_guests) %}
         <a href="/terminal/{{ guest.id }}" class="btn btn-outline-success">
             <i class="bi bi-terminal"></i> SSH
@@ -40,7 +40,7 @@
         </form>
         {% endif %}
         <form method="post" action="/guests/{{ guest.id }}/delete" class="d-inline" onsubmit="return confirm('Delete this guest?')">
-            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+            <button type="submit" class="btn btn-outline-danger" aria-label="Delete guest"><i class="bi bi-trash" aria-hidden="true"></i></button>
         </form>
     </div>
 </div>
@@ -388,7 +388,7 @@
                                 <i class="bi bi-journal-text"></i>
                             </button>
                             <form method="post" action="/services/{{ svc.id }}/remove" class="d-inline" onsubmit="return confirm('Remove {{ svc.service_name }}?')">
-                                <button type="submit" class="btn btn-outline-danger" title="Remove"><i class="bi bi-trash"></i></button>
+                                <button type="submit" class="btn btn-outline-danger" title="Remove service" aria-label="Remove service"><i class="bi bi-trash" aria-hidden="true"></i></button>
                             </form>
                         </div>
                     </td>
@@ -529,10 +529,10 @@
                         {% if current_user.can_manage_guests %}
                         <td>
                             <form method="post" action="/guests/{{ guest.id }}/snapshot/{{ snap.name }}/rollback" class="d-inline" onsubmit="return confirm('Rollback {{ guest.name }} to snapshot {{ snap.name }}? This will revert the guest to that point in time.')">
-                                <button type="submit" class="btn btn-outline-warning btn-sm" title="Rollback"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                <button type="submit" class="btn btn-outline-warning btn-sm" title="Rollback to {{ snap.name }}" aria-label="Rollback to {{ snap.name }}"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
                             </form>
                             <form method="post" action="/guests/{{ guest.id }}/snapshot/{{ snap.name }}/delete" class="d-inline" onsubmit="return confirm('Delete snapshot {{ snap.name }}?')">
-                                <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete"><i class="bi bi-trash"></i></button>
+                                <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete snapshot {{ snap.name }}" aria-label="Delete snapshot {{ snap.name }}"><i class="bi bi-trash" aria-hidden="true"></i></button>
                             </form>
                         </td>
                         {% endif %}
@@ -656,11 +656,11 @@
                                 {% else %}
                                 <form method="post" action="/guests/{{ guest.id }}/backup/{{ backup.volid }}/protect" class="d-inline">
                                     <input type="hidden" name="protected" value="1">
-                                    <button type="submit" class="btn btn-outline-success" title="Protect"><i class="bi bi-lock"></i></button>
+                                    <button type="submit" class="btn btn-outline-success" title="Protect backup" aria-label="Protect backup"><i class="bi bi-lock" aria-hidden="true"></i></button>
                                 </form>
                                 {% endif %}
                                 <form method="post" action="/guests/{{ guest.id }}/backup/{{ backup.volid }}/delete" class="d-inline" onsubmit="return confirm('Delete this backup? This cannot be undone.')">
-                                    <button type="submit" class="btn btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                    <button type="submit" class="btn btn-outline-danger" title="Delete backup" aria-label="Delete backup"><i class="bi bi-trash" aria-hidden="true"></i></button>
                                 </form>
                             </div>
                         </td>

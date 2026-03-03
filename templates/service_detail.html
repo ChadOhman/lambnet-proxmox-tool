@@ -11,7 +11,7 @@
     </ol>
 </nav>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-wrap gap-3 justify-content-between align-items-start mb-4">
     <div>
         <h2>
             {% if service.status == 'running' %}
@@ -33,7 +33,7 @@
         {% if stats.puma_version %}<span class="ms-2 badge bg-secondary">Puma {{ stats.puma_version }}</span>{% endif %}
         {% if stats.sidekiq_version %}<span class="ms-2 badge bg-secondary">Sidekiq {{ stats.sidekiq_version }}</span>{% endif %}
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-shrink-0">
         <button class="btn btn-outline-primary btn-sm" id="refreshBtn" onclick="refreshStats()">
             <i class="bi bi-arrow-clockwise"></i> Refresh
         </button>
@@ -57,7 +57,7 @@
 
 <!-- Common Stats -->
 <div class="row g-3 mb-4">
-    <div class="col-md-3">
+    <div class="col-6 col-md-3">
         <div class="card bg-dark text-center">
             <div class="card-body py-3">
                 <div class="text-muted small">Status</div>
@@ -75,7 +75,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-6 col-md-3">
         <div class="card bg-dark text-center">
             <div class="card-body py-3">
                 <div class="text-muted small">Memory</div>
@@ -83,7 +83,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-6 col-md-3">
         <div class="card bg-dark text-center">
             <div class="card-body py-3">
                 <div class="text-muted small">CPU Time</div>
@@ -91,7 +91,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-6 col-md-3">
         <div class="card bg-dark text-center">
             <div class="card-body py-3">
                 <div class="text-muted small">PID</div>
@@ -259,19 +259,19 @@
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-database"></i> Memory</h5></div>
     <div class="card-body">
         <div class="row g-3 mb-3">
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Used Memory</div>
                 <div class="fs-5" id="stat-redis-mem">{{ stats.used_memory|default('N/A') }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">RSS Memory</div>
                 <div class="fs-5">{{ stats.used_memory_rss|default('N/A') }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Peak Memory</div>
                 <div class="fs-5">{{ stats.used_memory_peak|default('N/A') }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Max Memory</div>
                 <div class="fs-5">{{ stats.maxmemory|default('N/A') }}</div>
                 {% if stats.maxmemory_policy %}<div class="text-muted small font-monospace">{{ stats.maxmemory_policy }}</div>{% endif %}
@@ -279,7 +279,7 @@
         </div>
         {% if stats.mem_fragmentation_ratio %}
         <div class="row g-3">
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Fragmentation Ratio</div>
                 {% set frag = stats.mem_fragmentation_ratio|float %}
                 {% if frag < 1.0 %}
@@ -299,19 +299,19 @@
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-people"></i> Clients &amp; Connections</h5></div>
     <div class="card-body">
         <div class="row g-3">
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Connected Clients</div>
                 <div class="fs-5" id="stat-redis-clients">{{ stats.connected_clients|default('0') }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Blocked Clients</div>
                 <div class="fs-5">{{ stats.blocked_clients|default('0') }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Total Connections</div>
                 <div class="fs-5">{{ '{:,}'.format(stats.total_connections|default(0)|int) }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Uptime</div>
                 <div class="fs-5">{{ stats.uptime_human|default('N/A') }}</div>
             </div>
@@ -323,37 +323,37 @@
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-activity"></i> Operations</h5></div>
     <div class="card-body">
         <div class="row g-3 mb-3">
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Ops/sec</div>
                 <div class="fs-5" id="stat-redis-ops">{{ stats.ops_per_sec|default('0') }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Hit Ratio</div>
                 <div class="fs-5" id="stat-redis-hitratio">{{ stats.hit_ratio|default('N/A') }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Evicted Keys</div>
                 <div class="fs-5">{{ '{:,}'.format(stats.evicted_keys|default(0)) }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Expired Keys</div>
                 <div class="fs-5">{{ '{:,}'.format(stats.expired_keys|default(0)) }}</div>
             </div>
         </div>
         <div class="row g-3">
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Keyspace Hits</div>
                 <div class="fs-5">{{ '{:,}'.format(stats.keyspace_hits|default(0)) }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Keyspace Misses</div>
                 <div class="fs-5">{{ '{:,}'.format(stats.keyspace_misses|default(0)) }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Total Commands</div>
                 <div class="fs-5">{{ '{:,}'.format(stats.total_commands|default(0)|int) }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Network I/O</div>
                 <div class="fs-5">&#8595;{{ stats.net_input_kbps|default('0') }} / &#8593;{{ stats.net_output_kbps|default('0') }} <span class="text-muted small">kbps</span></div>
                 <div class="text-muted small">{{ stats.net_input_bytes|default('') }} in / {{ stats.net_output_bytes|default('') }} out</div>
@@ -366,7 +366,7 @@
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-hdd"></i> Persistence</h5></div>
     <div class="card-body">
         <div class="row g-3">
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">RDB Last Save</div>
                 {% if stats.rdb_last_save_ts %}
                 <div class="fs-6" id="redis-rdb-last-save" data-ts="{{ stats.rdb_last_save_ts }}">—</div>
@@ -383,11 +383,11 @@
                 <div class="fs-6 text-muted">N/A</div>
                 {% endif %}
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Unsaved Changes</div>
                 <div class="fs-5">{{ '{:,}'.format(stats.rdb_changes|default(0)) }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">RDB Status</div>
                 {% if stats.rdb_bgsave_status == 'ok' %}
                 <span class="badge bg-success">ok</span>
@@ -397,7 +397,7 @@
                 <span class="text-muted">N/A</span>
                 {% endif %}
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">AOF</div>
                 {% if stats.aof_enabled %}
                 <span class="badge bg-success">Enabled</span>
@@ -415,7 +415,7 @@
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-diagram-3"></i> Replication</h5></div>
     <div class="card-body">
         <div class="row g-3">
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Role</div>
                 {% if stats.role == 'master' %}
                 <span class="badge bg-primary fs-6">master</span>
@@ -426,20 +426,20 @@
                 {% endif %}
             </div>
             {% if stats.role == 'master' %}
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Connected Replicas</div>
                 <div class="fs-5">{{ stats.connected_slaves|default(0) }}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Replication Backlog</div>
                 <div class="fs-5">{{ stats.repl_backlog_size|default('N/A') }}</div>
             </div>
             {% elif stats.role in ('slave', 'replica') %}
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Master</div>
                 <div class="fs-6 font-monospace">{{ stats.master_host|default('') }}{% if stats.master_port %}:{{ stats.master_port }}{% endif %}</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="text-muted small">Link Status</div>
                 {% if stats.master_link_status == 'up' %}
                 <span class="badge bg-success">up</span>
@@ -712,9 +712,9 @@
                             <td class="font-monospace text-nowrap small">{{ q.datname }}</td>
                             <td class="font-monospace text-nowrap small">{{ q.usename }}</td>
                             <td class="text-nowrap small {% if q.duration_secs >= 30 %}text-danger fw-bold{% else %}text-warning{% endif %}">{{ q.duration }}</td>
-                            <td class="font-monospace small text-truncate" style="max-width:360px; cursor:pointer" title="{{ q.query | e }}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">{{ q.query }}</td>
+                            <td class="font-monospace small text-truncate query-cell" style="cursor:pointer" title="{{ q.query | e }}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">{{ q.query }}</td>
                             {% if current_user.can_edit_services %}
-                            <td><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="{{ q.pid }}" data-service-id="{{ service.id }}" title="Kill PID {{ q.pid }}"><i class="bi bi-x-circle"></i></button></td>
+                            <td><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="{{ q.pid }}" data-service-id="{{ service.id }}" title="Kill PID {{ q.pid }}" aria-label="Kill PID {{ q.pid }}"><i class="bi bi-x-circle" aria-hidden="true"></i></button></td>
                             {% endif %}
                         </tr>
                         {% endfor %}
@@ -757,7 +757,7 @@
                         <td class="text-nowrap {% if q.duration_secs >= 30 %}text-danger{% elif q.duration_secs >= 5 %}text-warning{% endif %}">
                             {{ q.duration }}
                         </td>
-                        <td class="font-monospace small text-truncate" style="max-width: 420px; cursor: pointer" title="{{ q.query | e }}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">{{ q.query }}</td>
+                        <td class="font-monospace small text-truncate" style="cursor: pointer" title="{{ q.query | e }}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">{{ q.query }}</td>
                         <td class="text-end">
                             {% if current_user.can_edit_services %}
                             <button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn"
@@ -802,7 +802,7 @@
                             <td>{{ '{:,}'.format(s.calls) }}</td>
                             <td class="text-nowrap">{{ '{:,.0f}'.format(s.total_ms) }}</td>
                             <td>{{ '{:,}'.format(s.rows) }}</td>
-                            <td class="font-monospace small text-truncate" style="max-width:420px; cursor:pointer" title="{{ s.query | e }}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">{{ s.query }}</td>
+                            <td class="font-monospace small text-truncate query-cell" style="cursor:pointer" title="{{ s.query | e }}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">{{ s.query }}</td>
                         </tr>
                         {% endfor %}
                         </tbody>
@@ -824,7 +824,7 @@
             <div class="mt-3 mb-4">
                 <h6 class="text-muted mb-2"><i class="bi bi-brush"></i> VACUUM</h6>
                 <div class="row g-2 align-items-end">
-                    <div class="col-md-4">
+                    <div class="col-12 col-md-4">
                         <label class="form-label small text-muted" for="pgVacuumDb">Database</label>
                         <select id="pgVacuumDb" class="form-select form-select-sm bg-dark text-light border-secondary">
                             {% for db_item in stats.databases %}
@@ -855,7 +855,7 @@
             <div class="mb-4">
                 <h6 class="text-muted mb-2"><i class="bi bi-search"></i> EXPLAIN</h6>
                 <div class="row g-2 mb-2">
-                    <div class="col-md-4">
+                    <div class="col-12 col-md-4">
                         <label class="form-label small text-muted" for="pgExplainDb">Database</label>
                         <select id="pgExplainDb" class="form-select form-select-sm bg-dark text-light border-secondary">
                             {% for db_item in stats.databases %}
@@ -901,7 +901,7 @@
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-globe"></i> Puma (Mastodon Web)</h5></div>
     <div class="card-body">
         <div class="row g-3 mb-3">
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Health Check</div>
                 <div class="fs-5" id="stat-puma-health">
                     {% if stats.health_status == 'OK' %}
@@ -911,11 +911,11 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Workers</div>
                 <div class="fs-5">{{ stats.workers|default('N/A') }}</div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Threads</div>
                 <div class="fs-5">
                     {% if stats.min_threads is defined and stats.max_threads is defined %}
@@ -925,11 +925,11 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Port</div>
                 <div class="fs-5">{{ service.port or 'N/A' }}</div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Started At</div>
                 <div class="small">{{ stats.started_at|default('N/A') }}</div>
             </div>
@@ -966,15 +966,15 @@
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-list-task"></i> Sidekiq</h5></div>
     <div class="card-body">
         <div class="row g-3 mb-3">
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Processed</div>
                 <div class="fs-5" id="stat-sq-processed">{{ '{:,}'.format(stats.processed|default(0)|int) }}</div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Failed</div>
                 <div class="fs-5 {% if stats.failed|default(0)|int > 0 %}text-danger{% endif %}" id="stat-sq-failed">{{ '{:,}'.format(stats.failed|default(0)|int) }}</div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Retry Queue</div>
                 <div class="fs-5" id="stat-sq-retry">{{ stats.retry_size|default('0') }}</div>
                 <div class="d-flex gap-1 mt-1 flex-wrap">
@@ -995,7 +995,7 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Dead</div>
                 <div class="fs-5 {% if stats.dead_size|default(0)|int > 0 %}text-danger{% endif %}" id="stat-sq-dead">{{ stats.dead_size|default('0') }}</div>
                 <div class="d-flex gap-1 mt-1 flex-wrap">
@@ -1016,14 +1016,14 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Scheduled</div>
                 <div class="fs-5" id="stat-sq-sched">{{ stats.scheduled_size|default('0') }}</div>
                 <button class="btn btn-outline-secondary btn-sm mt-1" onclick="openJobModal('schedule')">
                     <i class="bi bi-card-list"></i> Browse
                 </button>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <div class="text-muted small">Instances</div>
                 <div class="fs-5">{{ stats.instances|default([])|length }}</div>
             </div>
@@ -1154,7 +1154,7 @@
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-translate"></i> LibreTranslate</h5></div>
     <div class="card-body">
         <div class="row g-3 mb-3">
-            <div class="col-md-4">
+            <div class="col-6 col-md-4">
                 <div class="text-muted small">Health</div>
                 <div class="fs-5">
                     {% if stats.health_status == 'OK' %}
@@ -1164,11 +1164,11 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-6 col-md-4">
                 <div class="text-muted small">Languages</div>
                 <div class="fs-5">{{ stats.languages_count|default('N/A') }}</div>
             </div>
-            <div class="col-md-4">
+            <div class="col-6 col-md-4">
                 <div class="text-muted small">Port</div>
                 <div class="fs-5">{{ service.port or 'N/A' }}</div>
             </div>
@@ -1250,7 +1250,7 @@
 
 <!-- Sidekiq Job Browser Modal -->
 <div class="modal fade" id="jobBrowserModal" tabindex="-1" aria-labelledby="jobBrowserTitle" aria-modal="true" role="dialog">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-md-down">
         <div class="modal-content bg-dark text-light border-secondary">
             <div class="modal-header border-secondary">
                 <h5 class="modal-title" id="jobBrowserTitle">Jobs</h5>
@@ -1425,13 +1425,13 @@ function refreshStats() {
                         const slowRows = slow.map(q => {
                             const durCls = q.duration_secs >= 30 ? 'text-danger fw-bold' : 'text-warning';
                             const killBtn = canEditServices
-                                ? `<td><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill PID ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i></button></td>`
+                                ? `<td><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill PID ${escHtml(String(q.pid))}" aria-label="Kill PID ${escHtml(String(q.pid))}"><i class="bi bi-x-circle" aria-hidden="true"></i></button></td>`
                                 : '';
                             return `<tr>
                                 <td class="font-monospace text-nowrap small">${escHtml(q.datname)}</td>
                                 <td class="font-monospace text-nowrap small">${escHtml(q.usename)}</td>
                                 <td class="text-nowrap small ${durCls}">${escHtml(q.duration)}</td>
-                                <td class="font-monospace small text-truncate" style="max-width:360px; cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
+                                <td class="font-monospace small text-truncate query-cell" style="cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
                                 ${killBtn}
                             </tr>`;
                         }).join('');
@@ -1462,7 +1462,7 @@ function refreshStats() {
                                 <td class="font-monospace text-nowrap">${escHtml(q.usename)}</td>
                                 <td><span class="badge ${badge}">${escHtml(q.state)}</span></td>
                                 <td class="text-nowrap ${durCls}">${escHtml(q.duration)}</td>
-                                <td class="font-monospace small text-truncate" style="max-width:420px; cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
+                                <td class="font-monospace small text-truncate query-cell" style="cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
                                 <td class="text-end">${canEditServices ? `<button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill backend ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i> Kill</button>` : ''}</td>
                             </tr>`;
                         }).join('');
@@ -1488,7 +1488,7 @@ function refreshStats() {
                                 <td>${Number(s.calls).toLocaleString()}</td>
                                 <td class="text-nowrap">${Math.round(s.total_ms).toLocaleString()}</td>
                                 <td>${Number(s.rows).toLocaleString()}</td>
-                                <td class="font-monospace small text-truncate" style="max-width:420px; cursor:pointer" title="${escHtml(s.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(s.query)}</td>
+                                <td class="font-monospace small text-truncate query-cell" style="cursor:pointer" title="${escHtml(s.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(s.query)}</td>
                             </tr>`;
                         }).join('');
                         stmtsContainer.innerHTML = `<h6 class="text-muted mb-2 small"><i class="bi bi-clock-history"></i> Top Queries by Mean Time <span class="badge bg-secondary ms-1">pg_stat_statements</span></h6>
@@ -1788,9 +1788,9 @@ function renderJobTable(data) {
                 </div>
                 ${errHtml}
             </td>
-            <td class="small text-nowrap text-muted" style="width:160px;vertical-align:top;padding-top:0.4rem">${escHtml(ts)}</td>
-            <td class="text-nowrap" style="width:76px;vertical-align:top;padding-top:0.3rem">
-                ${canEditServices ? `<button class="btn btn-outline-success btn-sm me-1 js-job-action" data-jid="${escHtml(j.jid)}" data-action="retry" title="${retryLabel}"><i class="bi bi-arrow-repeat"></i></button><button class="btn btn-outline-danger btn-sm js-job-action" data-jid="${escHtml(j.jid)}" data-action="delete" title="Delete"><i class="bi bi-trash"></i></button>` : ''}
+            <td class="small text-nowrap text-muted" style="vertical-align:top;padding-top:0.4rem">${escHtml(ts)}</td>
+            <td class="text-nowrap" style="vertical-align:top;padding-top:0.3rem">
+                ${canEditServices ? `<button class="btn btn-outline-success btn-sm me-1 js-job-action" data-jid="${escHtml(j.jid)}" data-action="retry" title="${retryLabel}" aria-label="${retryLabel}"><i class="bi bi-arrow-repeat" aria-hidden="true"></i></button><button class="btn btn-outline-danger btn-sm js-job-action" data-jid="${escHtml(j.jid)}" data-action="delete" title="Delete job" aria-label="Delete job"><i class="bi bi-trash" aria-hidden="true"></i></button>` : ''}
             </td>
         </tr>`;
     }).join('');
@@ -1799,8 +1799,8 @@ function renderJobTable(data) {
         <table class="table table-dark table-sm mb-0" aria-label="Sidekiq jobs">
             <thead><tr>
                 <th scope="col">Job</th>
-                <th scope="col" style="width:160px">${escHtml(timeHeader)}</th>
-                <th scope="col" style="width:76px"><span class="visually-hidden">Actions</span></th>
+                <th scope="col">${escHtml(timeHeader)}</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
             </tr></thead>
             <tbody>${rows}</tbody>
         </table>
@@ -1921,7 +1921,7 @@ function ltShowAvailable() {
                 <td>${escHtml(p.to_name || p.to_code)}</td>
                 <td><span class="badge bg-secondary font-monospace">${escHtml(p.to_code)}</span></td>
                 <td class="text-muted small">${escHtml(p.version || '')}</td>
-                <td style="width:80px">
+                <td>
                     ${canEditServices ? `<button class="btn btn-outline-success btn-sm js-lt-install" data-from="${escHtml(p.from_code)}" data-to="${escHtml(p.to_code)}"><i class="bi bi-download"></i> Install</button>` : ''}
                 </td>
             </tr>`).join('');
@@ -2246,13 +2246,13 @@ function pgRefreshQueries() {
                     const rows = slow.map(q => {
                         const durCls = q.duration_secs >= 30 ? 'text-danger fw-bold' : 'text-warning';
                         const killBtn = canEditServices
-                            ? `<td><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill PID ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i></button></td>`
+                            ? `<td><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill PID ${escHtml(String(q.pid))}" aria-label="Kill PID ${escHtml(String(q.pid))}"><i class="bi bi-x-circle" aria-hidden="true"></i></button></td>`
                             : '';
                         return `<tr>
                             <td class="font-monospace text-nowrap small">${escHtml(q.datname)}</td>
                             <td class="font-monospace text-nowrap small">${escHtml(q.usename)}</td>
                             <td class="text-nowrap small ${durCls}">${escHtml(q.duration)}</td>
-                            <td class="font-monospace small text-truncate" style="max-width:360px; cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
+                            <td class="font-monospace small text-truncate query-cell" style="cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
                             ${killBtn}
                         </tr>`;
                     }).join('');
@@ -2281,7 +2281,7 @@ function pgRefreshQueries() {
                             <td class="font-monospace text-nowrap">${escHtml(q.usename)}</td>
                             <td><span class="badge ${badge}">${escHtml(q.state)}</span></td>
                             <td class="text-nowrap ${durCls}">${escHtml(q.duration)}</td>
-                            <td class="font-monospace small text-truncate" style="max-width:420px; cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
+                            <td class="font-monospace small text-truncate query-cell" style="cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
                             <td class="text-end">${canEditServices ? `<button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill backend ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i> Kill</button>` : ''}</td>
                         </tr>`;
                     }).join('');
@@ -2308,7 +2308,7 @@ function pgRefreshQueries() {
                             <td>${Number(s.calls).toLocaleString()}</td>
                             <td class="text-nowrap">${Math.round(s.total_ms).toLocaleString()}</td>
                             <td>${Number(s.rows).toLocaleString()}</td>
-                            <td class="font-monospace small text-truncate" style="max-width:420px; cursor:pointer" title="${escHtml(s.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(s.query)}</td>
+                            <td class="font-monospace small text-truncate query-cell" style="cursor:pointer" title="${escHtml(s.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(s.query)}</td>
                         </tr>`;
                     }).join('');
                     stmtsContainer.innerHTML = `<h6 class="text-muted mb-2 small"><i class="bi bi-clock-history"></i> Top Queries by Mean Time <span class="badge bg-secondary ms-1">pg_stat_statements</span></h6>
