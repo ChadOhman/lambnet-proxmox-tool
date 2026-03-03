@@ -90,7 +90,13 @@ def login():
 def logout():
     log_action("logout", "user", resource_id=current_user.id, resource_name=current_user.username)
     db.session.commit()
+    is_cf_user = current_user.created_via == "cloudflare"
     logout_user()
+    if is_cf_user:
+        from models import Setting
+        team_domain = Setting.get("cf_access_team_domain", "")
+        if team_domain:
+            return redirect(f"https://{team_domain}/cdn-cgi/access/logout")
     flash("You have been logged out.", "info")
     return redirect(url_for("auth.login"))
 
