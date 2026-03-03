@@ -343,7 +343,7 @@
             <div class="card-body">
                 <p class="text-muted mb-2" id="upgradeTimestamp">
                     {% if settings.last_upgrade_at %}
-                    <small><i class="bi bi-clock"></i> {{ settings.last_upgrade_at }}</small>
+                    <small><i class="bi bi-clock"></i> {{ settings.last_upgrade_at | local_dt('%Y-%m-%d %H:%M') }}</small>
                     {% endif %}
                 </p>
                 <pre id="liveUpgradeLog" class="bg-black border border-secondary rounded p-3 mb-0"
