@@ -1583,7 +1583,7 @@ def _stats_postgresql(guest):
         "sudo -u postgres psql -t -A -c \""
         "SELECT pid, datname, usename, state, "
         "round(extract(epoch from (now() - query_start))::numeric, 1), "
-        "replace(replace(left(query, 200), chr(10), ' '), chr(13), ' ') "
+        "replace(replace(left(query, 4096), chr(10), ' '), chr(13), ' ') "
         "FROM pg_stat_activity WHERE pid != pg_backend_pid() "
         "AND state IS NOT NULL AND state != 'idle' "
         "ORDER BY (now() - query_start) DESC NULLS LAST"
@@ -1806,7 +1806,7 @@ def _stats_postgresql(guest):
         f"sudo -u postgres psql -d {_ss_db} -t -A -c \""  # noqa: S608
         "SELECT round(mean_exec_time::numeric,2), calls, "
         "round(total_exec_time::numeric,2), rows, "
-        "replace(replace(left(query,200),chr(10),' '),chr(13),' ') "
+        "replace(replace(left(query,4096),chr(10),' '),chr(13),' ') "
         "FROM pg_stat_statements "
         "WHERE mean_exec_time IS NOT NULL "
         "ORDER BY mean_exec_time DESC LIMIT 15"
