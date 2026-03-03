@@ -1963,56 +1963,66 @@ def _stats_puma(guest, service):
         stats["puma_version"] = v
 
     # ── 3. Thread + worker config from running process environment ────────────
-    # /proc/<MainPID>/environ has variables from EnvironmentFile (.env.production)
-    # which systemctl --property=Environment does NOT expose.
-    # Pipe tr directly to grep — avoids storing in a shell variable, which would
-    # cause word-splitting (newlines→spaces) and break ^-anchored grep patterns.
-    env_cmd = (
-        "PID=$(systemctl show mastodon-web.service --property=MainPID --value"
-        " 2>/dev/null | tr -d '\\n');"
-        " [ -n \"$PID\" ] && [ \"$PID\" != '0' ] && {"
-        " tr '\\0' '\\n' < /proc/$PID/environ 2>/dev/null"
-        " | grep -oP '^RAILS_MAX_THREADS=\\K[0-9]+' | sed 's/^/max_threads=/';"
-        " tr '\\0' '\\n' < /proc/$PID/environ 2>/dev/null"
-        " | grep -oP '^RAILS_MIN_THREADS=\\K[0-9]+' | sed 's/^/min_threads=/';"
-        " tr '\\0' '\\n' < /proc/$PID/environ 2>/dev/null"
-        " | grep -oP '^WEB_CONCURRENCY=\\K[0-9]+' | sed 's/^/workers=/';"
-        " }; true"
+    # Strategy: get MainPID in Python first, then use the literal PID in each
+    # subsequent command.  Every command is a simple pipeline ending with head
+    # (head always exits 0 even with empty input), so _execute_command never
+    # falls through to the QEMU agent due to a non-zero grep exit code.
+    out, _ = _execute_command(
+        guest,
+        "systemctl show mastodon-web.service --property=MainPID --value 2>/dev/null",
+        timeout=10,
     )
-    out, _ = _execute_command(guest, env_cmd, timeout=10)
-    edata = {}
-    for line in (out or "").strip().split("\n"):
-        if "=" in line:
-            k, _, v = line.partition("=")
-            edata[k.strip()] = v.strip()
-    for key in ("max_threads", "min_threads", "workers"):
-        if edata.get(key):
-            try:
-                stats[key] = int(edata[key])
-            except ValueError:
-                pass
+    pid = (out or "").strip()
+    if pid and pid.isdigit() and pid != "0":
+        for env_var, stat_key in [
+            ("WEB_CONCURRENCY", "workers"),
+            ("RAILS_MAX_THREADS", "max_threads"),
+            ("RAILS_MIN_THREADS", "min_threads"),
+        ]:
+            out, _ = _execute_command(
+                guest,
+                f"tr '\\0' '\\n' < /proc/{pid}/environ 2>/dev/null"
+                f" | grep '^{env_var}=' | head -1",
+                timeout=10,
+            )
+            line = (out or "").strip()
+            if "=" in line:
+                val = line.split("=", 1)[1].strip()
+                try:
+                    stats[stat_key] = int(val)
+                except ValueError:
+                    pass
     # If max_threads set but min_threads absent, Mastodon defaults min = max
     if "max_threads" in stats and "min_threads" not in stats:
         stats["min_threads"] = stats["max_threads"]
 
     # ── 4. Mastodon version — version.rb ─────────────────────────────────────
-    # The /api/v1/instance curl returns empty on bare localhost (Host header
-    # restrictions in production Rails).  Read the source file directly.
-    masto_ver_cmd = (
-        "for d in /home/mastodon/live /home/mastodon/mastodon"
-        "          /var/www/mastodon /opt/mastodon /srv/mastodon; do"
-        "  vf=\"$d/lib/mastodon/version.rb\";"
-        "  [ -f \"$vf\" ] || continue;"
-        "  maj=$(grep -oP 'MAJOR\\s*=\\s*\\K[0-9]+' \"$vf\" | head -1);"
-        "  mino=$(grep -oP 'MINOR\\s*=\\s*\\K[0-9]+' \"$vf\" | head -1);"
-        "  pat=$(grep -oP 'PATCH\\s*=\\s*\\K[0-9]+' \"$vf\" | head -1);"
-        "  [ -n \"$maj\" ] && echo \"$maj.$mino.$pat\" && break;"
-        " done"
-    )
-    out, _ = _execute_command(guest, masto_ver_cmd, timeout=10)
-    v = (out or "").strip()
-    if v:
-        stats["mastodon_version"] = v
+    # Try each known install path; grep -E outputs MAJOR/MINOR/PATCH lines,
+    # head -5 ensures exit 0 even when the file doesn't exist.
+    for base_dir in (
+        "/home/mastodon/live", "/home/mastodon/mastodon",
+        "/var/www/mastodon", "/opt/mastodon", "/srv/mastodon",
+    ):
+        vf = f"{base_dir}/lib/mastodon/version.rb"
+        out, _ = _execute_command(
+            guest,
+            f"grep -E 'MAJOR|MINOR|PATCH' {vf} 2>/dev/null | head -5",
+            timeout=5,
+        )
+        if not (out and out.strip()):
+            continue
+        parts = {}
+        for line in out.strip().split("\n"):
+            for key in ("MAJOR", "MINOR", "PATCH"):
+                if key in line and "=" in line:
+                    val = line.split("=")[-1].strip()
+                    if val.isdigit():
+                        parts[key] = val
+        if "MAJOR" in parts:
+            stats["mastodon_version"] = "{}.{}.{}".format(
+                parts["MAJOR"], parts.get("MINOR", "0"), parts.get("PATCH", "0")
+            )
+            break
 
     # ── 5. Worker process listing — lightweight ps snapshot ──────────────────
     out, _ = _execute_command(
