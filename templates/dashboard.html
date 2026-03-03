@@ -113,14 +113,22 @@
         </a>
     </div>
     <div class="col-6 col-md-4 col-lg-2">
+        {% if stats.guests_error > 0 %}
+        <a href="/guests?filter=error" class="card bg-dark h-100 stat-card text-decoration-none">
+        {% elif stats.guests_never_scanned > 0 %}
         <a href="/guests?filter=never_scanned" class="card bg-dark h-100 stat-card text-decoration-none">
+        {% else %}
+        <a href="/guests" class="card bg-dark h-100 stat-card text-decoration-none">
+        {% endif %}
             <div class="card-body text-center py-3">
-                <div class="fs-3 fw-bold {% if stats.guests_never_scanned > 0 %}text-warning{% else %}text-success{% endif %}">
-                    {% if stats.guests_never_scanned > 0 %}{{ stats.guests_never_scanned }}{% else %}<i class="bi bi-check-lg"></i>{% endif %}
+                <div class="fs-3 fw-bold {% if stats.guests_error > 0 %}text-danger{% elif stats.guests_never_scanned > 0 %}text-warning{% else %}text-success{% endif %}">
+                    {% if stats.guests_error > 0 %}{{ stats.guests_error }}{% elif stats.guests_never_scanned > 0 %}{{ stats.guests_never_scanned }}{% else %}<i class="bi bi-check-lg"></i>{% endif %}
                 </div>
-                <div class="small text-muted">Never Scanned</div>
-                {% if stats.guests_error > 0 %}
-                <a href="/guests?filter=error" class="small text-danger d-block mt-1">{{ stats.guests_error }} scan errors</a>
+                <div class="small text-muted">
+                    {% if stats.guests_error > 0 %}Scan Errors{% elif stats.guests_never_scanned > 0 %}Never Scanned{% else %}Scan Health{% endif %}
+                </div>
+                {% if stats.guests_error > 0 and stats.guests_never_scanned > 0 %}
+                <a href="/guests?filter=never_scanned" class="small text-warning d-block mt-1">{{ stats.guests_never_scanned }} never scanned</a>
                 {% endif %}
             </div>
         </a>
