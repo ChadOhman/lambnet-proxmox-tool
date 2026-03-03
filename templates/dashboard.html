@@ -120,7 +120,7 @@
                 </div>
                 <div class="small text-muted">Never Scanned</div>
                 {% if stats.guests_error > 0 %}
-                <div class="small text-danger">{{ stats.guests_error }} scan errors</div>
+                <a href="/guests?filter=error" class="small text-danger d-block mt-1">{{ stats.guests_error }} scan errors</a>
                 {% endif %}
             </div>
         </a>
