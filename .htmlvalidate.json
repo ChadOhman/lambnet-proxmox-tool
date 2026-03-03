@@ -1,0 +1,13 @@
+{
+  "extends": ["html-validate:recommended"],
+  "rules": {
+    "no-missing-references": "error",
+    "aria-label-misuse": "error",
+    "button-type": "error",
+    "empty-heading": "error",
+    "require-sri": "off",
+    "long-title": "off",
+    "no-inline-style": "off"
+  },
+  "elements": ["html5"]
+}

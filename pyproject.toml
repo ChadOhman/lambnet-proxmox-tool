@@ -1,6 +1,12 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.coverage.run]
+omit = ["tests/*", ".venv/*"]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
+
 [tool.bandit]
 exclude_dirs = [".venv", "__pycache__"]
 skips = [
