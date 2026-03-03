@@ -10,8 +10,6 @@ import queue
 import time
 import threading
 
-import pytest
-
 from collaboration import (
     CollaborationHub,
     CursorHub,
@@ -123,7 +121,7 @@ class TestCollaborationHubConnect:
 class TestCollaborationHubDisconnect:
     def test_disconnect_removes_user_from_presence(self):
         hub = CollaborationHub()
-        q = hub.connect(1, "alice", "Alice")
+        hub.connect(1, "alice", "Alice")
         hub.disconnect(1)
         users = hub.get_online_users()
         assert all(u["username"] != "alice" for u in users)

@@ -77,6 +77,7 @@ jobs:
           FLASK_SECRET_KEY: ci-test-secret
           DATABASE_URL: "sqlite:////tmp/ci-test.db"
           LAMBNET_DATA_DIR: /tmp/lambnet-ci
+          LAMBNET_SECRET_KEY: /tmp/lambnet-ci/secret.key
         run: pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=40
 
   shellcheck:

@@ -1,6 +1,4 @@
 """Tests for credentials routes and credential_store encrypt/decrypt helpers."""
-import os
-import tempfile
 import pytest
 from models import db, Credential
 
@@ -129,7 +127,7 @@ class TestCredentialAdd:
                     "name": "_test-add-key",
                     "username": "ubuntu",
                     "auth_type": "key",
-                    "private_key": "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
+                    "private_key": "not-a-real-key-just-test-data",
                 },
                 follow_redirects=False,
             )

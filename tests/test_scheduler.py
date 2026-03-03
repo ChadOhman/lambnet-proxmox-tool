@@ -14,7 +14,7 @@ import time), we patch via ``sys.modules`` so that every subsequent
 """
 import logging
 import sys
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 

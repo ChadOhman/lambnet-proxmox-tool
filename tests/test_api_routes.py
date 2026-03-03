@@ -11,8 +11,7 @@ Covers endpoints that do not require Proxmox / SSH connectivity:
 - /api/collab/cursors           — GET cursors for a page
 - Authorization: unauthenticated requests redirect / return 401/302
 """
-import pytest
-from datetime import datetime, timezone
+from datetime import datetime
 
 from models import db, Guest, UpdatePackage
 from routes.api import (

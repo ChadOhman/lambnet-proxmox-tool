@@ -2,7 +2,7 @@
 import json
 from unittest.mock import patch, MagicMock
 
-from models import db, Setting
+from models import Setting
 
 
 class TestSettingsIndex:

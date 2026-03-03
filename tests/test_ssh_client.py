@@ -17,10 +17,7 @@ connections are attempted.  Tests cover:
 - test_connection() — success and failure paths
 - from_credential() classmethod — password and key credential types
 """
-import io
-from unittest.mock import MagicMock, patch, call, PropertyMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------

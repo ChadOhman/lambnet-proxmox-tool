@@ -4,9 +4,7 @@ import json
 import time
 from unittest.mock import patch, MagicMock
 
-import pytest
-
-from models import db, User, Role, Setting
+from models import db, User, Setting
 import cloudflare_access
 
 

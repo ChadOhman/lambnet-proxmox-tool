@@ -12,10 +12,8 @@ network activity occurs.  The test suite exercises:
 """
 import json
 import urllib.error
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 from io import BytesIO
-
-import pytest
 
 from models import db, Setting
 from notifier import (

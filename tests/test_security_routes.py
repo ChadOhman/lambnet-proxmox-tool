@@ -1,5 +1,4 @@
 """Tests for security blueprint POST routes (user, role, tag, and access management)."""
-import pytest
 from models import db, User, Role, Tag, Setting
 
 

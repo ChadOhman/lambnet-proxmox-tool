@@ -1,9 +1,6 @@
 """Tests for config.py — _load_flask_secret() and Config class attributes."""
 
-import os
 import importlib
-
-import pytest
 
 import config as config_module
 from config import _load_flask_secret
