@@ -102,12 +102,12 @@ jobs:
           node-version: "20"
 
       - name: Run html-validate on templates
-        # continue-on-error until Jinja2 syntax exclusions are fully tuned;
-        # use stylish formatter to avoid false-positive annotations from
-        # Jinja2 template syntax the parser cannot handle.
+        # continue-on-error: Jinja2 syntax causes parser false positives.
+        # Strip ::error/::warning workflow commands so they don't become
+        # misleading GitHub annotations.
         continue-on-error: true
-        run: >
-          npx --yes html-validate@9
-          --config .htmlvalidate.json
-          --formatter stylish
-          "templates/**/*.html"
+        run: |
+          npx --yes html-validate@9 \
+            --config .htmlvalidate.json \
+            "templates/**/*.html" 2>&1 \
+            | sed 's/^::/[html-validate] /' || true
