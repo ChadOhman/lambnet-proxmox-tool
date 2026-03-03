@@ -131,6 +131,33 @@ try:
                  ("scheduled", ("ZCARD", "schedule"))]:
         rc(s, *c)
         print("{}={}".format(k, rr(s, bf) or 0))
+    print("---workers---")
+    rc(s, "SMEMBERS", "processes")
+    procs = rr(s, bf) or []
+    for pid_key in procs:
+        rc(s, "HGETALL", pid_key)
+        fields = rr(s, bf) or []
+        h = {}
+        it = iter(fields)
+        for fk in it:
+            try:
+                fv = next(it)
+            except StopIteration:
+                break
+            h[fk] = fv
+        print("worker={}|{}|{}|{}|{}|{}".format(
+            h.get("hostname", ""),
+            h.get("pid", ""),
+            h.get("concurrency", "0"),
+            h.get("busy", "0"),
+            h.get("beat", ""),
+            h.get("queues", "[]"),
+        ))
+    print("---paused---")
+    rc(s, "SMEMBERS", "paused")
+    paused_set = rr(s, bf) or []
+    for pq in paused_set:
+        print(pq)
     s.close()
     print("---debug---")
     print("host={}".format(host))
@@ -2036,6 +2063,16 @@ def _stats_sidekiq(guest, service):
     """Collect Sidekiq stats — per-instance systemd info plus aggregate queue stats from Redis."""
     stats = {}
 
+    # Sidekiq version from process title (e.g. "sidekiq 7.3.2 app [0 of 10 busy]")
+    out, _ = _execute_command(
+        guest,
+        r"ps aux 2>/dev/null | grep '[s]idekiq' | grep -oP 'sidekiq \K[0-9]+\.[0-9]+\.[0-9]+' | head -1",
+        timeout=10,
+    )
+    v = (out or "").strip()
+    if v:
+        stats["sidekiq_version"] = v
+
     # Use a pure-Python3 Redis client (no redis-cli needed) — Sidekiq servers
     # connect to Redis via the Ruby gem so redis-cli is often absent.
     # The script is base64-encoded to avoid any shell quoting issues.
@@ -2047,6 +2084,8 @@ def _stats_sidekiq(guest, service):
     queues = []
     kv = {}
     debug_kv = {}
+    workers_list = []
+    paused_queues = []
     section = None
     for line in (out or "").split("\n"):
         line = line.strip()
@@ -2054,6 +2093,10 @@ def _stats_sidekiq(guest, service):
             section = "queues"
         elif line == "---stats---":
             section = "stats"
+        elif line == "---workers---":
+            section = "workers"
+        elif line == "---paused---":
+            section = "paused"
         elif line == "---debug---":
             section = "debug"
         elif section == "queues" and "=" in line:
@@ -2076,8 +2119,38 @@ def _stats_sidekiq(guest, service):
         elif section == "debug" and "=" in line:
             key, _, val = line.partition("=")
             debug_kv[key.strip()] = val.strip()
+        elif section == "workers" and line.startswith("worker="):
+            raw = line[len("worker="):]
+            parts = raw.split("|", 5)
+            if len(parts) == 6:
+                hostname, pid, concurrency_s, busy_s, beat_raw, queues_json = parts
+                beat_age = None
+                try:
+                    beat_ts = float(beat_raw)
+                    if beat_ts > 0:
+                        now_ts = datetime.now(timezone.utc).timestamp()
+                        beat_age = int(now_ts - beat_ts)
+                except (ValueError, TypeError):
+                    pass
+                try:
+                    queues_l = json.loads(queues_json)
+                    queues_csv = ", ".join(str(q) for q in queues_l)
+                except Exception:
+                    queues_csv = queues_json.strip("[]").replace('"', "")
+                workers_list.append({
+                    "hostname": hostname,
+                    "pid": pid,
+                    "concurrency": int(concurrency_s) if concurrency_s.isdigit() else 0,
+                    "busy": int(busy_s) if busy_s.isdigit() else 0,
+                    "beat_age_secs": beat_age,
+                    "queues_csv": queues_csv,
+                })
+        elif section == "paused" and line:
+            paused_queues.append(line)
 
     stats["queues"] = queues
+    stats["workers"] = workers_list
+    stats["paused_queues"] = paused_queues
     stats["_debug"] = debug_kv  # connection params for troubleshooting (host/port/db/auth_set)
     stats["processed"] = kv.get("processed", "0") if kv.get("processed", "") not in ("(nil)", "", None) else "0"
     stats["failed"] = kv.get("failed", "0") if kv.get("failed", "") not in ("(nil)", "", None) else "0"
