@@ -6,10 +6,6 @@ import shlex
 import threading
 from datetime import datetime, timedelta, timezone
 
-# Allowlist for PostgreSQL database names: letters, digits, underscores only (max 63 chars).
-# Prevents command injection in shell commands that embed the database name.
-_PG_DB_NAME_RE = re.compile(r'^[A-Za-z0-9_]{1,63}$')
-
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, stream_with_context
 from sqlalchemy import func
 from flask_login import login_required, current_user
@@ -23,6 +19,10 @@ from scanner import (check_service_statuses, service_action, get_service_logs, g
                      lt_update_packages_stream)
 
 logger = logging.getLogger(__name__)
+
+# Allowlist for PostgreSQL database names: letters, digits, underscores only (max 63 chars).
+# Prevents command injection in shell commands that embed the database name.
+_PG_DB_NAME_RE = re.compile(r'^[A-Za-z0-9_]{1,63}$')
 
 bp = Blueprint("services", __name__)
 
