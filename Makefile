@@ -7,7 +7,7 @@ test:
 	FLASK_SECRET_KEY=dev-secret \
 	DATABASE_URL="sqlite:////tmp/lambnet-dev-test.db" \
 	LAMBNET_DATA_DIR=/tmp/lambnet-dev \
-	pytest tests/ -v --cov=. --cov-report=term-missing
+	pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=18
 
 lint:
 	ruff check .
