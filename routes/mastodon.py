@@ -1,5 +1,6 @@
 import logging
 import threading as _threading
+from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required
 from models import db, Setting, Guest
@@ -26,6 +27,16 @@ def _require_login():
         return redirect(url_for("dashboard.index"))
 
 
+def _parse_iso(value):
+    """Parse an ISO 8601 string into a timezone-aware datetime, or return None."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
 def _get_mastodon_settings():
     return {
         "guest_id": Setting.get("mastodon_guest_id", ""),
@@ -45,7 +56,7 @@ def _get_mastodon_settings():
         "latest_release_url": Setting.get("mastodon_latest_release_url", ""),
         "update_available": Setting.get("mastodon_update_available", "") == "true",
         "pg_latest_version": Setting.get("mastodon_pg_latest_version", ""),
-        "last_upgrade_at": Setting.get("mastodon_last_upgrade_at", ""),
+        "last_upgrade_at": _parse_iso(Setting.get("mastodon_last_upgrade_at", "")),
         "last_upgrade_status": Setting.get("mastodon_last_upgrade_status", ""),
         "last_upgrade_log": Setting.get("mastodon_last_upgrade_log", ""),
         "protection_type": Setting.get("mastodon_protection_type", "snapshot"),

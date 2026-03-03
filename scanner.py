@@ -1545,19 +1545,29 @@ def _stats_postgresql(guest):
     """Collect PostgreSQL stats."""
     stats = {}
 
-    # Database sizes
+    # Database sizes + per-db commits/rollbacks/temp files
     out, _ = _execute_command(guest,
-        "sudo -u postgres psql -t -A -c \"SELECT datname, pg_database_size(datname) FROM pg_database WHERE datistemplate = false\" 2>/dev/null",
+        "sudo -u postgres psql -t -A -c \""
+        "SELECT datname, pg_database_size(datname), xact_commit, xact_rollback, temp_files, temp_bytes "
+        "FROM pg_stat_database JOIN pg_database USING (datname) "
+        "WHERE datistemplate = false ORDER BY pg_database_size(datname) DESC"
+        "\" 2>/dev/null",
         timeout=15, sudo=True)
     if out:
         databases = []
         for line in out.strip().split("\n"):
             parts = line.strip().split("|")
-            if len(parts) == 2:
+            if len(parts) == 6:
+                size_bytes = int(parts[1]) if parts[1].isdigit() else 0
+                temp_bytes = int(parts[5]) if parts[5].isdigit() else 0
                 databases.append({
                     "name": parts[0],
-                    "size_bytes": int(parts[1]) if parts[1].isdigit() else 0,
-                    "size": _human_bytes(int(parts[1]) if parts[1].isdigit() else 0),
+                    "size_bytes": size_bytes,
+                    "size": _human_bytes(size_bytes),
+                    "commits": int(parts[2]) if parts[2].isdigit() else 0,
+                    "rollbacks": int(parts[3]) if parts[3].isdigit() else 0,
+                    "temp_files": int(parts[4]) if parts[4].isdigit() else 0,
+                    "temp_bytes": _human_bytes(temp_bytes),
                 })
         stats["databases"] = databases
 
@@ -1679,6 +1689,137 @@ def _stats_postgresql(guest):
             main_pid = cprops.get("MainPID", "")
             if main_pid and main_pid != "0":
                 stats["pid"] = main_pid
+
+    # Connection state breakdown
+    out, _ = _execute_command(guest,
+        "sudo -u postgres psql -t -A -c \""
+        "SELECT coalesce(state, 'unknown'), count(*) FROM pg_stat_activity "
+        "WHERE pid != pg_backend_pid() GROUP BY state"
+        "\" 2>/dev/null",
+        timeout=10, sudo=True)
+    if out:
+        conn_states = {}
+        for line in out.strip().split("\n"):
+            parts = line.strip().split("|")
+            if len(parts) == 2:
+                try:
+                    conn_states[parts[0]] = int(parts[1])
+                except ValueError:
+                    pass
+        stats["connection_states"] = conn_states
+
+    # Lock wait count
+    out, _ = _execute_command(guest,
+        "sudo -u postgres psql -t -A -c \""
+        "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+        "\" 2>/dev/null",
+        timeout=10, sudo=True)
+    if out and out.strip().isdigit():
+        stats["lock_waits"] = int(out.strip())
+
+    # Temp file stats (aggregate across all databases)
+    out, _ = _execute_command(guest,
+        "sudo -u postgres psql -t -A -c \""
+        "SELECT coalesce(sum(temp_files),0), coalesce(sum(temp_bytes),0) FROM pg_stat_database"
+        "\" 2>/dev/null",
+        timeout=10, sudo=True)
+    if out:
+        parts = out.strip().split("|")
+        if len(parts) == 2:
+            try:
+                stats["temp_files_total"] = int(parts[0])
+                stats["temp_bytes_total"] = _human_bytes(int(parts[1]))
+            except ValueError:
+                pass
+
+    # Unused indexes count
+    out, _ = _execute_command(guest,
+        "sudo -u postgres psql -t -A -c \""
+        "SELECT count(*) FROM pg_stat_user_indexes WHERE idx_scan = 0"
+        "\" 2>/dev/null",
+        timeout=10, sudo=True)
+    if out and out.strip().isdigit():
+        stats["unused_indexes"] = int(out.strip())
+
+    # Replication replica count
+    out, _ = _execute_command(guest,
+        "sudo -u postgres psql -t -A -c \""
+        "SELECT count(*) FROM pg_stat_replication"
+        "\" 2>/dev/null",
+        timeout=10, sudo=True)
+    if out and out.strip().isdigit():
+        stats["replication_replicas"] = int(out.strip())
+
+    # Table stats — pg_stat_user_tables is per-database, so target the largest
+    # non-system database (most likely to have application tables).
+    _system_dbs = {"postgres", "template0", "template1"}
+    _table_target_db = next(
+        (db["name"] for db in stats.get("databases", []) if db["name"] not in _system_dbs),
+        None,
+    )
+    if _table_target_db:
+        out, _ = _execute_command(guest,
+            f"sudo -u postgres psql -d {_table_target_db} -t -A -c \""  # noqa: S608 — db name sourced from pg_database, not user input
+            "SELECT schemaname, relname, "
+            "coalesce(n_live_tup,0), coalesce(n_dead_tup,0), "
+            "coalesce(to_char(greatest(last_vacuum, last_autovacuum), 'YYYY-MM-DD HH24:MI'), '-'), "
+            "coalesce(to_char(greatest(last_analyze, last_autoanalyze), 'YYYY-MM-DD HH24:MI'), '-'), "
+            "pg_relation_size(relid) "
+            "FROM pg_stat_user_tables "
+            "ORDER BY n_dead_tup DESC NULLS LAST LIMIT 25"
+            "\" 2>/dev/null",
+            timeout=15, sudo=True)
+        if out:
+            tables = []
+            for line in out.strip().split("\n"):
+                parts = line.strip().split("|")
+                if len(parts) == 7:
+                    try:
+                        rel_size = int(parts[6]) if parts[6].isdigit() else 0
+                        tables.append({
+                            "schema": parts[0],
+                            "table": parts[1],
+                            "live_tup": int(parts[2]),
+                            "dead_tup": int(parts[3]),
+                            "last_vacuum": parts[4],
+                            "last_analyze": parts[5],
+                            "size": _human_bytes(rel_size),
+                            "size_bytes": rel_size,
+                        })
+                    except (ValueError, IndexError):
+                        pass
+            if tables:
+                stats["tables"] = tables
+                stats["tables_database"] = _table_target_db
+
+    # Historical slow queries from pg_stat_statements (graceful if extension absent)
+    out, _ = _execute_command(guest,
+        "sudo -u postgres psql -t -A -c \""
+        "SELECT round(mean_exec_time::numeric,2), calls, "
+        "round(total_exec_time::numeric,2), rows, "
+        "replace(replace(left(query,200),chr(10),' '),chr(13),' ') "
+        "FROM pg_stat_statements "
+        "WHERE mean_exec_time IS NOT NULL "
+        "ORDER BY mean_exec_time DESC LIMIT 15"
+        "\" 2>/dev/null",
+        timeout=15, sudo=True)
+    if out and out.strip():
+        slow = []
+        for line in out.strip().split("\n"):
+            parts = line.strip().split("|", 4)
+            if len(parts) == 5:
+                try:
+                    slow.append({
+                        "mean_ms": float(parts[0]),
+                        "calls": int(parts[1]),
+                        "total_ms": float(parts[2]),
+                        "rows": int(parts[3]),
+                        "query": parts[4],
+                    })
+                except (ValueError, IndexError):
+                    pass
+        if slow:
+            stats["slow_query_stats"] = slow
 
     return stats
 
@@ -2144,8 +2285,8 @@ def scan_guest(guest):
 
 
 def scan_all_guests():
-    """Scan all enabled guests."""
-    guests = Guest.query.filter_by(enabled=True).all()
+    """Scan all enabled, running guests."""
+    guests = Guest.query.filter_by(enabled=True, power_state="running").all()
     results = []
     for guest in guests:
         try:

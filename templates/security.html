@@ -39,6 +39,11 @@
         </button>
     </li>
     {% endif %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="scans-tab" data-bs-toggle="pill" data-bs-target="#scansPane" type="button" role="tab" aria-controls="scansPane" aria-selected="false">
+            <i class="bi bi-clock-history" aria-hidden="true"></i> Recent Scans
+        </button>
+    </li>
 </ul>
 
 <div class="tab-content">
@@ -777,6 +782,59 @@
     </div>
     {% endif %}
 
+    <!-- ============ RECENT SCANS TAB ============ -->
+    <div class="tab-pane fade" id="scansPane" role="tabpanel" aria-labelledby="scans-tab" tabindex="0">
+        <div class="card bg-dark">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Scans</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0" aria-label="Recent guest scans">
+                        <thead>
+                            <tr>
+                                <th scope="col">Guest</th>
+                                <th scope="col">Scanned</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Updates</th>
+                                <th scope="col">Security</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for scan in recent_scans %}
+                            <tr>
+                                <td><a href="/guests/{{ scan.guest_id }}" class="text-decoration-none">{{ scan.guest.name }}</a></td>
+                                <td><small class="text-muted">{{ scan.scanned_at | local_dt }}</small></td>
+                                <td>
+                                    {% if scan.status == 'error' %}
+                                    <span class="text-danger"><i class="bi bi-x-circle"></i> Error</span>
+                                    {% elif scan.total_updates == 0 %}
+                                    <span class="text-success"><i class="bi bi-check-circle"></i> Up to date</span>
+                                    {% else %}
+                                    <span class="text-warning"><i class="bi bi-exclamation-circle"></i> Updates available</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ scan.total_updates if scan.total_updates else '—' }}</td>
+                                <td>
+                                    {% if scan.security_updates > 0 %}
+                                    <span class="text-danger">{{ scan.security_updates }}</span>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">No scans yet</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <!-- ============ MODALS ============ -->
@@ -976,10 +1034,12 @@
                         <label class="form-label">Display Name</label>
                         <input type="text" class="form-control" name="display_name" value="{{ user.display_name or '' }}">
                     </div>
+                    {% if user.created_via != 'cloudflare' %}
                     <div class="mb-3">
                         <label class="form-label">New Password (leave blank to keep)</label>
                         <input type="password" class="form-control" name="new_password" minlength="8">
                     </div>
+                    {% endif %}
                     {% if user.id != current_user.id %}
                     <div class="mb-3">
                         <label class="form-label">Role</label>

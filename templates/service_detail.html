@@ -232,82 +232,396 @@
 
 {% elif stats.type == 'postgresql' %}
 <div class="card bg-dark mb-4">
-    <div class="card-header"><h5 class="mb-0"><i class="bi bi-database-fill"></i> PostgreSQL</h5></div>
-    <div class="card-body">
-        <div class="row g-3 mb-3">
-            <div class="col-md-3">
-                <div class="text-muted small">Active Queries</div>
-                <div class="fs-5" id="stat-pg-active">{{ stats.active_queries|default('N/A') }}</div>
-            </div>
-            <div class="col-md-3">
-                <div class="text-muted small">Connections</div>
-                <div class="fs-5" id="stat-pg-conn">{{ stats.total_connections|default('0') }} / {{ stats.max_connections|default('?') }}</div>
-            </div>
-            <div class="col-md-3">
-                <div class="text-muted small">Cache Hit Ratio</div>
-                <div class="fs-5" id="stat-pg-cache">{{ stats.cache_hit_ratio|default('N/A') }}</div>
-            </div>
-            <div class="col-md-3">
-                <div class="text-muted small">Transactions</div>
-                <div class="fs-5">{{ '{:,}'.format(stats.total_commits|default(0)|int) }} commits</div>
-            </div>
-        </div>
-        {% if stats.databases %}
-        <h6 class="text-muted mt-2 mb-2">Databases</h6>
-        <div class="table-responsive">
-            <table class="table table-dark table-sm mb-0" aria-label="PostgreSQL databases">
-                <thead><tr><th scope="col">Database</th><th scope="col">Size</th></tr></thead>
-                <tbody>
-                {% for db_item in stats.databases %}
-                <tr><td class="font-monospace">{{ db_item.name }}</td><td>{{ db_item.size }}</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% endif %}
-
-        <div id="pg-active-queries-container">
-        {% if stats.active_query_list %}
-        <h6 class="text-muted mt-3 mb-2">Active Queries</h6>
-        <div class="table-responsive">
-            <table class="table table-dark table-sm mb-0" aria-label="Active PostgreSQL queries">
-                <thead>
-                    <tr><th scope="col">Database</th><th scope="col">User</th><th scope="col">State</th><th scope="col">Duration</th><th scope="col">Query</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
-                </thead>
-                <tbody>
-                {% for q in stats.active_query_list %}
-                <tr>
-                    <td class="font-monospace text-nowrap">{{ q.datname }}</td>
-                    <td class="font-monospace text-nowrap">{{ q.usename }}</td>
-                    <td>
-                        <span class="badge {% if q.state == 'active' %}bg-success{% elif 'transaction' in q.state %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
-                            {{ q.state }}
-                        </span>
-                    </td>
-                    <td class="text-nowrap {% if q.duration_secs >= 30 %}text-danger{% elif q.duration_secs >= 5 %}text-warning{% endif %}">
-                        {{ q.duration }}
-                    </td>
-                    <td class="font-monospace small text-truncate" style="max-width: 420px; cursor: pointer" title="{{ q.query | e }}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">{{ q.query }}</td>
-                    <td class="text-end">
-                        {% if current_user.can_edit_services %}
-                        <button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn"
-                                data-pid="{{ q.pid }}"
-                                data-service-id="{{ service.id }}"
-                                title="Kill backend {{ q.pid }}">
-                            <i class="bi bi-x-circle"></i> Kill
-                        </button>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <p class="text-muted small mt-3 mb-0"><i class="bi bi-check-circle"></i> No active queries</p>
-        {% endif %}
-        </div>
+    <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs" id="pgTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="pg-overview-tab" data-bs-toggle="tab" data-bs-target="#pg-overview" type="button" role="tab" aria-controls="pg-overview" aria-selected="true">
+                    <i class="bi bi-database-fill"></i> Overview
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="pg-databases-tab" data-bs-toggle="tab" data-bs-target="#pg-databases" type="button" role="tab" aria-controls="pg-databases" aria-selected="false">
+                    Databases
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="pg-tables-tab" data-bs-toggle="tab" data-bs-target="#pg-tables" type="button" role="tab" aria-controls="pg-tables" aria-selected="false" onclick="pgLoadTables()">
+                    Tables
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="pg-queries-tab" data-bs-toggle="tab" data-bs-target="#pg-queries" type="button" role="tab" aria-controls="pg-queries" aria-selected="false">
+                    Queries
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="pg-maintenance-tab" data-bs-toggle="tab" data-bs-target="#pg-maintenance" type="button" role="tab" aria-controls="pg-maintenance" aria-selected="false" onclick="pgLoadMaintenance()">
+                    Maintenance
+                </button>
+            </li>
+        </ul>
     </div>
+    <div class="card-body tab-content" id="pgTabsContent">
+
+        <!-- ── Overview tab ── -->
+        <div class="tab-pane fade show active" id="pg-overview" role="tabpanel" aria-labelledby="pg-overview-tab">
+            <div class="row g-3 mb-3 mt-1">
+                <div class="col-6 col-md-2">
+                    <div class="text-muted small">Active Queries</div>
+                    <div class="fs-5" id="stat-pg-active">{{ stats.active_queries|default('N/A') }}</div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="text-muted small">Connections</div>
+                    <div class="fs-5" id="stat-pg-conn">{{ stats.total_connections|default('0') }} / {{ stats.max_connections|default('?') }}</div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="text-muted small">Cache Hit Ratio</div>
+                    <div class="fs-5" id="stat-pg-cache">{{ stats.cache_hit_ratio|default('N/A') }}</div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="text-muted small">Commits</div>
+                    <div class="fs-5" id="stat-pg-commits">{{ '{:,}'.format(stats.total_commits|default(0)|int) }}</div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="text-muted small">Rollbacks</div>
+                    <div class="fs-5 {% if stats.total_rollbacks|default(0)|int > 0 %}text-warning{% endif %}" id="stat-pg-rollbacks">
+                        {{ '{:,}'.format(stats.total_rollbacks|default(0)|int) }}
+                    </div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="text-muted small">Lock Waits</div>
+                    <div class="fs-5 {% if stats.lock_waits|default(0) > 0 %}text-danger{% endif %}" id="stat-pg-lockwaits">
+                        {{ stats.lock_waits|default(0) }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connection state breakdown -->
+            {% if stats.connection_states %}
+            <div class="mb-3" id="pg-conn-states-container">
+                <div class="text-muted small mb-1">Connection States</div>
+                <div class="d-flex flex-wrap gap-2">
+                {% for state, count in stats.connection_states.items() %}
+                    <span class="badge {% if state == 'active' %}bg-success{% elif state == 'idle in transaction' or state == 'idle in transaction (aborted)' %}bg-warning text-dark{% elif state == 'idle' %}bg-secondary{% else %}bg-dark border border-secondary{% endif %} fs-6">
+                        {{ state }}: {{ count }}
+                    </span>
+                {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Temp file & unused index info -->
+            <div class="row g-3 mb-3" id="pg-extra-stats">
+                {% if stats.temp_files_total is defined %}
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small">Temp Files (total)</div>
+                    <div class="{% if stats.temp_files_total > 0 %}text-warning{% endif %}">
+                        {{ stats.temp_files_total }} ({{ stats.temp_bytes_total|default('0 B') }})
+                    </div>
+                </div>
+                {% endif %}
+                {% if stats.unused_indexes is defined %}
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small">Unused Indexes</div>
+                    <div class="{% if stats.unused_indexes > 0 %}text-warning{% endif %}">{{ stats.unused_indexes }}</div>
+                </div>
+                {% endif %}
+                {% if stats.replication_replicas is defined %}
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small">Replication Replicas</div>
+                    <div>{{ stats.replication_replicas }}</div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Historical charts -->
+            <div class="row g-3 mt-1" id="pg-charts-row">
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">Connections (last 12h)</div>
+                    <canvas id="pg-chart-connections" height="100"></canvas>
+                </div>
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">Cache Hit Ratio % (last 12h)</div>
+                    <canvas id="pg-chart-cache" height="100"></canvas>
+                </div>
+            </div>
+        </div><!-- /overview -->
+
+        <!-- ── Databases tab ── -->
+        <div class="tab-pane fade" id="pg-databases" role="tabpanel" aria-labelledby="pg-databases-tab">
+            {% if stats.databases %}
+            <div class="table-responsive mt-2">
+                <table class="table table-dark table-sm mb-0" aria-label="PostgreSQL databases">
+                    <thead>
+                        <tr>
+                            <th scope="col">Database</th>
+                            <th scope="col">Size</th>
+                            <th scope="col">Commits</th>
+                            <th scope="col">Rollbacks</th>
+                            <th scope="col">Temp Files</th>
+                            <th scope="col">Temp Bytes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for db_item in stats.databases %}
+                    <tr>
+                        <td class="font-monospace">{{ db_item.name }}</td>
+                        <td>{{ db_item.size }}</td>
+                        <td>{{ '{:,}'.format(db_item.commits|default(0)) }}</td>
+                        <td class="{% if db_item.rollbacks|default(0) > 0 %}text-warning{% endif %}">
+                            {{ '{:,}'.format(db_item.rollbacks|default(0)) }}
+                        </td>
+                        <td class="{% if db_item.temp_files|default(0) > 0 %}text-warning{% endif %}">
+                            {{ db_item.temp_files|default(0) }}
+                        </td>
+                        <td>{{ db_item.temp_bytes|default('—') }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted small mt-3">No database information available.</p>
+            {% endif %}
+        </div><!-- /databases -->
+
+        <!-- ── Tables tab ── -->
+        <div class="tab-pane fade" id="pg-tables" role="tabpanel" aria-labelledby="pg-tables-tab">
+            <div id="pg-tables-container" class="mt-2">
+                {% if stats.tables %}
+                {% if stats.tables_database %}<p class="text-muted small mb-2">Showing tables from <code>{{ stats.tables_database }}</code></p>{% endif %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm mb-0" aria-label="PostgreSQL user tables">
+                        <thead>
+                            <tr>
+                                <th scope="col">Schema</th>
+                                <th scope="col">Table</th>
+                                <th scope="col">Live Rows</th>
+                                <th scope="col">Dead Rows</th>
+                                <th scope="col">Last Vacuum</th>
+                                <th scope="col">Last Analyze</th>
+                                <th scope="col">Size</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for t in stats.tables %}
+                        <tr>
+                            <td class="font-monospace text-muted small">{{ t.schema }}</td>
+                            <td class="font-monospace">{{ t.table }}</td>
+                            <td>{{ '{:,}'.format(t.live_tup) }}</td>
+                            <td class="{% if t.dead_tup > 10000 %}text-danger{% elif t.dead_tup > 1000 %}text-warning{% endif %}">
+                                {{ '{:,}'.format(t.dead_tup) }}
+                            </td>
+                            <td class="small text-nowrap">{{ t.last_vacuum }}</td>
+                            <td class="small text-nowrap">{{ t.last_analyze }}</td>
+                            <td class="text-nowrap">{{ t.size }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted small mt-2"><i class="bi bi-info-circle"></i> Table statistics will appear after a stats refresh.</p>
+                {% endif %}
+            </div>
+        </div><!-- /tables -->
+
+        <!-- ── Queries tab ── -->
+        <div class="tab-pane fade" id="pg-queries" role="tabpanel" aria-labelledby="pg-queries-tab">
+
+            <!-- Slow running queries -->
+            <div class="mt-2 mb-3">
+                <h6 class="text-muted mb-2 small"><i class="bi bi-stopwatch"></i> Slow Running Queries <span class="text-muted fw-normal">(≥ 5s)</span></h6>
+                <div id="pg-slow-queries-container">
+                {% set slow_active = stats.active_query_list | selectattr('duration_secs', 'ge', 5) | list %}
+                {% if slow_active %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm mb-0" aria-label="Slow active queries">
+                        <thead><tr><th scope="col">DB</th><th scope="col">User</th><th scope="col">Duration</th><th scope="col">Query</th>{% if current_user.can_edit_services %}<th scope="col"><span class="visually-hidden">Actions</span></th>{% endif %}</tr></thead>
+                        <tbody>
+                        {% for q in slow_active | sort(attribute='duration_secs', reverse=True) %}
+                        <tr>
+                            <td class="font-monospace text-nowrap small">{{ q.datname }}</td>
+                            <td class="font-monospace text-nowrap small">{{ q.usename }}</td>
+                            <td class="text-nowrap small {% if q.duration_secs >= 30 %}text-danger fw-bold{% else %}text-warning{% endif %}">{{ q.duration }}</td>
+                            <td class="font-monospace small text-truncate" style="max-width:360px; cursor:pointer" title="{{ q.query | e }}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">{{ q.query }}</td>
+                            {% if current_user.can_edit_services %}
+                            <td><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="{{ q.pid }}" data-service-id="{{ service.id }}" title="Kill PID {{ q.pid }}"><i class="bi bi-x-circle"></i></button></td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-success small mb-0"><i class="bi bi-check-circle"></i> No slow queries</p>
+                {% endif %}
+                </div>
+            </div>
+            <hr class="border-secondary my-3">
+
+            <!-- All active queries -->
+            <div id="pg-active-queries-container">
+            {% if stats.active_query_list %}
+            <h6 class="text-muted mb-2 small">All Active Queries</h6>
+            <div class="table-responsive">
+                <table class="table table-dark table-sm mb-0" aria-label="Active PostgreSQL queries">
+                    <thead>
+                        <tr>
+                            <th scope="col">Database</th>
+                            <th scope="col">User</th>
+                            <th scope="col">State</th>
+                            <th scope="col">Duration</th>
+                            <th scope="col">Query</th>
+                            <th scope="col"><span class="visually-hidden">Actions</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for q in stats.active_query_list %}
+                    <tr>
+                        <td class="font-monospace text-nowrap">{{ q.datname }}</td>
+                        <td class="font-monospace text-nowrap">{{ q.usename }}</td>
+                        <td>
+                            <span class="badge {% if q.state == 'active' %}bg-success{% elif 'transaction' in q.state %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                {{ q.state }}
+                            </span>
+                        </td>
+                        <td class="text-nowrap {% if q.duration_secs >= 30 %}text-danger{% elif q.duration_secs >= 5 %}text-warning{% endif %}">
+                            {{ q.duration }}
+                        </td>
+                        <td class="font-monospace small text-truncate" style="max-width: 420px; cursor: pointer" title="{{ q.query | e }}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">{{ q.query }}</td>
+                        <td class="text-end">
+                            {% if current_user.can_edit_services %}
+                            <button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn"
+                                    data-pid="{{ q.pid }}"
+                                    data-service-id="{{ service.id }}"
+                                    title="Kill backend {{ q.pid }}">
+                                <i class="bi bi-x-circle"></i> Kill
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted small mt-2"><i class="bi bi-check-circle"></i> No active queries</p>
+            {% endif %}
+            </div>
+
+            <!-- Historical slow queries (pg_stat_statements) -->
+            <div class="mt-2" id="pg-stat-statements-container">
+                <h6 class="text-muted mb-2 small"><i class="bi bi-clock-history"></i> Top Queries by Mean Time <span class="badge bg-secondary ms-1">pg_stat_statements</span></h6>
+                {% if stats.slow_query_stats %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm mb-0" aria-label="Slow query stats">
+                        <thead>
+                            <tr>
+                                <th scope="col">Mean (ms)</th>
+                                <th scope="col">Calls</th>
+                                <th scope="col">Total (ms)</th>
+                                <th scope="col">Rows</th>
+                                <th scope="col">Query</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for s in stats.slow_query_stats %}
+                        <tr>
+                            <td class="{% if s.mean_ms >= 1000 %}text-danger{% elif s.mean_ms >= 100 %}text-warning{% endif %} text-nowrap">
+                                {{ '{:,.1f}'.format(s.mean_ms) }}
+                            </td>
+                            <td>{{ '{:,}'.format(s.calls) }}</td>
+                            <td class="text-nowrap">{{ '{:,.0f}'.format(s.total_ms) }}</td>
+                            <td>{{ '{:,}'.format(s.rows) }}</td>
+                            <td class="font-monospace small text-truncate" style="max-width:420px" title="{{ s.query | e }}">{{ s.query }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0"><i class="bi bi-info-circle"></i> No data — <code>pg_stat_statements</code> extension may not be installed.
+                    Enable it with <code>CREATE EXTENSION pg_stat_statements;</code> and add <code>pg_stat_statements</code> to <code>shared_preload_libraries</code> in <code>postgresql.conf</code>.</p>
+                {% endif %}
+            </div>
+
+        </div><!-- /queries -->
+
+        <!-- ── Maintenance tab ── -->
+        <div class="tab-pane fade" id="pg-maintenance" role="tabpanel" aria-labelledby="pg-maintenance-tab">
+            {% if current_user.can_edit_services %}
+
+            <!-- VACUUM -->
+            <div class="mt-3 mb-4">
+                <h6 class="text-muted mb-2"><i class="bi bi-brush"></i> VACUUM</h6>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted" for="pgVacuumDb">Database</label>
+                        <select id="pgVacuumDb" class="form-select form-select-sm bg-dark text-light border-secondary">
+                            {% for db_item in stats.databases %}
+                            <option value="{{ db_item.name }}">{{ db_item.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <div class="form-check form-check-inline mt-4">
+                            <input class="form-check-input" type="checkbox" id="pgVacuumAnalyze" value="1">
+                            <label class="form-check-label small" for="pgVacuumAnalyze">ANALYZE</label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="pgRunVacuum()">
+                            <i class="bi bi-play-fill"></i> Run VACUUM
+                        </button>
+                    </div>
+                </div>
+                <div id="pgVacuumResult" class="mt-2 font-monospace small" style="display:none"></div>
+            </div>
+
+            <!-- EXPLAIN -->
+            <div class="mb-4">
+                <h6 class="text-muted mb-2"><i class="bi bi-search"></i> EXPLAIN</h6>
+                <div class="row g-2 mb-2">
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted" for="pgExplainDb">Database</label>
+                        <select id="pgExplainDb" class="form-select form-select-sm bg-dark text-light border-secondary">
+                            {% for db_item in stats.databases %}
+                            <option value="{{ db_item.name }}">{{ db_item.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <textarea id="pgExplainQuery" class="form-control form-control-sm bg-dark text-light border-secondary font-monospace mb-2"
+                          rows="4" placeholder="SELECT ..."></textarea>
+                <button class="btn btn-sm btn-outline-secondary" onclick="pgRunExplain()">
+                    <i class="bi bi-play-fill"></i> Run EXPLAIN
+                </button>
+                <div id="pgExplainResult" class="mt-2" style="display:none">
+                    <pre id="pgExplainOutput" class="p-3 rounded" style="background:#1a1a2e;color:#e0e0e0;font-size:0.8rem;max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-word"></pre>
+                </div>
+            </div>
+
+            {% endif %}{# can_edit_services #}
+
+            <!-- Roles -->
+            <div class="mb-4">
+                <h6 class="text-muted mb-2"><i class="bi bi-people"></i> Roles
+                    <button class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="pgLoadRoles()" id="pgRolesLoadBtn">Load</button>
+                </h6>
+                <div id="pg-roles-container"></div>
+            </div>
+
+            <!-- Settings -->
+            <div class="mb-2">
+                <h6 class="text-muted mb-2"><i class="bi bi-gear"></i> Key Settings
+                    <button class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="pgLoadSettings()" id="pgSettingsLoadBtn">Load</button>
+                </h6>
+                <div id="pg-settings-container"></div>
+            </div>
+        </div><!-- /maintenance -->
+
+    </div><!-- /tab-content -->
 </div>
 
 {% elif stats.type == 'puma' %}
@@ -651,10 +965,70 @@ function refreshStats() {
 
             // PostgreSQL
             if (data.type === 'postgresql') {
-                setEl('stat-pg-active', data.active_queries || 'N/A');
-                setEl('stat-pg-conn',   `${data.total_connections || '0'} / ${data.max_connections || '?'}`);
-                setEl('stat-pg-cache',  data.cache_hit_ratio || 'N/A');
+                setEl('stat-pg-active',    data.active_queries || 'N/A');
+                setEl('stat-pg-conn',      `${data.total_connections || '0'} / ${data.max_connections || '?'}`);
+                setEl('stat-pg-cache',     data.cache_hit_ratio || 'N/A');
+                setEl('stat-pg-commits',   (parseInt(data.total_commits) || 0).toLocaleString());
 
+                const rollbackEl = document.getElementById('stat-pg-rollbacks');
+                if (rollbackEl) {
+                    const rb = parseInt(data.total_rollbacks) || 0;
+                    rollbackEl.textContent = rb.toLocaleString();
+                    rollbackEl.className = rb > 0 ? 'fs-5 text-warning' : 'fs-5';
+                }
+
+                const lockEl = document.getElementById('stat-pg-lockwaits');
+                if (lockEl) {
+                    const lw = data.lock_waits || 0;
+                    lockEl.textContent = lw;
+                    lockEl.className = lw > 0 ? 'fs-5 text-danger' : 'fs-5';
+                }
+
+                // Connection state badges
+                const statesContainer = document.getElementById('pg-conn-states-container');
+                if (statesContainer && data.connection_states) {
+                    const stateCls = s => s === 'active' ? 'bg-success'
+                        : (s||'').includes('transaction') ? 'bg-warning text-dark'
+                        : s === 'idle' ? 'bg-secondary' : 'bg-dark border border-secondary';
+                    statesContainer.innerHTML = '<div class="text-muted small mb-1">Connection States</div><div class="d-flex flex-wrap gap-2">'
+                        + Object.entries(data.connection_states).map(([s,c]) =>
+                            `<span class="badge ${stateCls(s)} fs-6">${escHtml(s)}: ${c}</span>`
+                          ).join('') + '</div>';
+                }
+
+                // Slow queries section
+                const slowContainer = document.getElementById('pg-slow-queries-container');
+                if (slowContainer) {
+                    const slow = (data.active_query_list || []).filter(q => q.duration_secs >= 5)
+                        .sort((a, b) => b.duration_secs - a.duration_secs);
+                    if (slow.length > 0) {
+                        const svcId = {{ service.id }};
+                        const killTh = canEditServices ? '<th scope="col"><span class="visually-hidden">Actions</span></th>' : '';
+                        const slowRows = slow.map(q => {
+                            const durCls = q.duration_secs >= 30 ? 'text-danger fw-bold' : 'text-warning';
+                            const killBtn = canEditServices
+                                ? `<td><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill PID ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i></button></td>`
+                                : '';
+                            return `<tr>
+                                <td class="font-monospace text-nowrap small">${escHtml(q.datname)}</td>
+                                <td class="font-monospace text-nowrap small">${escHtml(q.usename)}</td>
+                                <td class="text-nowrap small ${durCls}">${escHtml(q.duration)}</td>
+                                <td class="font-monospace small text-truncate" style="max-width:360px; cursor:pointer" title="${escHtml(q.query)}" onclick="copyQuery(this)" aria-label="Copy query to clipboard">${escHtml(q.query)}</td>
+                                ${killBtn}
+                            </tr>`;
+                        }).join('');
+                        slowContainer.innerHTML = `<div class="table-responsive">
+                            <table class="table table-dark table-sm mb-0">
+                                <thead><tr><th scope="col">DB</th><th scope="col">User</th><th scope="col">Duration</th><th scope="col">Query</th>${killTh}</tr></thead>
+                                <tbody>${slowRows}</tbody>
+                            </table>
+                        </div>`;
+                    } else {
+                        slowContainer.innerHTML = '<p class="text-success small mb-0"><i class="bi bi-check-circle"></i> No slow queries</p>';
+                    }
+                }
+
+                // Active queries table
                 const container = document.getElementById('pg-active-queries-container');
                 if (container) {
                     const list = data.active_query_list || [];
@@ -674,17 +1048,82 @@ function refreshStats() {
                                 <td class="text-end">${canEditServices ? `<button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill backend ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i> Kill</button>` : ''}</td>
                             </tr>`;
                         }).join('');
-                        container.innerHTML = `<h6 class="text-muted mt-3 mb-2">Active Queries</h6>
-                            <div class="table-responsive">
+                        container.innerHTML = `<h6 class="text-muted mb-2 small">All Active Queries</h6><div class="table-responsive">
                                 <table class="table table-dark table-sm mb-0" aria-label="Active PostgreSQL queries">
                                     <thead><tr><th scope="col">Database</th><th scope="col">User</th><th scope="col">State</th><th scope="col">Duration</th><th scope="col">Query</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
                                     <tbody>${rows}</tbody>
                                 </table>
                             </div>`;
                     } else {
-                        container.innerHTML = '<p class="text-muted small mt-3 mb-0"><i class="bi bi-check-circle"></i> No active queries</p>';
+                        container.innerHTML = '<p class="text-muted small mt-2"><i class="bi bi-check-circle"></i> No active queries</p>';
                     }
                 }
+
+                // Historical slow queries (pg_stat_statements)
+                const stmtsContainer = document.getElementById('pg-stat-statements-container');
+                if (stmtsContainer) {
+                    if (Array.isArray(data.slow_query_stats) && data.slow_query_stats.length > 0) {
+                        const stmtRows = data.slow_query_stats.map(s => {
+                            const meanCls = s.mean_ms >= 1000 ? 'text-danger' : s.mean_ms >= 100 ? 'text-warning' : '';
+                            return `<tr>
+                                <td class="${meanCls} text-nowrap">${Number(s.mean_ms).toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1})}</td>
+                                <td>${Number(s.calls).toLocaleString()}</td>
+                                <td class="text-nowrap">${Math.round(s.total_ms).toLocaleString()}</td>
+                                <td>${Number(s.rows).toLocaleString()}</td>
+                                <td class="font-monospace small text-truncate" style="max-width:420px" title="${escHtml(s.query)}">${escHtml(s.query)}</td>
+                            </tr>`;
+                        }).join('');
+                        stmtsContainer.innerHTML = `<h6 class="text-muted mb-2 small"><i class="bi bi-clock-history"></i> Top Queries by Mean Time <span class="badge bg-secondary ms-1">pg_stat_statements</span></h6>
+                            <div class="table-responsive">
+                                <table class="table table-dark table-sm mb-0">
+                                    <thead><tr><th>Mean (ms)</th><th>Calls</th><th>Total (ms)</th><th>Rows</th><th>Query</th></tr></thead>
+                                    <tbody>${stmtRows}</tbody>
+                                </table>
+                            </div>`;
+                    } else {
+                        stmtsContainer.innerHTML = '<h6 class="text-muted mb-2 small"><i class="bi bi-clock-history"></i> Top Queries by Mean Time <span class="badge bg-secondary ms-1">pg_stat_statements</span></h6>'
+                            + '<p class="text-muted small mb-0"><i class="bi bi-info-circle"></i> No data \u2014 <code>pg_stat_statements</code> extension may not be installed.</p>';
+                    }
+                }
+
+                // Tables tab
+                const tablesContainer = document.getElementById('pg-tables-container');
+                if (tablesContainer) {
+                    const tables = data.tables || [];
+                    if (tables.length > 0) {
+                        const dbNote = data.tables_database
+                            ? `<p class="text-muted small mb-2">Showing tables from <code>${escHtml(data.tables_database)}</code></p>`
+                            : '';
+                        const tableRows = tables.map(t => {
+                            const deadCls = t.dead_tup >= 10000 ? 'text-danger' : t.dead_tup >= 1000 ? 'text-warning' : '';
+                            return `<tr>
+                                <td class="font-monospace text-muted small">${escHtml(t.schema)}</td>
+                                <td class="font-monospace">${escHtml(t.table)}</td>
+                                <td>${Number(t.live_tup).toLocaleString()}</td>
+                                <td class="${deadCls}">${Number(t.dead_tup).toLocaleString()}</td>
+                                <td class="small text-nowrap">${escHtml(t.last_vacuum)}</td>
+                                <td class="small text-nowrap">${escHtml(t.last_analyze)}</td>
+                                <td class="text-nowrap">${escHtml(t.size)}</td>
+                            </tr>`;
+                        }).join('');
+                        tablesContainer.innerHTML = dbNote + `<div class="table-responsive">
+                            <table class="table table-dark table-sm mb-0" aria-label="PostgreSQL user tables">
+                                <thead><tr>
+                                    <th scope="col">Schema</th><th scope="col">Table</th>
+                                    <th scope="col">Live Rows</th><th scope="col">Dead Rows</th>
+                                    <th scope="col">Last Vacuum</th><th scope="col">Last Analyze</th>
+                                    <th scope="col">Size</th>
+                                </tr></thead>
+                                <tbody>${tableRows}</tbody>
+                            </table>
+                        </div>`;
+                    } else {
+                        tablesContainer.innerHTML = '<p class="text-muted small mt-2"><i class="bi bi-info-circle"></i> No user tables found.</p>';
+                    }
+                }
+
+                // Refresh charts after each stat update
+                pgLoadCharts();
             }
 
             // Elasticsearch
@@ -1168,5 +1607,178 @@ function refreshLogs() {
             btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh';
         });
 }
+
+// ── PostgreSQL DBA helpers ────────────────────────────────────────────────────
+
+{% if stats.type == 'postgresql' %}
+
+// --- VACUUM ---
+function pgRunVacuum() {
+    const db = document.getElementById('pgVacuumDb').value;
+    const analyze = document.getElementById('pgVacuumAnalyze').checked;
+    const resultDiv = document.getElementById('pgVacuumResult');
+    resultDiv.style.display = 'block';
+    resultDiv.className = 'mt-2 font-monospace small text-muted';
+    resultDiv.textContent = 'Running…';
+    fetch('/services/{{ service.id }}/pg/vacuum', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({database: db, analyze: analyze}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        resultDiv.className = 'mt-2 font-monospace small ' + (data.ok ? 'text-success' : 'text-danger');
+        resultDiv.textContent = data.message || (data.ok ? 'Done.' : 'Error');
+    })
+    .catch(e => {
+        resultDiv.className = 'mt-2 font-monospace small text-danger';
+        resultDiv.textContent = 'Request failed: ' + e;
+    });
+}
+
+// --- EXPLAIN ANALYZE ---
+function pgRunExplain() {
+    const db = document.getElementById('pgExplainDb').value;
+    const query = document.getElementById('pgExplainQuery').value.trim();
+    if (!query) { alert('Please enter a query.'); return; }
+    const resultDiv = document.getElementById('pgExplainResult');
+    const outputEl  = document.getElementById('pgExplainOutput');
+    resultDiv.style.display = 'block';
+    outputEl.textContent = 'Running EXPLAIN ANALYZE…';
+    fetch('/services/{{ service.id }}/pg/explain', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({database: db, query: query}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            outputEl.textContent = data.plan || '(no output)';
+        } else {
+            outputEl.textContent = 'Error: ' + (data.message || 'unknown');
+        }
+    })
+    .catch(e => { outputEl.textContent = 'Request failed: ' + e; });
+}
+
+// --- ROLES ---
+let _pgRolesLoaded = false;
+function pgLoadRoles() {
+    if (_pgRolesLoaded) return;
+    const container = document.getElementById('pg-roles-container');
+    container.innerHTML = '<span class="spinner-border spinner-border-sm text-secondary"></span>';
+    fetch('/services/{{ service.id }}/pg/roles', {cache: 'no-store'})
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) { container.innerHTML = `<div class="text-danger small">${escHtml(data.error)}</div>`; return; }
+        const roles = data.roles || [];
+        if (!roles.length) { container.innerHTML = '<p class="text-muted small">No roles found.</p>'; return; }
+        const rows = roles.map(r => `<tr>
+            <td class="font-monospace">${escHtml(r.name)}</td>
+            <td>${r.superuser ? '<span class="badge bg-danger">superuser</span>' : ''}</td>
+            <td>${r.can_login ? '<span class="badge bg-success">login</span>' : '<span class="badge bg-secondary">no login</span>'}</td>
+            <td>${r.create_db ? '<i class="bi bi-check text-success"></i>' : ''}</td>
+            <td>${r.create_role ? '<i class="bi bi-check text-success"></i>' : ''}</td>
+            <td>${r.replication ? '<span class="badge bg-info text-dark">replication</span>' : ''}</td>
+            <td class="text-muted">${r.conn_limit === '-1' ? '∞' : escHtml(r.conn_limit)}</td>
+        </tr>`).join('');
+        container.innerHTML = `<div class="table-responsive"><table class="table table-dark table-sm mb-0">
+            <thead><tr><th>Role</th><th>Superuser</th><th>Login</th><th>CreateDB</th><th>CreateRole</th><th>Replication</th><th>Conn Limit</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>`;
+        _pgRolesLoaded = true;
+        document.getElementById('pgRolesLoadBtn').style.display = 'none';
+    })
+    .catch(e => { container.innerHTML = `<div class="text-danger small">Failed: ${escHtml(String(e))}</div>`; });
+}
+
+// --- SETTINGS ---
+let _pgSettingsLoaded = false;
+function pgLoadSettings() {
+    if (_pgSettingsLoaded) return;
+    const container = document.getElementById('pg-settings-container');
+    container.innerHTML = '<span class="spinner-border spinner-border-sm text-secondary"></span>';
+    fetch('/services/{{ service.id }}/pg/settings', {cache: 'no-store'})
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) { container.innerHTML = `<div class="text-danger small">${escHtml(data.error)}</div>`; return; }
+        const settings = data.settings || [];
+        if (!settings.length) { container.innerHTML = '<p class="text-muted small">No settings returned.</p>'; return; }
+        const rows = settings.map(s => `<tr>
+            <td class="font-monospace small">${escHtml(s.name)}</td>
+            <td class="font-monospace">${escHtml(s.setting)}${s.unit ? ' <span class="text-muted small">' + escHtml(s.unit) + '</span>' : ''}</td>
+            <td class="text-muted small">${escHtml(s.description)}</td>
+        </tr>`).join('');
+        container.innerHTML = `<div class="table-responsive"><table class="table table-dark table-sm mb-0">
+            <thead><tr><th>Setting</th><th>Value</th><th>Description</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>`;
+        _pgSettingsLoaded = true;
+        document.getElementById('pgSettingsLoadBtn').style.display = 'none';
+    })
+    .catch(e => { container.innerHTML = `<div class="text-danger small">Failed: ${escHtml(String(e))}</div>`; });
+}
+
+// --- TABLES tab helper (reload on tab activation after refresh) ---
+function pgLoadTables() { /* Data comes from server-rendered stats; JS refresh updates it via full stats reload */ }
+function pgLoadMaintenance() { /* Tabs are loaded lazily via load buttons */ }
+
+// --- CHARTS ---
+let _pgConnChart = null;
+let _pgCacheChart = null;
+
+function pgLoadCharts() {
+    if (typeof Chart === 'undefined') return;
+    fetch('/services/{{ service.id }}/pg/metrics-history?limit=144', {cache: 'no-store'})
+    .then(r => r.json())
+    .then(data => {
+        const snaps = data.snapshots || [];
+        if (!snaps.length) return;
+        const labels = snaps.map(s => {
+            const d = new Date(s.captured_at);
+            return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        });
+        const conns  = snaps.map(s => s.total_connections ?? null);
+        const caches = snaps.map(s => s.cache_hit_ratio ?? null);
+
+        const chartDefaults = {
+            type: 'line',
+            options: {
+                responsive: true,
+                animation: false,
+                plugins: {legend: {display: false}},
+                scales: {
+                    x: {ticks: {color: '#6c757d', maxTicksLimit: 8}, grid: {color: '#2d2d2d'}},
+                    y: {ticks: {color: '#6c757d'}, grid: {color: '#2d2d2d'}, beginAtZero: true},
+                },
+            },
+        };
+
+        const connCanvas = document.getElementById('pg-chart-connections');
+        if (connCanvas) {
+            if (_pgConnChart) _pgConnChart.destroy();
+            _pgConnChart = new Chart(connCanvas, {...chartDefaults, data: {
+                labels,
+                datasets: [{data: conns, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.1)', fill: true, tension: 0.3, pointRadius: 2}],
+            }});
+        }
+
+        const cacheCanvas = document.getElementById('pg-chart-cache');
+        if (cacheCanvas) {
+            if (_pgCacheChart) _pgCacheChart.destroy();
+            _pgCacheChart = new Chart(cacheCanvas, {...chartDefaults, data: {
+                labels,
+                datasets: [{data: caches, borderColor: '#198754', backgroundColor: 'rgba(25,135,84,0.1)', fill: true, tension: 0.3, pointRadius: 2}],
+            }, options: {...chartDefaults.options, scales: {
+                ...chartDefaults.options.scales,
+                y: {ticks: {color: '#6c757d', callback: v => v + '%'}, grid: {color: '#2d2d2d'}, min: 0, max: 100},
+            }}});
+        }
+    })
+    .catch(() => {/* charts are optional, fail silently */});
+}
+
+// Load charts on page open
+document.addEventListener('DOMContentLoaded', pgLoadCharts);
+
+{% endif %}{# stats.type == 'postgresql' #}
 </script>
 {% endblock %}

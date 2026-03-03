@@ -568,3 +568,15 @@ def init_scheduler(app):
     logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, ghost check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
 
     return _scheduler
+
+
+def reschedule_jobs(interval_hours, discovery_hours, service_check_minutes):
+    """Reschedule configurable interval jobs with updated values. No-op if scheduler is not running."""
+    if _scheduler is None or not _scheduler.running:
+        return
+    _scheduler.reschedule_job("scan_all", trigger=IntervalTrigger(hours=interval_hours))
+    _scheduler.reschedule_job("mastodon_check", trigger=IntervalTrigger(hours=interval_hours))
+    _scheduler.reschedule_job("ghost_check", trigger=IntervalTrigger(hours=interval_hours))
+    _scheduler.reschedule_job("discovery", trigger=IntervalTrigger(hours=discovery_hours))
+    _scheduler.reschedule_job("service_health", trigger=IntervalTrigger(minutes=service_check_minutes))
+    logger.info(f"Scheduler rescheduled: discovery every {discovery_hours}h, scan every {interval_hours}h, service check every {service_check_minutes}m")
