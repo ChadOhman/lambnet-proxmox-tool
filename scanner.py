@@ -1750,38 +1750,47 @@ def _stats_postgresql(guest):
     if out and out.strip().isdigit():
         stats["replication_replicas"] = int(out.strip())
 
-    # Table stats — top 25 by dead tuples across all user tables
-    out, _ = _execute_command(guest,
-        "sudo -u postgres psql -t -A -c \""
-        "SELECT schemaname, relname, "
-        "coalesce(n_live_tup,0), coalesce(n_dead_tup,0), "
-        "coalesce(to_char(greatest(last_vacuum, last_autovacuum), 'YYYY-MM-DD HH24:MI'), '-'), "
-        "coalesce(to_char(greatest(last_analyze, last_autoanalyze), 'YYYY-MM-DD HH24:MI'), '-'), "
-        "pg_relation_size(relid) "
-        "FROM pg_stat_user_tables "
-        "ORDER BY n_dead_tup DESC NULLS LAST LIMIT 25"
-        "\" 2>/dev/null",
-        timeout=15, sudo=True)
-    if out:
-        tables = []
-        for line in out.strip().split("\n"):
-            parts = line.strip().split("|")
-            if len(parts) == 7:
-                try:
-                    rel_size = int(parts[6]) if parts[6].isdigit() else 0
-                    tables.append({
-                        "schema": parts[0],
-                        "table": parts[1],
-                        "live_tup": int(parts[2]),
-                        "dead_tup": int(parts[3]),
-                        "last_vacuum": parts[4],
-                        "last_analyze": parts[5],
-                        "size": _human_bytes(rel_size),
-                        "size_bytes": rel_size,
-                    })
-                except (ValueError, IndexError):
-                    pass
-        stats["tables"] = tables
+    # Table stats — pg_stat_user_tables is per-database, so target the largest
+    # non-system database (most likely to have application tables).
+    _system_dbs = {"postgres", "template0", "template1"}
+    _table_target_db = next(
+        (db["name"] for db in stats.get("databases", []) if db["name"] not in _system_dbs),
+        None,
+    )
+    if _table_target_db:
+        out, _ = _execute_command(guest,
+            f"sudo -u postgres psql -d {_table_target_db} -t -A -c \""
+            "SELECT schemaname, relname, "
+            "coalesce(n_live_tup,0), coalesce(n_dead_tup,0), "
+            "coalesce(to_char(greatest(last_vacuum, last_autovacuum), 'YYYY-MM-DD HH24:MI'), '-'), "
+            "coalesce(to_char(greatest(last_analyze, last_autoanalyze), 'YYYY-MM-DD HH24:MI'), '-'), "
+            "pg_relation_size(relid) "
+            "FROM pg_stat_user_tables "
+            "ORDER BY n_dead_tup DESC NULLS LAST LIMIT 25"
+            "\" 2>/dev/null",
+            timeout=15, sudo=True)
+        if out:
+            tables = []
+            for line in out.strip().split("\n"):
+                parts = line.strip().split("|")
+                if len(parts) == 7:
+                    try:
+                        rel_size = int(parts[6]) if parts[6].isdigit() else 0
+                        tables.append({
+                            "schema": parts[0],
+                            "table": parts[1],
+                            "live_tup": int(parts[2]),
+                            "dead_tup": int(parts[3]),
+                            "last_vacuum": parts[4],
+                            "last_analyze": parts[5],
+                            "size": _human_bytes(rel_size),
+                            "size_bytes": rel_size,
+                        })
+                    except (ValueError, IndexError):
+                        pass
+            if tables:
+                stats["tables"] = tables
+                stats["tables_database"] = _table_target_db
 
     # Historical slow queries from pg_stat_statements (graceful if extension absent)
     out, _ = _execute_command(guest,
