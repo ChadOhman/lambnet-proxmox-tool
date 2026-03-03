@@ -1949,16 +1949,20 @@ def _stats_puma(guest, service):
         stats["health_status"] = "OK" if out.strip() == "200" else f"HTTP {out.strip()}"
 
     # ── 2. Puma startup metadata — single journalctl call ────────────────────
-    # Extracts version, worker count, and thread range from Puma's boot log lines.
-    # awk exits early once all three values are found.
+    # Reads journal once into $J, then uses grep -oP (POSIX + Perl extensions,
+    # available everywhere via grep) to extract each field.  Avoids the GNU awk
+    # three-argument match() which is absent from mawk (Debian/Ubuntu default).
+    # Puma 5+ logs Min/Max threads on separate lines, so we match them separately.
     journal_cmd = (
-        "journalctl -u mastodon-web.service -n 200 --no-pager 2>/dev/null"
-        r" | awk '"
-        r"/Puma version:/ && !pv { match($0, /Puma version: ([^ ]+)/, a); print \"puma_version=\" a[1]; pv=1 }"
-        r" /\* Workers:/ && !wk  { match($0, /Workers: ([0-9]+)/, a); print \"workers=\" a[1]; wk=1 }"
-        r" /Min threads:/ && !th  { match($0, /Min threads: ([0-9]+), Max threads: ([0-9]+)/, a);"
-        r"                           print \"min_threads=\" a[1]; print \"max_threads=\" a[2]; th=1 }"
-        r" pv && wk && th { exit }'"
+        "J=$(journalctl -u mastodon-web.service -n 200 --no-pager 2>/dev/null);"
+        " echo \"$J\" | grep -m1 'Puma version:'"
+        r"   | grep -oP 'Puma version: \K[^ ]+' | sed 's/^/puma_version=/'; "
+        " echo \"$J\" | grep -m1 '\\* Workers:'"
+        r"   | grep -oP 'Workers: \K[0-9]+' | sed 's/^/workers=/'; "
+        " echo \"$J\" | grep -m1 'Min threads:'"
+        r"   | grep -oP 'Min threads: \K[0-9]+' | sed 's/^/min_threads=/'; "
+        " echo \"$J\" | grep -m1 'Max threads:'"
+        r"   | grep -oP 'Max threads: \K[0-9]+' | sed 's/^/max_threads=/'"
     )
     out, _ = _execute_command(guest, journal_cmd, timeout=15)
     jdata = {}
@@ -2001,13 +2005,20 @@ def _stats_puma(guest, service):
         except ValueError:
             pass
 
-    # ── 3. Mastodon version — instance API ───────────────────────────────────
-    out, _ = _execute_command(
-        guest,
-        f"curl -s localhost:{port}/api/v1/instance 2>/dev/null"
-        " | python3 -c \"import json,sys; d=json.load(sys.stdin); print(d.get('version',''))\" 2>/dev/null",
-        timeout=10,
+    # ── 3. Mastodon version — read from version.rb source file ───────────────
+    # Avoids the API curl which requires a valid Host header matching the
+    # instance domain (Rails rejects bare localhost requests in production).
+    masto_ver_cmd = (
+        "for d in /home/mastodon/live /var/www/mastodon /opt/mastodon; do"
+        "  f=\"$d/lib/mastodon/version.rb\";"
+        "  [ -f \"$f\" ] || continue;"
+        r"  maj=$(grep -oP 'MAJOR\s*=\s*\K[0-9]+' \"$f\" | head -1);"
+        r"  min=$(grep -oP 'MINOR\s*=\s*\K[0-9]+' \"$f\" | head -1);"
+        r"  pat=$(grep -oP 'PATCH\s*=\s*\K[0-9]+' \"$f\" | head -1);"
+        "  [ -n \"$maj\" ] && echo \"$maj.$min.$pat\" && break;"
+        " done"
     )
+    out, _ = _execute_command(guest, masto_ver_cmd, timeout=10)
     v = (out or "").strip()
     if v:
         stats["mastodon_version"] = v
