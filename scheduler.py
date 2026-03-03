@@ -153,6 +153,21 @@ def _run_discovery(app):
 
                 repl_map = client.get_replication_map()
 
+                # Pre-load all tag names seen in this batch to avoid O(N×M) per-guest queries
+                all_tag_names = {
+                    t.strip()
+                    for g in node_guests
+                    for t in re.split(r"[;,]", g.get("tags", ""))
+                    if t.strip()
+                }
+                tag_cache = {t.name: t for t in Tag.query.filter(Tag.name.in_(all_tag_names)).all()}
+
+                def _resolve_tag(name, _cache=tag_cache):
+                    if name not in _cache:
+                        _cache[name] = Tag(name=name)
+                        db.session.add(_cache[name])
+                    return _cache[name]
+
                 # Clean up stale guests on this host
                 node_vmids = {g.get("vmid") for g in node_guests}
                 stale = Guest.query.filter(
@@ -206,11 +221,7 @@ def _run_discovery(app):
                         added += 1
 
                         for tag_name in tag_names:
-                            tag = Tag.query.filter_by(name=tag_name).first()
-                            if not tag:
-                                tag = Tag(name=tag_name)
-                                db.session.add(tag)
-                            guest.tags.append(tag)
+                            guest.tags.append(_resolve_tag(tag_name))
                     else:
                         if ip:
                             existing.ip_address = ip
@@ -221,11 +232,7 @@ def _run_discovery(app):
                             existing.mac_address = mac
                         existing.tags.clear()
                         for tag_name in tag_names:
-                            tag = Tag.query.filter_by(name=tag_name).first()
-                            if not tag:
-                                tag = Tag(name=tag_name)
-                                db.session.add(tag)
-                            existing.tags.append(tag)
+                            existing.tags.append(_resolve_tag(tag_name))
                         updated += 1
 
                 db.session.commit()

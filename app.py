@@ -358,6 +358,13 @@ def _migrate_schema():
             db.session.commit()
             logger.info("audit_logs.user_id is now nullable.")
 
+    if "service_metric_snapshots" in table_names:
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_svc_metric_service_captured "
+            "ON service_metric_snapshots (service_id, captured_at)"
+        ))
+        db.session.commit()
+
 
 def _migrate_roles():
     """Migrate from old boolean permission columns to role-based model."""

@@ -11,7 +11,8 @@ bp = Blueprint("dashboard", __name__)
 def index():
     # Tag filter (shared with guests/terminal pages via session)
     tag_filter = request.args.get("tag", None)
-    user_tag_names = [t.name for t in current_user.allowed_tags]
+    user_tags = current_user.allowed_tags
+    user_tag_names = [t.name for t in user_tags]
 
     if tag_filter is not None:
         session["guest_tag_filter"] = tag_filter
@@ -26,7 +27,7 @@ def index():
     if current_user.is_admin:
         base_query = Guest.query.filter_by(enabled=True)
     else:
-        user_tag_ids = [t.id for t in current_user.allowed_tags]
+        user_tag_ids = [t.id for t in user_tags]
         if not user_tag_ids:
             base_query = Guest.query.filter(False)
         else:

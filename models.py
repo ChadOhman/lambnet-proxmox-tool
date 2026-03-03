@@ -3,6 +3,14 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 
+
+def _in_request_context() -> bool:
+    try:
+        from flask import has_request_context
+        return has_request_context()
+    except RuntimeError:
+        return False
+
 db = SQLAlchemy()
 
 # Package name prefixes that typically require a reboot on Debian/Ubuntu.
@@ -495,6 +503,14 @@ class ServiceMetricSnapshot(db.Model):
         return f"<ServiceMetricSnapshot service={self.service_id} at={self.captured_at}>"
 
 
+# Composite index speeds up the per-service prune query (ORDER BY captured_at DESC OFFSET N)
+db.Index(
+    "ix_svc_metric_service_captured",
+    ServiceMetricSnapshot.service_id,
+    ServiceMetricSnapshot.captured_at,
+)
+
+
 class Setting(db.Model):
     __tablename__ = "settings"
 
@@ -504,6 +520,18 @@ class Setting(db.Model):
 
     @staticmethod
     def get(key, default=None):
+        if _in_request_context():
+            from flask import g
+            cache = g.get("_settings_cache")
+            if cache is None:
+                g._settings_cache = {}
+                cache = g._settings_cache
+            if key in cache:
+                return cache[key]
+            s = Setting.query.filter_by(key=key).first()
+            value = s.value if s else default
+            cache[key] = value
+            return value
         s = Setting.query.filter_by(key=key).first()
         return s.value if s else default
 
@@ -516,6 +544,9 @@ class Setting(db.Model):
             s = Setting(key=key, value=value)
             db.session.add(s)
         db.session.commit()
+        if _in_request_context():
+            from flask import g
+            g.pop("_settings_cache", None)
         return s
 
 
