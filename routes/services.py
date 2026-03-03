@@ -1,11 +1,11 @@
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from audit import log_action
-from models import db, Guest, GuestService, ServiceMetricSnapshot
+from models import db, AuditLog, Guest, GuestService, ServiceMetricSnapshot
 from scanner import (check_service_statuses, service_action, get_service_logs, get_service_stats,
                      sidekiq_clear_dead, sidekiq_retry_dead,
                      sidekiq_clear_retry, sidekiq_retry_retry,
@@ -164,7 +164,15 @@ def detail(service_id):
     guest = svc.guest
     stats = get_service_stats(guest, svc)
     log_text = get_service_logs(guest, svc, lines=30)
-    return render_template("service_detail.html", service=svc, guest=guest, stats=stats, logs=log_text)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    recent_logs = (AuditLog.query
+                   .filter(AuditLog.resource_type == "service",
+                           AuditLog.resource_id == svc.id,
+                           AuditLog.timestamp >= cutoff)
+                   .order_by(AuditLog.timestamp.desc())
+                   .limit(25).all())
+    return render_template("service_detail.html", service=svc, guest=guest, stats=stats, logs=log_text,
+                           recent_logs=recent_logs)
 
 
 @bp.route("/<int:service_id>/sidekiq/clear-dead", methods=["POST"])
