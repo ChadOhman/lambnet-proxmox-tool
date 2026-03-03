@@ -1,8 +1,10 @@
 import json
 import logging
+import queue
+import threading
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, stream_with_context
 from sqlalchemy import func
 from flask_login import login_required, current_user
 from audit import log_action
@@ -11,7 +13,8 @@ from scanner import (check_service_statuses, service_action, get_service_logs, g
                      sidekiq_clear_dead, sidekiq_retry_dead,
                      sidekiq_clear_retry, sidekiq_retry_retry,
                      sidekiq_list_jobs, sidekiq_delete_job, sidekiq_retry_job,
-                     lt_list_installed, lt_list_available, lt_install_package, lt_update_all_packages)
+                     lt_list_installed, lt_list_available, lt_install_package, lt_update_all_packages,
+                     lt_update_packages_stream)
 
 logger = logging.getLogger(__name__)
 
@@ -606,3 +609,48 @@ def lt_update(service_id):
                    details={"service": svc.service_name, "updated": count})
         db.session.commit()
     return jsonify({"ok": ok, "message": msg, "count": count})
+
+
+@bp.route("/<int:service_id>/libretranslate/update-stream", methods=["POST"])
+def lt_update_stream(service_id):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "libretranslate":
+        return jsonify({"ok": False, "message": "Not a LibreTranslate service"}), 400
+    guest = svc.guest
+    guest_id = guest.id
+    guest_name = guest.name
+    svc_name = svc.service_name
+
+    msg_queue = queue.Queue()
+
+    def run():
+        lt_update_packages_stream(guest, svc, msg_queue.put)
+        msg_queue.put(None)  # sentinel
+
+    threading.Thread(target=run, daemon=True).start()
+
+    def generate():
+        result = None
+        while True:
+            item = msg_queue.get()
+            if item is None:
+                break
+            yield f"data: {item}\n\n"
+            try:
+                data = json.loads(item)
+                if data.get("type") == "result":
+                    result = data
+            except Exception:
+                pass
+        if result and result.get("ok"):
+            log_action("lt_update_packages", "guest", resource_id=guest_id, resource_name=guest_name,
+                       details={"service": svc_name, "updated": result.get("updated", 0)})
+            db.session.commit()
+
+    return Response(
+        stream_with_context(generate()),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

@@ -2177,6 +2177,49 @@ except Exception as _e:
     print(json.dumps({'ok': False, 'updated': 0, 'message': str(_e)}))
 """
 
+# Streaming variant of the update script.  Emits one JSON object per line so
+# the caller can report per-package progress to the user in real time.
+_LT_UPDATE_STREAMING_SCRIPT = _LT_PATH_SETUP + b"""\
+import sys
+try:
+    from argostranslate import package as _pkg
+    print(json.dumps({'type': 'status', 'message': 'Updating package index\u2026'}), flush=True)
+    _pkg.update_package_index()
+    _avail = {(p.from_code, p.to_code): p for p in _pkg.get_available_packages()}
+    _to_update = []
+    for _inst in _pkg.get_installed_packages():
+        _key = (_inst.from_code, _inst.to_code)
+        _avail_pkg = _avail.get(_key)
+        if _avail_pkg is None:
+            continue
+        _inst_ver = getattr(_inst, 'package_version', None)
+        _avail_ver = getattr(_avail_pkg, 'package_version', None)
+        if _inst_ver and _avail_ver and _inst_ver == _avail_ver:
+            continue
+        _to_update.append((_key, _avail_pkg, _avail_ver))
+    print(json.dumps({'type': 'start', 'total': len(_to_update)}), flush=True)
+    _n = 0
+    _errors = []
+    for _i, (_key, _avail_pkg, _avail_ver) in enumerate(_to_update):
+        _from, _to = _key
+        print(json.dumps({'type': 'installing', 'from_code': _from, 'to_code': _to,
+                          'version': _avail_ver, 'index': _i + 1, 'total': len(_to_update)}), flush=True)
+        try:
+            _avail_pkg.install()
+            _n += 1
+            print(json.dumps({'type': 'installed', 'from_code': _from, 'to_code': _to}), flush=True)
+        except Exception as _ie:
+            _errors.append('{}->{}: {}'.format(_from, _to, str(_ie)))
+            print(json.dumps({'type': 'error', 'from_code': _from, 'to_code': _to,
+                              'message': str(_ie)}), flush=True)
+    _msg = 'Updated {} package(s)'.format(_n)
+    if _errors:
+        _msg += '; {} error(s): {}'.format(len(_errors), '; '.join(_errors))
+    print(json.dumps({'ok': True, 'updated': _n, 'message': _msg, 'type': 'result'}), flush=True)
+except Exception as _e:
+    print(json.dumps({'ok': False, 'updated': 0, 'message': str(_e), 'type': 'result'}), flush=True)
+"""
+
 _LANG_CODE_RE = re.compile(r'^[a-z]{2,8}$')
 
 
@@ -2242,6 +2285,47 @@ def lt_update_all_packages(guest, service):
         return data.get("ok", False), data.get("message", "Unknown error"), data.get("updated", 0)
     except Exception as e:
         return False, str(e), 0
+
+
+def lt_update_packages_stream(guest, service, line_callback):
+    """Stream LibreTranslate package updates via SSH, calling line_callback for each JSON progress line.
+
+    Only supports SSH connections (streaming requires channel-level access).
+    line_callback receives a raw JSON string for each progress event.
+    """
+    _py_b64 = base64.b64encode(_LT_UPDATE_STREAMING_SCRIPT).decode()
+    cmd = f"python3 -c 'import base64;exec(base64.b64decode(\"{_py_b64}\").decode())' 2>/dev/null"
+
+    credential = guest.credential
+    if not credential:
+        from models import Credential
+        credential = Credential.query.filter_by(is_default=True).first()
+
+    if not credential or not _has_valid_ip(guest):
+        line_callback(json.dumps({"type": "result", "ok": False, "updated": 0,
+                                  "message": "No SSH credential or IP address available"}))
+        return
+
+    buf = ""
+
+    def _on_chunk(chunk):
+        nonlocal buf
+        buf += chunk
+        while "\n" in buf:
+            line, buf = buf.split("\n", 1)
+            line = line.strip()
+            if line.startswith("{"):
+                line_callback(line)
+
+    try:
+        with SSHClient.from_credential(guest.ip_address, credential) as ssh:
+            ssh.execute_streaming(cmd, _on_chunk, timeout=600)
+        # flush any remaining buffered line
+        if buf.strip().startswith("{"):
+            line_callback(buf.strip())
+    except Exception as e:
+        line_callback(json.dumps({"type": "result", "ok": False, "updated": 0,
+                                  "message": f"SSH error: {e}"}))
 
 
 def check_reboot_required(guest):

@@ -859,6 +859,25 @@
     </div>
 </div>
 
+<!-- LibreTranslate Update Progress Modal -->
+<div class="modal fade" id="ltUpdateModal" tabindex="-1" aria-labelledby="ltUpdateTitle" aria-modal="true" role="dialog" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="ltUpdateTitle"><i class="bi bi-arrow-up-circle" aria-hidden="true"></i> Updating Language Packages</h5>
+            </div>
+            <div class="modal-body">
+                <p id="ltUpdateStatus" class="text-muted small mb-2"></p>
+                <div id="ltUpdateList" class="font-monospace small"></div>
+                <div id="ltUpdateSummary"></div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" id="ltUpdateCloseBtn" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" disabled>Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- LibreTranslate Available Packages Modal -->
 <div class="modal fade" id="ltAvailableModal" tabindex="-1" aria-labelledby="ltAvailableTitle" aria-modal="true" role="dialog">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -1594,29 +1613,93 @@ document.getElementById('ltAvailableModal').addEventListener('click', function(e
         });
 });
 
-function ltUpdateAll() {
-    if (!confirm('Update all installed language packages? This may take several minutes.')) return;
+let _ltUpdateModal = null;
+
+async function ltUpdateAll() {
     const btn = document.getElementById('ltUpdateAllBtn');
+    const statusEl = document.getElementById('ltUpdateStatus');
+    const listEl = document.getElementById('ltUpdateList');
+    const summaryEl = document.getElementById('ltUpdateSummary');
+    const closeBtn = document.getElementById('ltUpdateCloseBtn');
+
+    statusEl.textContent = 'Connecting\u2026';
+    listEl.innerHTML = '';
+    summaryEl.innerHTML = '';
+    closeBtn.disabled = true;
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Updating…';
-    fetch('/services/{{ service.id }}/libretranslate/update', {method: 'POST'})
-        .then(r => r.json())
-        .then(data => {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-arrow-up-circle"></i> Update All';
-            if (data.ok) {
-                const countMsg = data.count > 0 ? ` (${data.count} updated)` : '';
-                alert(`Update complete.${countMsg} ${data.message}`);
-                ltLoadInstalled();
-            } else {
-                alert('Update failed: ' + data.message);
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Updating\u2026';
+
+    if (!_ltUpdateModal) {
+        _ltUpdateModal = new bootstrap.Modal(document.getElementById('ltUpdateModal'));
+    }
+    _ltUpdateModal.show();
+
+    try {
+        const response = await fetch('/services/{{ service.id }}/libretranslate/update-stream', {method: 'POST'});
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, {stream: true});
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const raw of lines) {
+                if (!raw.startsWith('data: ')) continue;
+                try { _ltHandleUpdateEvent(JSON.parse(raw.slice(6)), statusEl, listEl, summaryEl); }
+                catch (_) { /* ignore */ }
             }
-        })
-        .catch(err => {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-arrow-up-circle"></i> Update All';
-            alert('Request failed: ' + err);
-        });
+        }
+    } catch (err) {
+        summaryEl.innerHTML = `<div class="alert alert-danger mt-2 mb-0">Connection error: ${escHtml(String(err))}</div>`;
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-up-circle"></i> Update All';
+    closeBtn.disabled = false;
+    ltLoadInstalled();
+}
+
+function _ltHandleUpdateEvent(data, statusEl, listEl, summaryEl) {
+    if (data.type === 'status') {
+        statusEl.textContent = data.message;
+    } else if (data.type === 'start') {
+        statusEl.textContent = data.total === 0
+            ? 'All packages are already up to date.'
+            : `Updating ${data.total} package(s)\u2026`;
+    } else if (data.type === 'installing') {
+        statusEl.textContent = `Installing ${data.index} of ${data.total}\u2026`;
+        const row = document.createElement('div');
+        row.id = `lt-upd-${data.from_code}-${data.to_code}`;
+        row.className = 'd-flex align-items-center gap-2 py-1 border-bottom border-secondary';
+        const verBadge = data.version ? `<span class="badge bg-secondary ms-auto">${escHtml(data.version)}</span>` : '';
+        row.innerHTML = `<span class="spinner-border spinner-border-sm text-secondary flex-shrink-0"></span>`
+            + `<span>${escHtml(data.from_code)} \u2192 ${escHtml(data.to_code)}</span>${verBadge}`;
+        listEl.appendChild(row);
+        row.scrollIntoView({block: 'nearest'});
+    } else if (data.type === 'installed' || data.type === 'error') {
+        const row = document.getElementById(`lt-upd-${data.from_code}-${data.to_code}`);
+        if (row) {
+            const spinner = row.querySelector('.spinner-border');
+            const icon = document.createElement('i');
+            if (data.type === 'installed') {
+                icon.className = 'bi bi-check-circle-fill text-success flex-shrink-0';
+            } else {
+                icon.className = 'bi bi-x-circle-fill text-danger flex-shrink-0';
+                row.insertAdjacentHTML('beforeend',
+                    `<span class="text-danger small ms-auto">${escHtml(data.message)}</span>`);
+            }
+            spinner.replaceWith(icon);
+        }
+    } else if (data.type === 'result') {
+        statusEl.textContent = '';
+        const cls = data.ok ? 'alert-success' : 'alert-danger';
+        summaryEl.innerHTML = `<div class="alert ${cls} mt-2 mb-0">${escHtml(data.message)}</div>`;
+    }
 }
 
 // Auto-load installed packages on page load
