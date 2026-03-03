@@ -613,6 +613,7 @@ def lt_update(service_id):
 
 @bp.route("/<int:service_id>/libretranslate/update-stream", methods=["POST"])
 def lt_update_stream(service_id):
+    from flask import current_app
     if not current_user.can_edit_services:
         return jsonify({"ok": False, "message": "Permission denied."}), 403
     svc = GuestService.query.get_or_404(service_id)
@@ -622,12 +623,28 @@ def lt_update_stream(service_id):
     guest_id = guest.id
     guest_name = guest.name
     svc_name = svc.service_name
+    svc_id = svc.id
 
     msg_queue = queue.Queue()
+    app = current_app._get_current_object()
 
     def run():
-        lt_update_packages_stream(guest, svc, msg_queue.put)
-        msg_queue.put(None)  # sentinel
+        # Push a fresh app context so the background thread gets its own
+        # SQLAlchemy session and can safely reload the SQLAlchemy objects.
+        try:
+            with app.app_context():
+                fresh_guest = Guest.query.get(guest_id)
+                fresh_svc = GuestService.query.get(svc_id)
+                if fresh_guest and fresh_svc:
+                    lt_update_packages_stream(fresh_guest, fresh_svc, msg_queue.put)
+                else:
+                    msg_queue.put(json.dumps({"type": "result", "ok": False,
+                                             "updated": 0, "message": "Service not found"}))
+        except Exception as exc:
+            msg_queue.put(json.dumps({"type": "result", "ok": False,
+                                     "updated": 0, "message": str(exc)}))
+        finally:
+            msg_queue.put(None)  # sentinel — always sent so generator never blocks forever
 
     threading.Thread(target=run, daemon=True).start()
 
