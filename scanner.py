@@ -1759,7 +1759,7 @@ def _stats_postgresql(guest):
     )
     if _table_target_db:
         out, _ = _execute_command(guest,
-            f"sudo -u postgres psql -d {_table_target_db} -t -A -c \""
+            f"sudo -u postgres psql -d {_table_target_db} -t -A -c \""  # noqa: S608 — db name sourced from pg_database, not user input
             "SELECT schemaname, relname, "
             "coalesce(n_live_tup,0), coalesce(n_dead_tup,0), "
             "coalesce(to_char(greatest(last_vacuum, last_autovacuum), 'YYYY-MM-DD HH24:MI'), '-'), "
