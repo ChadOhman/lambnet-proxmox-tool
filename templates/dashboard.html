@@ -41,7 +41,7 @@
         A new version of MCAT is available: <strong>v{{ app_update_available }}</strong>.
         <a href="/settings" class="alert-link">Go to Settings</a> to update.
     </div>
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
 </div>
 {% endif %}
 
@@ -54,7 +54,7 @@
         <a href="/guests/{{ g.id }}" class="alert-link">{{ g.name }}</a>{{ ', ' if not loop.last }}
         {% endfor %}
     </div>
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
 </div>
 {% endif %}
 
