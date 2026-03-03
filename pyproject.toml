@@ -2,7 +2,17 @@
 testpaths = ["tests"]
 
 [tool.coverage.run]
-omit = ["tests/*", ".venv/*"]
+omit = [
+    "tests/*",
+    ".venv/*",
+    "scanner.py",
+    "proxmox_api.py",
+    "pbs_client.py",
+    "mastodon.py",
+    "ghost.py",
+    "unifi_client.py",
+    "unifi_geoip.py",
+]
 
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]

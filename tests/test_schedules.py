@@ -1,0 +1,198 @@
+"""Tests for maintenance schedule routes."""
+import pytest
+from models import db, MaintenanceWindow
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def window(app):
+    """Seed a single MaintenanceWindow row; clean up after the test."""
+    win_id = None
+    with app.app_context():
+        w = MaintenanceWindow(
+            name="_test-window",
+            day_of_week="sunday",
+            start_time="02:00",
+            end_time="05:00",
+            update_type="upgrade",
+            enabled=True,
+        )
+        db.session.add(w)
+        db.session.commit()
+        win_id = w.id
+
+    yield win_id
+
+    with app.app_context():
+        w = MaintenanceWindow.query.get(win_id)
+        if w:
+            db.session.delete(w)
+            db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Route: GET /schedules/
+# ---------------------------------------------------------------------------
+
+
+class TestSchedulesIndex:
+    def test_returns_200(self, auth_client):
+        resp = auth_client.get("/schedules/")
+        assert resp.status_code == 200
+
+    def test_unauthenticated_redirects_to_login(self, client):
+        resp = client.get("/schedules/", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "/login" in resp.headers["Location"]
+
+    def test_lists_existing_schedules(self, auth_client, window, app):
+        with app.app_context():
+            w = MaintenanceWindow.query.get(window)
+            win_name = w.name
+
+        resp = auth_client.get("/schedules/")
+        assert resp.status_code == 200
+        assert win_name.encode() in resp.data
+
+
+# ---------------------------------------------------------------------------
+# Route: POST /schedules/add
+# ---------------------------------------------------------------------------
+
+
+class TestScheduleAdd:
+    def test_add_happy_path_creates_window(self, app, auth_client):
+        win_id = None
+        try:
+            resp = auth_client.post(
+                "/schedules/add",
+                data={
+                    "name": "_test-add-window",
+                    "day_of_week": "monday",
+                    "start_time": "03:00",
+                    "end_time": "04:00",
+                    "update_type": "upgrade",
+                },
+                follow_redirects=False,
+            )
+            assert resp.status_code == 302
+
+            with app.app_context():
+                w = MaintenanceWindow.query.filter_by(name="_test-add-window").first()
+                assert w is not None
+                assert w.day_of_week == "monday"
+                assert w.start_time == "03:00"
+                assert w.end_time == "04:00"
+                assert w.update_type == "upgrade"
+                assert w.enabled is True
+                win_id = w.id
+        finally:
+            if win_id is not None:
+                with app.app_context():
+                    w = MaintenanceWindow.query.get(win_id)
+                    if w:
+                        db.session.delete(w)
+                        db.session.commit()
+
+    def test_add_uses_default_values(self, app, auth_client):
+        """Omitting optional fields falls back to route defaults."""
+        win_id = None
+        try:
+            resp = auth_client.post(
+                "/schedules/add",
+                data={"name": "_test-add-defaults"},
+                follow_redirects=False,
+            )
+            assert resp.status_code == 302
+
+            with app.app_context():
+                w = MaintenanceWindow.query.filter_by(name="_test-add-defaults").first()
+                assert w is not None
+                assert w.day_of_week == "sunday"
+                assert w.start_time == "02:00"
+                assert w.end_time == "05:00"
+                assert w.update_type == "upgrade"
+                win_id = w.id
+        finally:
+            if win_id is not None:
+                with app.app_context():
+                    w = MaintenanceWindow.query.get(win_id)
+                    if w:
+                        db.session.delete(w)
+                        db.session.commit()
+
+    def test_add_missing_name_redirects_without_creating(self, app, auth_client):
+        resp = auth_client.post(
+            "/schedules/add",
+            data={
+                "name": "",
+                "day_of_week": "friday",
+                "start_time": "01:00",
+                "end_time": "02:00",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        with app.app_context():
+            assert MaintenanceWindow.query.filter_by(name="").count() == 0
+
+
+# ---------------------------------------------------------------------------
+# Route: POST /schedules/<id>/toggle
+# ---------------------------------------------------------------------------
+
+
+class TestScheduleToggle:
+    def test_toggle_enabled_to_disabled(self, app, auth_client, window):
+        resp = auth_client.post(
+            f"/schedules/{window}/toggle",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+        with app.app_context():
+            w = MaintenanceWindow.query.get(window)
+            assert w.enabled is False
+
+    def test_toggle_disabled_to_enabled(self, app, auth_client, window):
+        # First toggle: enabled -> disabled
+        auth_client.post(f"/schedules/{window}/toggle", follow_redirects=False)
+        # Second toggle: disabled -> enabled
+        resp = auth_client.post(
+            f"/schedules/{window}/toggle",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+        with app.app_context():
+            w = MaintenanceWindow.query.get(window)
+            assert w.enabled is True
+
+    def test_toggle_nonexistent_returns_404(self, auth_client):
+        resp = auth_client.post("/schedules/999999/toggle")
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Route: POST /schedules/<id>/delete
+# ---------------------------------------------------------------------------
+
+
+class TestScheduleDelete:
+    def test_delete_removes_row(self, app, auth_client, window):
+        resp = auth_client.post(
+            f"/schedules/{window}/delete",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+        with app.app_context():
+            assert MaintenanceWindow.query.get(window) is None
+
+    def test_delete_nonexistent_returns_404(self, auth_client):
+        resp = auth_client.post("/schedules/999999/delete")
+        assert resp.status_code == 404

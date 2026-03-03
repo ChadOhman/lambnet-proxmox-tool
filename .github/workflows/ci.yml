@@ -77,7 +77,7 @@ jobs:
           FLASK_SECRET_KEY: ci-test-secret
           DATABASE_URL: "sqlite:////tmp/ci-test.db"
           LAMBNET_DATA_DIR: /tmp/lambnet-ci
-        run: pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=18
+        run: pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=40
 
   shellcheck:
     name: ShellCheck
@@ -102,12 +102,13 @@ jobs:
           node-version: "20"
 
       - name: Run html-validate on templates
-        # continue-on-error: Jinja2 syntax causes parser false positives.
-        # Strip ::error/::warning workflow commands so they don't become
-        # misleading GitHub annotations.
+        # Jinja2 template syntax causes parser false positives.
+        # Override GITHUB_ACTIONS so html-validate uses plain text output
+        # instead of ##[error] workflow commands that create annotations.
         continue-on-error: true
-        run: |
-          npx --yes html-validate@9 \
-            --config .htmlvalidate.json \
-            "templates/**/*.html" 2>&1 \
-            | sed 's/^::/[html-validate] /' || true
+        env:
+          GITHUB_ACTIONS: ""
+        run: >
+          npx --yes html-validate@9
+          --config .htmlvalidate.json
+          "templates/**/*.html"
