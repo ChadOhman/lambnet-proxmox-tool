@@ -1,6 +1,10 @@
 import os
+import threading
 from cryptography.fernet import Fernet
 from config import SECRET_KEY_PATH
+
+_fernet: "Fernet | None" = None
+_fernet_lock = threading.Lock()
 
 
 def _get_or_create_key():
@@ -19,9 +23,13 @@ def _get_or_create_key():
     return key
 
 
-def get_fernet():
-    key = _get_or_create_key()
-    return Fernet(key)
+def get_fernet() -> Fernet:
+    global _fernet
+    if _fernet is None:
+        with _fernet_lock:
+            if _fernet is None:
+                _fernet = Fernet(_get_or_create_key())
+    return _fernet
 
 
 def encrypt(plaintext):
