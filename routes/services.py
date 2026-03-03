@@ -379,7 +379,7 @@ def pg_explain(service_id):
         return jsonify({"ok": False, "message": "database and query are required"}), 400
     from scanner import _execute_command
     import uuid
-    tmpfile = f"/tmp/.pg_explain_{uuid.uuid4().hex[:12]}.sql"
+    tmpfile = f"/tmp/.pg_explain_{uuid.uuid4().hex[:12]}.sql"  # nosec B108 — remote SSH path, not a local temp file
     # Use a temp file to avoid shell-quoting issues with arbitrary SQL
     safe_query = query.replace("'", "'\\''")
     _, write_err = _execute_command(
@@ -453,7 +453,7 @@ def pg_settings(service_id):
     )
     stdout, error = _execute_command(
         guest,
-        f"sudo -u postgres psql -t -A -c \""
+        f"sudo -u postgres psql -t -A -c \""  # noqa: S608 — query built from hardcoded literals only, no user input
         f"SELECT name, setting, unit, short_desc FROM pg_settings "
         f"WHERE name = ANY(ARRAY[{','.join(repr(n) for n in names.split(','))}]) "
         f"ORDER BY name"
