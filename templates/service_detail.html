@@ -427,8 +427,42 @@
 
         <!-- ── Queries tab ── -->
         <div class="tab-pane fade" id="pg-queries" role="tabpanel" aria-labelledby="pg-queries-tab">
-            <div id="pg-active-queries-container" class="mt-2">
+
+            <!-- Slow running queries alert -->
+            <div id="pg-slow-queries-container" class="mt-2">
+            {% set slow_active = stats.active_query_list | selectattr('duration_secs', 'ge', 5) | list %}
+            {% if slow_active %}
+            <div class="alert alert-warning py-2 mb-3">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <strong>{{ slow_active | length }} slow {{ 'query' if slow_active | length == 1 else 'queries' }} running</strong>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0" style="--bs-table-bg: transparent;" aria-label="Slow active queries">
+                        <thead><tr><th>DB</th><th>User</th><th>Duration</th><th>Query</th>{% if current_user.can_edit_services %}<th></th>{% endif %}</tr></thead>
+                        <tbody>
+                        {% for q in slow_active | sort(attribute='duration_secs', reverse=True) %}
+                        <tr>
+                            <td class="font-monospace text-nowrap small">{{ q.datname }}</td>
+                            <td class="font-monospace text-nowrap small">{{ q.usename }}</td>
+                            <td class="text-nowrap small {% if q.duration_secs >= 30 %}text-danger fw-bold{% else %}text-warning{% endif %}">{{ q.duration }}</td>
+                            <td class="font-monospace small text-truncate" style="max-width:360px" title="{{ q.query | e }}">{{ q.query }}</td>
+                            {% if current_user.can_edit_services %}
+                            <td><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="{{ q.pid }}" data-service-id="{{ service.id }}" title="Kill PID {{ q.pid }}"><i class="bi bi-x-circle"></i></button></td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+            </div>
+
+            <!-- All active queries -->
+            <div id="pg-active-queries-container">
             {% if stats.active_query_list %}
+            <h6 class="text-muted mb-2 small">All Active Queries</h6>
             <div class="table-responsive">
                 <table class="table table-dark table-sm mb-0" aria-label="Active PostgreSQL queries">
                     <thead>
@@ -474,6 +508,40 @@
             <p class="text-muted small mt-2"><i class="bi bi-check-circle"></i> No active queries</p>
             {% endif %}
             </div>
+
+            <!-- Historical slow queries (pg_stat_statements) -->
+            {% if stats.slow_query_stats %}
+            <div class="mt-4" id="pg-stat-statements-container">
+                <h6 class="text-muted mb-2 small"><i class="bi bi-clock-history"></i> Historically Slow Queries <span class="badge bg-secondary ms-1">pg_stat_statements</span></h6>
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm mb-0" aria-label="Slow query stats">
+                        <thead>
+                            <tr>
+                                <th scope="col">Mean (ms)</th>
+                                <th scope="col">Calls</th>
+                                <th scope="col">Total (ms)</th>
+                                <th scope="col">Rows</th>
+                                <th scope="col">Query</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for s in stats.slow_query_stats %}
+                        <tr>
+                            <td class="{% if s.mean_ms >= 1000 %}text-danger{% elif s.mean_ms >= 100 %}text-warning{% endif %} text-nowrap">
+                                {{ '{:,.1f}'.format(s.mean_ms) }}
+                            </td>
+                            <td>{{ '{:,}'.format(s.calls) }}</td>
+                            <td class="text-nowrap">{{ '{:,.0f}'.format(s.total_ms) }}</td>
+                            <td>{{ '{:,}'.format(s.rows) }}</td>
+                            <td class="font-monospace small text-truncate" style="max-width:420px" title="{{ s.query | e }}">{{ s.query }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
         </div><!-- /queries -->
 
         <!-- ── Maintenance tab ── -->
@@ -507,13 +575,9 @@
                 <div id="pgVacuumResult" class="mt-2 font-monospace small" style="display:none"></div>
             </div>
 
-            <!-- EXPLAIN ANALYZE -->
+            <!-- EXPLAIN -->
             <div class="mb-4">
-                <h6 class="text-muted mb-2"><i class="bi bi-search"></i> EXPLAIN ANALYZE</h6>
-                <div class="alert alert-warning py-2 small mb-2">
-                    <i class="bi bi-exclamation-triangle-fill"></i>
-                    <strong>Warning:</strong> EXPLAIN ANALYZE <em>executes</em> the query. Use only with read-only queries or in a transaction you intend to roll back.
-                </div>
+                <h6 class="text-muted mb-2"><i class="bi bi-search"></i> EXPLAIN</h6>
                 <div class="row g-2 mb-2">
                     <div class="col-md-4">
                         <label class="form-label small text-muted" for="pgExplainDb">Database</label>
@@ -526,8 +590,8 @@
                 </div>
                 <textarea id="pgExplainQuery" class="form-control form-control-sm bg-dark text-light border-secondary font-monospace mb-2"
                           rows="4" placeholder="SELECT ..."></textarea>
-                <button class="btn btn-sm btn-outline-warning" onclick="pgRunExplain()">
-                    <i class="bi bi-play-fill"></i> Run EXPLAIN ANALYZE
+                <button class="btn btn-sm btn-outline-secondary" onclick="pgRunExplain()">
+                    <i class="bi bi-play-fill"></i> Run EXPLAIN
                 </button>
                 <div id="pgExplainResult" class="mt-2" style="display:none">
                     <pre id="pgExplainOutput" class="p-3 rounded" style="background:#1a1a2e;color:#e0e0e0;font-size:0.8rem;max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-word"></pre>
@@ -928,6 +992,44 @@ function refreshStats() {
                           ).join('') + '</div>';
                 }
 
+                // Slow query alert
+                const slowContainer = document.getElementById('pg-slow-queries-container');
+                if (slowContainer) {
+                    const slow = (data.active_query_list || []).filter(q => q.duration_secs >= 5)
+                        .sort((a, b) => b.duration_secs - a.duration_secs);
+                    if (slow.length > 0) {
+                        const svcId = {{ service.id }};
+                        const slowRows = slow.map(q => {
+                            const durCls = q.duration_secs >= 30 ? 'text-danger fw-bold' : 'text-warning';
+                            const killBtn = canEditServices
+                                ? `<td><button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill PID ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i></button></td>`
+                                : '';
+                            return `<tr>
+                                <td class="font-monospace text-nowrap small">${escHtml(q.datname)}</td>
+                                <td class="font-monospace text-nowrap small">${escHtml(q.usename)}</td>
+                                <td class="text-nowrap small ${durCls}">${escHtml(q.duration)}</td>
+                                <td class="font-monospace small text-truncate" style="max-width:360px" title="${escHtml(q.query)}">${escHtml(q.query)}</td>
+                                ${killBtn}
+                            </tr>`;
+                        }).join('');
+                        const killTh = canEditServices ? '<th></th>' : '';
+                        slowContainer.innerHTML = `<div class="alert alert-warning py-2 mb-3">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <i class="bi bi-exclamation-triangle-fill"></i>
+                                <strong>${slow.length} slow ${slow.length === 1 ? 'query' : 'queries'} running</strong>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0" style="--bs-table-bg:transparent;">
+                                    <thead><tr><th>DB</th><th>User</th><th>Duration</th><th>Query</th>${killTh}</tr></thead>
+                                    <tbody>${slowRows}</tbody>
+                                </table>
+                            </div>
+                        </div>`;
+                    } else {
+                        slowContainer.innerHTML = '';
+                    }
+                }
+
                 // Active queries table
                 const container = document.getElementById('pg-active-queries-container');
                 if (container) {
@@ -948,7 +1050,7 @@ function refreshStats() {
                                 <td class="text-end">${canEditServices ? `<button class="btn btn-outline-danger btn-sm py-0 pg-kill-btn" data-pid="${escHtml(String(q.pid))}" data-service-id="${svcId}" title="Kill backend ${escHtml(String(q.pid))}"><i class="bi bi-x-circle"></i> Kill</button>` : ''}</td>
                             </tr>`;
                         }).join('');
-                        container.innerHTML = `<div class="table-responsive">
+                        container.innerHTML = `<h6 class="text-muted mb-2 small">All Active Queries</h6><div class="table-responsive">
                                 <table class="table table-dark table-sm mb-0" aria-label="Active PostgreSQL queries">
                                     <thead><tr><th scope="col">Database</th><th scope="col">User</th><th scope="col">State</th><th scope="col">Duration</th><th scope="col">Query</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
                                     <tbody>${rows}</tbody>
@@ -957,6 +1059,30 @@ function refreshStats() {
                     } else {
                         container.innerHTML = '<p class="text-muted small mt-2"><i class="bi bi-check-circle"></i> No active queries</p>';
                     }
+                }
+
+                // Historical slow queries (pg_stat_statements)
+                const stmtsContainer = document.getElementById('pg-stat-statements-container');
+                if (stmtsContainer && Array.isArray(data.slow_query_stats) && data.slow_query_stats.length > 0) {
+                    const stmtRows = data.slow_query_stats.map(s => {
+                        const meanCls = s.mean_ms >= 1000 ? 'text-danger' : s.mean_ms >= 100 ? 'text-warning' : '';
+                        return `<tr>
+                            <td class="${meanCls} text-nowrap">${Number(s.mean_ms).toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1})}</td>
+                            <td>${Number(s.calls).toLocaleString()}</td>
+                            <td class="text-nowrap">${Math.round(s.total_ms).toLocaleString()}</td>
+                            <td>${Number(s.rows).toLocaleString()}</td>
+                            <td class="font-monospace small text-truncate" style="max-width:420px" title="${escHtml(s.query)}">${escHtml(s.query)}</td>
+                        </tr>`;
+                    }).join('');
+                    stmtsContainer.innerHTML = `<h6 class="text-muted mb-2 small"><i class="bi bi-clock-history"></i> Historically Slow Queries <span class="badge bg-secondary ms-1">pg_stat_statements</span></h6>
+                        <div class="table-responsive">
+                            <table class="table table-dark table-sm mb-0">
+                                <thead><tr><th>Mean (ms)</th><th>Calls</th><th>Total (ms)</th><th>Rows</th><th>Query</th></tr></thead>
+                                <tbody>${stmtRows}</tbody>
+                            </table>
+                        </div>`;
+                } else if (stmtsContainer) {
+                    stmtsContainer.innerHTML = '';
                 }
 
                 // Refresh charts after each stat update

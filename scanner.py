@@ -1783,6 +1783,35 @@ def _stats_postgresql(guest):
                     pass
         stats["tables"] = tables
 
+    # Historical slow queries from pg_stat_statements (graceful if extension absent)
+    out, _ = _execute_command(guest,
+        "sudo -u postgres psql -t -A -c \""
+        "SELECT round(mean_exec_time::numeric,2), calls, "
+        "round(total_exec_time::numeric,2), rows, "
+        "replace(replace(left(query,200),chr(10),' '),chr(13),' ') "
+        "FROM pg_stat_statements "
+        "WHERE mean_exec_time IS NOT NULL "
+        "ORDER BY mean_exec_time DESC LIMIT 15"
+        "\" 2>/dev/null",
+        timeout=15, sudo=True)
+    if out and out.strip():
+        slow = []
+        for line in out.strip().split("\n"):
+            parts = line.strip().split("|", 4)
+            if len(parts) == 5:
+                try:
+                    slow.append({
+                        "mean_ms": float(parts[0]),
+                        "calls": int(parts[1]),
+                        "total_ms": float(parts[2]),
+                        "rows": int(parts[3]),
+                        "query": parts[4],
+                    })
+                except (ValueError, IndexError):
+                    pass
+        if slow:
+            stats["slow_query_stats"] = slow
+
     return stats
 
 

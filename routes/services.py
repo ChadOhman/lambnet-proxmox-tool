@@ -379,12 +379,12 @@ def pg_explain(service_id):
         return jsonify({"ok": False, "message": "database and query are required"}), 400
     from scanner import _execute_command
     import uuid
-    tmpfile = f"/tmp/.pg_ea_{uuid.uuid4().hex[:12]}.sql"
+    tmpfile = f"/tmp/.pg_explain_{uuid.uuid4().hex[:12]}.sql"
     # Use a temp file to avoid shell-quoting issues with arbitrary SQL
     safe_query = query.replace("'", "'\\''")
     _, write_err = _execute_command(
         guest,
-        f"printf '%s' 'EXPLAIN ANALYZE {safe_query}' > {tmpfile}",
+        f"printf '%s' 'EXPLAIN {safe_query}' > {tmpfile}",
         timeout=10,
     )
     if write_err:
@@ -398,7 +398,7 @@ def pg_explain(service_id):
     if error:
         _execute_command(guest, f"rm -f {tmpfile}", timeout=5)
         return jsonify({"ok": False, "message": f"SSH error: {error[:300]}"})
-    log_action("pg_explain_analyze", "guest", resource_id=guest.id, resource_name=guest.name,
+    log_action("pg_explain", "guest", resource_id=guest.id, resource_name=guest.name,
                details={"service": svc.service_name, "database": database})
     db.session.commit()
     return jsonify({"ok": True, "plan": (stdout or "").strip()})
