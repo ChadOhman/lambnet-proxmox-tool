@@ -1514,14 +1514,38 @@ def _stats_redis(guest, service):
     info = _parse_redis_info(out)
 
     if info:
+        # Server
+        stats["redis_version"] = info.get("redis_version", "")
+        uptime_s = int(info.get("uptime_in_seconds", 0) or 0)
+        _days, _rem = divmod(uptime_s, 86400)
+        _hours, _rem = divmod(_rem, 3600)
+        _mins = _rem // 60
+        _parts = []
+        if _days:
+            _parts.append(f"{_days}d")
+        if _hours:
+            _parts.append(f"{_hours}h")
+        if not _days:
+            _parts.append(f"{_mins}m")
+        stats["uptime_human"] = " ".join(_parts) or "0m"
+
         # Memory
         stats["used_memory"] = info.get("used_memory_human", "")
+        stats["used_memory_rss"] = info.get("used_memory_rss_human", "")
         stats["used_memory_peak"] = info.get("used_memory_peak_human", "")
         stats["used_memory_bytes"] = info.get("used_memory", "0")
-        stats["maxmemory"] = info.get("maxmemory_human", "0B")
+        _maxmem_raw = info.get("maxmemory", "0")
+        stats["maxmemory"] = "No limit" if _maxmem_raw in ("0", "") else info.get("maxmemory_human", "No limit")
+        stats["maxmemory_policy"] = info.get("maxmemory_policy", "")
+        _frag = info.get("mem_fragmentation_ratio", "")
+        stats["mem_fragmentation_ratio"] = _frag
+
         # Clients
         stats["connected_clients"] = info.get("connected_clients", "0")
-        # Stats
+        stats["blocked_clients"] = info.get("blocked_clients", "0")
+        stats["total_connections"] = info.get("total_connections_received", "0")
+
+        # Stats / evictions
         stats["ops_per_sec"] = info.get("instantaneous_ops_per_sec", "0")
         hits = int(info.get("keyspace_hits", 0) or 0)
         misses = int(info.get("keyspace_misses", 0) or 0)
@@ -1530,12 +1554,43 @@ def _stats_redis(guest, service):
         stats["keyspace_misses"] = misses
         stats["hit_ratio"] = f"{(hits / total * 100):.1f}%" if total > 0 else "N/A"
         stats["total_commands"] = info.get("total_commands_processed", "0")
+        stats["evicted_keys"] = int(info.get("evicted_keys", 0) or 0)
+        stats["expired_keys"] = int(info.get("expired_keys", 0) or 0)
 
-    # Keyspace (always set, may be empty)
+        # Network I/O
+        stats["net_input_kbps"] = info.get("instantaneous_input_kbps", "0")
+        stats["net_output_kbps"] = info.get("instantaneous_output_kbps", "0")
+        stats["net_input_bytes"] = _human_bytes(int(info.get("total_net_input_bytes", 0) or 0))
+        stats["net_output_bytes"] = _human_bytes(int(info.get("total_net_output_bytes", 0) or 0))
+
+        # Persistence
+        stats["rdb_changes"] = int(info.get("rdb_changes_since_last_save", 0) or 0)
+        stats["rdb_last_save_ts"] = int(info.get("rdb_last_save_time", 0) or 0)
+        stats["rdb_bgsave_status"] = info.get("rdb_last_bgsave_status", "")
+        stats["aof_enabled"] = info.get("aof_enabled", "0") == "1"
+        stats["aof_rewrite_status"] = info.get("aof_last_bgrewrite_status", "")
+
+        # Replication
+        stats["role"] = info.get("role", "")
+        stats["connected_slaves"] = int(info.get("connected_slaves", 0) or 0)
+        stats["repl_backlog_size"] = _human_bytes(int(info.get("repl_backlog_size", 0) or 0))
+        stats["master_host"] = info.get("master_host", "")
+        stats["master_port"] = info.get("master_port", "")
+        stats["master_link_status"] = info.get("master_link_status", "")
+        stats["master_sync_in_progress"] = info.get("master_sync_in_progress", "0") == "1"
+
+    # Keyspace (always set, may be empty) — parsed into structured dicts
     keyspace = {}
     for key, val in info.items():
         if key.startswith("db"):
-            keyspace[key] = val
+            entry = {}
+            for part in val.split(","):
+                k, _, v = part.partition("=")
+                try:
+                    entry[k.strip()] = int(v.strip())
+                except ValueError:
+                    entry[k.strip()] = v.strip()
+            keyspace[key] = entry
     stats["keyspace"] = keyspace
 
     return stats

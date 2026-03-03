@@ -26,6 +26,7 @@
         </h2>
         <span class="text-muted font-monospace">{{ service.unit_name }}</span>
         {% if service.port %}<span class="ms-2 badge bg-secondary">Port {{ service.port }}</span>{% endif %}
+        {% if stats.redis_version %}<span class="ms-2 badge bg-secondary">Redis {{ stats.redis_version }}</span>{% endif %}
         {% if stats.pg_version %}<span class="ms-2 badge bg-secondary">PostgreSQL {{ stats.pg_version }}</span>{% endif %}
         {% if stats.lt_version %}<span class="ms-2 badge bg-secondary">LibreTranslate {{ stats.lt_version }}</span>{% endif %}
     </div>
@@ -178,7 +179,7 @@
 
 {% elif stats.type == 'redis' %}
 <div class="card bg-dark mb-4">
-    <div class="card-header"><h5 class="mb-0"><i class="bi bi-database"></i> Redis</h5></div>
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-database"></i> Memory</h5></div>
     <div class="card-body">
         <div class="row g-3 mb-3">
             <div class="col-md-3">
@@ -186,23 +187,83 @@
                 <div class="fs-5" id="stat-redis-mem">{{ stats.used_memory|default('N/A') }}</div>
             </div>
             <div class="col-md-3">
+                <div class="text-muted small">RSS Memory</div>
+                <div class="fs-5">{{ stats.used_memory_rss|default('N/A') }}</div>
+            </div>
+            <div class="col-md-3">
                 <div class="text-muted small">Peak Memory</div>
                 <div class="fs-5">{{ stats.used_memory_peak|default('N/A') }}</div>
             </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Max Memory</div>
+                <div class="fs-5">{{ stats.maxmemory|default('N/A') }}</div>
+                {% if stats.maxmemory_policy %}<div class="text-muted small font-monospace">{{ stats.maxmemory_policy }}</div>{% endif %}
+            </div>
+        </div>
+        {% if stats.mem_fragmentation_ratio %}
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="text-muted small">Fragmentation Ratio</div>
+                {% set frag = stats.mem_fragmentation_ratio|float %}
+                {% if frag < 1.0 %}
+                <div class="fs-5 text-warning">{{ stats.mem_fragmentation_ratio }} <small class="text-muted">(swap?)</small></div>
+                {% elif frag > 1.5 %}
+                <div class="fs-5 text-warning">{{ stats.mem_fragmentation_ratio }} <small class="text-muted">(high)</small></div>
+                {% else %}
+                <div class="fs-5 text-success">{{ stats.mem_fragmentation_ratio }}</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-people"></i> Clients &amp; Connections</h5></div>
+    <div class="card-body">
+        <div class="row g-3">
             <div class="col-md-3">
                 <div class="text-muted small">Connected Clients</div>
                 <div class="fs-5" id="stat-redis-clients">{{ stats.connected_clients|default('0') }}</div>
             </div>
             <div class="col-md-3">
+                <div class="text-muted small">Blocked Clients</div>
+                <div class="fs-5">{{ stats.blocked_clients|default('0') }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Total Connections</div>
+                <div class="fs-5">{{ '{:,}'.format(stats.total_connections|default(0)|int) }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Uptime</div>
+                <div class="fs-5">{{ stats.uptime_human|default('N/A') }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-activity"></i> Operations</h5></div>
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            <div class="col-md-3">
                 <div class="text-muted small">Ops/sec</div>
                 <div class="fs-5" id="stat-redis-ops">{{ stats.ops_per_sec|default('0') }}</div>
             </div>
-        </div>
-        <div class="row g-3 mb-3">
             <div class="col-md-3">
                 <div class="text-muted small">Hit Ratio</div>
                 <div class="fs-5" id="stat-redis-hitratio">{{ stats.hit_ratio|default('N/A') }}</div>
             </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Evicted Keys</div>
+                <div class="fs-5">{{ '{:,}'.format(stats.evicted_keys|default(0)) }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Expired Keys</div>
+                <div class="fs-5">{{ '{:,}'.format(stats.expired_keys|default(0)) }}</div>
+            </div>
+        </div>
+        <div class="row g-3">
             <div class="col-md-3">
                 <div class="text-muted small">Keyspace Hits</div>
                 <div class="fs-5">{{ '{:,}'.format(stats.keyspace_hits|default(0)) }}</div>
@@ -215,22 +276,144 @@
                 <div class="text-muted small">Total Commands</div>
                 <div class="fs-5">{{ '{:,}'.format(stats.total_commands|default(0)|int) }}</div>
             </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Network I/O</div>
+                <div class="fs-5">&#8595;{{ stats.net_input_kbps|default('0') }} / &#8593;{{ stats.net_output_kbps|default('0') }} <span class="text-muted small">kbps</span></div>
+                <div class="text-muted small">{{ stats.net_input_bytes|default('') }} in / {{ stats.net_output_bytes|default('') }} out</div>
+            </div>
         </div>
-        {% if stats.keyspace %}
-        <h6 class="text-muted mt-2 mb-2">Keyspace</h6>
+    </div>
+</div>
+
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-hdd"></i> Persistence</h5></div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="text-muted small">RDB Last Save</div>
+                {% if stats.rdb_last_save_ts %}
+                <div class="fs-6" id="redis-rdb-last-save" data-ts="{{ stats.rdb_last_save_ts }}">—</div>
+                <script>
+                (function() {
+                    var el = document.getElementById('redis-rdb-last-save');
+                    if (el) {
+                        var ts = parseInt(el.dataset.ts, 10);
+                        el.textContent = ts ? new Date(ts * 1000).toLocaleString() : '—';
+                    }
+                })();
+                </script>
+                {% else %}
+                <div class="fs-6 text-muted">N/A</div>
+                {% endif %}
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Unsaved Changes</div>
+                <div class="fs-5">{{ '{:,}'.format(stats.rdb_changes|default(0)) }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">RDB Status</div>
+                {% if stats.rdb_bgsave_status == 'ok' %}
+                <span class="badge bg-success">ok</span>
+                {% elif stats.rdb_bgsave_status %}
+                <span class="badge bg-danger">{{ stats.rdb_bgsave_status }}</span>
+                {% else %}
+                <span class="text-muted">N/A</span>
+                {% endif %}
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">AOF</div>
+                {% if stats.aof_enabled %}
+                <span class="badge bg-success">Enabled</span>
+                {% if stats.aof_rewrite_status == 'ok' %}<span class="ms-1 badge bg-secondary">rewrite ok</span>{% elif stats.aof_rewrite_status %}<span class="ms-1 badge bg-warning text-dark">{{ stats.aof_rewrite_status }}</span>{% endif %}
+                {% else %}
+                <span class="badge bg-secondary">Disabled</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if stats.role %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-diagram-3"></i> Replication</h5></div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="text-muted small">Role</div>
+                {% if stats.role == 'master' %}
+                <span class="badge bg-primary fs-6">master</span>
+                {% elif stats.role in ('slave', 'replica') %}
+                <span class="badge bg-secondary fs-6">replica</span>
+                {% else %}
+                <span class="badge bg-secondary fs-6">{{ stats.role }}</span>
+                {% endif %}
+            </div>
+            {% if stats.role == 'master' %}
+            <div class="col-md-3">
+                <div class="text-muted small">Connected Replicas</div>
+                <div class="fs-5">{{ stats.connected_slaves|default(0) }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Replication Backlog</div>
+                <div class="fs-5">{{ stats.repl_backlog_size|default('N/A') }}</div>
+            </div>
+            {% elif stats.role in ('slave', 'replica') %}
+            <div class="col-md-3">
+                <div class="text-muted small">Master</div>
+                <div class="fs-6 font-monospace">{{ stats.master_host|default('') }}{% if stats.master_port %}:{{ stats.master_port }}{% endif %}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Link Status</div>
+                {% if stats.master_link_status == 'up' %}
+                <span class="badge bg-success">up</span>
+                {% elif stats.master_link_status %}
+                <span class="badge bg-danger">{{ stats.master_link_status }}</span>
+                {% endif %}
+                {% if stats.master_sync_in_progress %}
+                <span class="ms-1 badge bg-warning text-dark">syncing</span>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if stats.keyspace %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-key"></i> Keyspace</h5></div>
+    <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-dark table-sm mb-0" aria-label="Redis keyspace">
-                <thead><tr><th scope="col">Database</th><th scope="col">Details</th></tr></thead>
+                <thead><tr><th scope="col">Database</th><th scope="col">Keys</th><th scope="col">Expires</th><th scope="col">Avg TTL</th></tr></thead>
                 <tbody>
-                {% for db_name, details in stats.keyspace.items() %}
-                <tr><td class="font-monospace">{{ db_name }}</td><td>{{ details }}</td></tr>
+                {% for db_name, entry in stats.keyspace.items() %}
+                <tr>
+                    <td class="font-monospace">{{ db_name }}</td>
+                    <td>{{ '{:,}'.format(entry.keys|default(0)) }}</td>
+                    <td>{{ '{:,}'.format(entry.expires|default(0)) }}</td>
+                    <td>
+                        {% set ttl_ms = entry.avg_ttl|default(0) %}
+                        {% if ttl_ms == 0 %}
+                        <span class="text-muted">—</span>
+                        {% elif ttl_ms < 1000 %}
+                        &lt;1s
+                        {% elif ttl_ms < 60000 %}
+                        {{ (ttl_ms / 1000)|round(1) }}s
+                        {% elif ttl_ms < 3600000 %}
+                        {{ (ttl_ms / 60000)|round(1) }}m
+                        {% else %}
+                        {{ (ttl_ms / 3600000)|round(1) }}h
+                        {% endif %}
+                    </td>
+                </tr>
                 {% endfor %}
                 </tbody>
             </table>
         </div>
-        {% endif %}
     </div>
 </div>
+{% endif %}
 
 {% elif stats.type == 'postgresql' %}
 <div class="card bg-dark mb-4">
