@@ -84,9 +84,13 @@ def _check_mastodon_release(app):
         current = Setting.get("mastodon_current_version", "")
         logger.info(f"Mastodon update available: v{current} -> v{latest}")
 
-        # Send email notification
-        from notifier import send_mastodon_update_notification
-        send_mastodon_update_notification(current, latest, release_url)
+        # Send Discord notification (only if not already notified for this version)
+        last_notified = Setting.get("mastodon_last_notified_version", "")
+        if latest != last_notified:
+            from notifier import send_mastodon_update_notification
+            ok, _msg = send_mastodon_update_notification(current, latest, release_url)
+            if ok:
+                Setting.set("mastodon_last_notified_version", latest)
 
         # Auto-upgrade if enabled
         if Setting.get("mastodon_auto_upgrade", "false") == "true":
@@ -122,8 +126,13 @@ def _check_ghost_release(app):
         current = Setting.get("ghost_current_version", "")
         logger.info(f"Ghost update available: v{current} -> v{latest}")
 
-        from notifier import send_ghost_update_notification
-        send_ghost_update_notification(current, latest, release_url)
+        # Send Discord notification (only if not already notified for this version)
+        last_notified = Setting.get("ghost_last_notified_version", "")
+        if latest != last_notified:
+            from notifier import send_ghost_update_notification
+            ok, _msg = send_ghost_update_notification(current, latest, release_url)
+            if ok:
+                Setting.set("ghost_last_notified_version", latest)
 
         # Auto-upgrade if enabled
         if Setting.get("ghost_auto_upgrade", "false") == "true":
@@ -256,6 +265,44 @@ def _run_discovery(app):
                 logger.error(f"Scheduled discovery failed for '{host.name}': {e}")
 
 
+def _check_host_updates(app):
+    """Check all Proxmox hosts for pending APT updates and notify."""
+    with app.app_context():
+        from models import Setting, ProxmoxHost
+
+        if Setting.get("scan_enabled", "true") == "false":
+            return
+
+        hosts = ProxmoxHost.query.all()
+        if not hosts:
+            return
+
+        host_results = []
+        for host in hosts:
+            try:
+                if host.is_pbs:
+                    from pbs_client import PBSClient
+                    client = PBSClient(host)
+                    updates = client.get_apt_updates()
+                else:
+                    from proxmox_api import ProxmoxClient
+                    client = ProxmoxClient(host)
+                    node_name = client.get_local_node_name()
+                    updates = client.get_apt_updates(node_name) if node_name else []
+
+                host_results.append({
+                    "name": host.name,
+                    "host_type": host.host_type,
+                    "update_count": len(updates),
+                })
+            except Exception as e:
+                logger.error(f"Failed to check host updates for '{host.name}': {e}")
+
+        if host_results:
+            from notifier import send_host_update_notification
+            send_host_update_notification(host_results)
+
+
 def _check_app_update(app):
     """Check for new app releases, store result, and optionally auto-update."""
     with app.app_context():
@@ -289,6 +336,16 @@ def _check_app_update(app):
             logger.error(f"Failed to check for app updates: {e}")
             return
 
+        # Send Discord notification (independent of auto-update setting)
+        if latest and latest != current_version and current_version != "unknown":
+            last_notified = Setting.get("app_last_notified_version", "")
+            if latest != last_notified:
+                logger.info(f"New app version available: v{current_version} -> v{latest}")
+                from notifier import send_app_update_notification
+                ok, _msg = send_app_update_notification(current_version, latest)
+                if ok:
+                    Setting.set("app_last_notified_version", latest)
+
         if not auto_update:
             return
 
@@ -310,11 +367,6 @@ def _check_app_update(app):
 
         if not latest or latest == current_version:
             return
-
-        logger.info(f"New app version available: v{current_version} -> v{latest}")
-
-        from notifier import send_app_update_notification
-        send_app_update_notification(current_version, latest)
 
         # Run update.sh
         if os.path.exists(update_script):
@@ -536,6 +588,16 @@ def init_scheduler(app):
         replace_existing=True,
     )
 
+    # Host update check - runs alongside the guest scan
+    _scheduler.add_job(
+        _check_host_updates,
+        trigger=IntervalTrigger(hours=interval_hours),
+        args=[app],
+        id="host_update_check",
+        name="Check Proxmox hosts for APT updates",
+        replace_existing=True,
+    )
+
     # Service health checks - runs every N minutes
     _scheduler.add_job(
         _run_service_health_checks,
@@ -587,7 +649,7 @@ def init_scheduler(app):
     )
 
     _scheduler.start()
-    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, ghost check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
+    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, ghost check every {interval_hours}h, host update check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
 
     return _scheduler
 
@@ -599,6 +661,7 @@ def reschedule_jobs(interval_hours, discovery_hours, service_check_minutes):
     _scheduler.reschedule_job("scan_all", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("mastodon_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("ghost_check", trigger=IntervalTrigger(hours=interval_hours))
+    _scheduler.reschedule_job("host_update_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("discovery", trigger=IntervalTrigger(hours=discovery_hours))
     _scheduler.reschedule_job("service_health", trigger=IntervalTrigger(minutes=service_check_minutes))
     logger.info(f"Scheduler rescheduled: discovery every {discovery_hours}h, scan every {interval_hours}h, service check every {service_check_minutes}m")

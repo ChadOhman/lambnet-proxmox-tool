@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import urllib.request
@@ -89,6 +90,16 @@ def send_update_notification(scan_results):
     if not guests_with_updates:
         return
 
+    # Dedup: skip if the same set of updates was already notified
+    fingerprint_parts = sorted(
+        f"{r.guest.name}:{r.total_updates}:{r.security_updates}"
+        for r in guests_with_updates
+    )
+    fingerprint = hashlib.sha256("|".join(fingerprint_parts).encode()).hexdigest()
+    if fingerprint == Setting.get("guest_updates_last_notified_hash", ""):
+        logger.debug("Guest update notification skipped (no change since last notification)")
+        return
+
     color = _COLOR_RED if total_security > 0 else _COLOR_YELLOW
 
     fields = []
@@ -117,9 +128,58 @@ def send_update_notification(scan_results):
 
     ok, msg = _send_discord(embeds)
     if ok:
+        Setting.set("guest_updates_last_notified_hash", fingerprint)
         logger.info(f"Update notification sent for {len(guests_with_updates)} guest(s)")
     else:
         logger.error(f"Failed to send update notification: {msg}")
+
+
+def send_host_update_notification(host_results):
+    """Send notification about Proxmox host APT updates.
+
+    host_results: list of dicts with keys name, host_type, update_count.
+    """
+    if Setting.get("discord_notify_updates", "true") != "true":
+        return
+
+    hosts_with_updates = [h for h in host_results if h["update_count"] > 0]
+    if not hosts_with_updates:
+        return
+
+    # Dedup: skip if the same set of host updates was already notified
+    fingerprint_parts = sorted(
+        f"{h['name']}:{h['update_count']}" for h in hosts_with_updates
+    )
+    fingerprint = hashlib.sha256("|".join(fingerprint_parts).encode()).hexdigest()
+    if fingerprint == Setting.get("host_updates_last_notified_hash", ""):
+        logger.debug("Host update notification skipped (no change since last notification)")
+        return
+
+    total = sum(h["update_count"] for h in hosts_with_updates)
+
+    fields = []
+    for h in hosts_with_updates:
+        type_label = "PBS" if h["host_type"] == "pbs" else "PVE"
+        fields.append({
+            "name": f"{h['name']} ({type_label})",
+            "value": f"**{h['update_count']}** package(s) available",
+            "inline": False,
+        })
+
+    embeds = [{
+        "title": f"\U0001f4e6 {total} host update(s) available",
+        "description": f"**{total}** package update(s) across **{len(hosts_with_updates)}** Proxmox host(s).",
+        "color": _COLOR_YELLOW,
+        "fields": fields,
+        "footer": {"text": "Log in to MCAT to review and apply updates."},
+    }]
+
+    ok, msg = _send_discord(embeds)
+    if ok:
+        Setting.set("host_updates_last_notified_hash", fingerprint)
+        logger.info(f"Host update notification sent for {len(hosts_with_updates)} host(s)")
+    else:
+        logger.error(f"Failed to send host update notification: {msg}")
 
 
 def send_mastodon_update_notification(current_version, new_version, release_url):

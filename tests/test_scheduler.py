@@ -196,6 +196,7 @@ class TestInitScheduler:
             "auto_update",
             "mastodon_check",
             "ghost_check",
+            "host_update_check",
             "service_health",
             "app_update_check",
             "audit_log_purge",
@@ -400,7 +401,7 @@ class TestRescheduleJobs:
 
         mock_sched.reschedule_job.assert_not_called()
 
-    def test_reschedules_exactly_five_jobs(self):
+    def test_reschedules_all_configurable_jobs(self):
         import scheduler as sched_mod
 
         mock_sched = MagicMock()
@@ -409,7 +410,7 @@ class TestRescheduleJobs:
 
         sched_mod.reschedule_jobs(6, 4, 5)
 
-        assert mock_sched.reschedule_job.call_count == 5
+        assert mock_sched.reschedule_job.call_count == 6
 
     def test_reschedules_scan_all_with_new_interval(self):
         import scheduler as sched_mod
@@ -797,6 +798,7 @@ class TestCheckAppUpdate:
             "app_auto_update": "true",
             "latest_app_version": "",
             "latest_app_check": "",
+            "app_last_notified_version": "",
         }.get(k, d)
 
         fake_resp = MagicMock()
@@ -804,7 +806,9 @@ class TestCheckAppUpdate:
         fake_resp.__exit__ = MagicMock(return_value=False)
         fake_resp.read.return_value = json.dumps({"tag_name": "v1.1.0"}).encode()
 
-        mocks = {"models": MagicMock(Setting=mock_setting)}
+        mock_notifier = MagicMock()
+        mock_notifier.send_app_update_notification.return_value = (True, "ok")
+        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
         with _SysModulesPatch(mocks), \
              patch("urllib.request.urlopen", return_value=fake_resp), \
              patch("subprocess.Popen") as mock_popen:
@@ -822,6 +826,7 @@ class TestCheckAppUpdate:
         mock_setting.get.side_effect = lambda k, d="": {
             "app_update_branch": "--bad-flag",
             "app_auto_update": "true",
+            "app_last_notified_version": "",
         }.get(k, d)
 
         fake_resp = MagicMock()
@@ -829,7 +834,9 @@ class TestCheckAppUpdate:
         fake_resp.__exit__ = MagicMock(return_value=False)
         fake_resp.read.return_value = json.dumps({"tag_name": "v2.0.0"}).encode()
 
-        mocks = {"models": MagicMock(Setting=mock_setting)}
+        mock_notifier = MagicMock()
+        mock_notifier.send_app_update_notification.return_value = (True, "ok")
+        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
         with _SysModulesPatch(mocks), \
              patch("urllib.request.urlopen", return_value=fake_resp), \
              patch("subprocess.Popen") as mock_popen:
@@ -849,6 +856,7 @@ class TestCheckAppUpdate:
             "app_auto_update": "true",
             "latest_app_version": "",
             "latest_app_check": "",
+            "app_last_notified_version": "",
         }.get(k, d)
 
         fake_resp = MagicMock()
@@ -856,7 +864,9 @@ class TestCheckAppUpdate:
         fake_resp.__exit__ = MagicMock(return_value=False)
         fake_resp.read.return_value = json.dumps({"tag_name": "v1.1.0"}).encode()
 
-        mocks = {"models": MagicMock(Setting=mock_setting)}
+        mock_notifier = MagicMock()
+        mock_notifier.send_app_update_notification.return_value = (True, "ok")
+        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
         with _SysModulesPatch(mocks), \
              patch("urllib.request.urlopen", return_value=fake_resp), \
              patch("subprocess.Popen") as mock_popen, \
@@ -880,6 +890,7 @@ class TestCheckAppUpdate:
             "app_auto_update": "false",
             "latest_app_version": "1.1.0",
             "latest_app_check": "",
+            "app_last_notified_version": "",
         }.get(k, d)
 
         fake_resp = MagicMock()
@@ -887,13 +898,69 @@ class TestCheckAppUpdate:
         fake_resp.__exit__ = MagicMock(return_value=False)
         fake_resp.read.return_value = json.dumps({"tag_name": "v1.1.0"}).encode()
 
-        mocks = {"models": MagicMock(Setting=mock_setting)}
+        mock_notifier = MagicMock()
+        mock_notifier.send_app_update_notification.return_value = (True, "ok")
+        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
         with _SysModulesPatch(mocks), \
              patch("urllib.request.urlopen", return_value=fake_resp), \
              patch("subprocess.Popen") as mock_popen:
             _check_app_update(app)
 
         mock_popen.assert_not_called()
+
+    def test_notification_sent_even_without_auto_update(self):
+        """Notification fires for new versions regardless of auto_update setting."""
+        from scheduler import _check_app_update
+        import json
+
+        app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
+
+        mock_setting = MagicMock()
+        mock_setting.get.side_effect = lambda k, d="": {
+            "app_update_branch": "",
+            "app_auto_update": "false",
+            "app_last_notified_version": "",
+        }.get(k, d)
+
+        fake_resp = MagicMock()
+        fake_resp.__enter__ = MagicMock(return_value=fake_resp)
+        fake_resp.__exit__ = MagicMock(return_value=False)
+        fake_resp.read.return_value = json.dumps({"tag_name": "v2.0.0"}).encode()
+
+        mock_notifier = MagicMock()
+        mock_notifier.send_app_update_notification.return_value = (True, "ok")
+        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
+        with _SysModulesPatch(mocks), \
+             patch("urllib.request.urlopen", return_value=fake_resp):
+            _check_app_update(app)
+
+        mock_notifier.send_app_update_notification.assert_called_once_with("1.0.0", "2.0.0")
+
+    def test_app_notification_dedup_skips_already_notified(self):
+        from scheduler import _check_app_update
+        import json
+
+        app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
+
+        mock_setting = MagicMock()
+        mock_setting.get.side_effect = lambda k, d="": {
+            "app_update_branch": "",
+            "app_auto_update": "false",
+            "app_last_notified_version": "2.0.0",
+        }.get(k, d)
+
+        fake_resp = MagicMock()
+        fake_resp.__enter__ = MagicMock(return_value=fake_resp)
+        fake_resp.__exit__ = MagicMock(return_value=False)
+        fake_resp.read.return_value = json.dumps({"tag_name": "v2.0.0"}).encode()
+
+        mock_notifier = MagicMock()
+        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
+        with _SysModulesPatch(mocks), \
+             patch("urllib.request.urlopen", return_value=fake_resp):
+            _check_app_update(app)
+
+        mock_notifier.send_app_update_notification.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -930,6 +997,37 @@ class TestCheckMastodonRelease:
             "mastodon_guest_id": "42",
             "mastodon_current_version": "4.2.0",
             "mastodon_auto_upgrade": "false",
+            "mastodon_last_notified_version": "",
+        }.get(k, d)
+
+        mock_mastodon = MagicMock()
+        mock_mastodon.check_mastodon_release.return_value = (True, "4.3.0", "https://example.com")
+        mock_notifier = MagicMock()
+        mock_notifier.send_mastodon_update_notification.return_value = (True, "ok")
+
+        mocks = {
+            "models": MagicMock(Setting=mock_setting),
+            "mastodon": mock_mastodon,
+            "notifier": mock_notifier,
+        }
+        with _SysModulesPatch(mocks):
+            _check_mastodon_release(app)
+
+        mock_notifier.send_mastodon_update_notification.assert_called_once_with(
+            "4.2.0", "4.3.0", "https://example.com"
+        )
+
+    def test_skips_notification_when_already_notified_for_version(self):
+        from scheduler import _check_mastodon_release
+
+        app = _make_app()
+
+        mock_setting = MagicMock()
+        mock_setting.get.side_effect = lambda k, d="": {
+            "mastodon_guest_id": "42",
+            "mastodon_current_version": "4.2.0",
+            "mastodon_auto_upgrade": "false",
+            "mastodon_last_notified_version": "4.3.0",
         }.get(k, d)
 
         mock_mastodon = MagicMock()
@@ -944,9 +1042,7 @@ class TestCheckMastodonRelease:
         with _SysModulesPatch(mocks):
             _check_mastodon_release(app)
 
-        mock_notifier.send_mastodon_update_notification.assert_called_once_with(
-            "4.2.0", "4.3.0", "https://example.com"
-        )
+        mock_notifier.send_mastodon_update_notification.assert_not_called()
 
     def test_no_notification_when_no_update_available(self):
         from scheduler import _check_mastodon_release
@@ -979,12 +1075,14 @@ class TestCheckMastodonRelease:
             "mastodon_guest_id": "42",
             "mastodon_current_version": "4.2.0",
             "mastodon_auto_upgrade": "true",
+            "mastodon_last_notified_version": "",
         }.get(k, d)
 
         mock_mastodon = MagicMock()
         mock_mastodon.check_mastodon_release.return_value = (True, "4.3.0", "https://example.com")
         mock_mastodon.run_mastodon_upgrade.return_value = (True, "")
         mock_notifier = MagicMock()
+        mock_notifier.send_mastodon_update_notification.return_value = (True, "ok")
         mock_audit = MagicMock()
         mock_db = MagicMock()
 
@@ -1034,6 +1132,37 @@ class TestCheckGhostRelease:
             "ghost_guest_id": "7",
             "ghost_current_version": "5.80.0",
             "ghost_auto_upgrade": "false",
+            "ghost_last_notified_version": "",
+        }.get(k, d)
+
+        mock_ghost = MagicMock()
+        mock_ghost.check_ghost_release.return_value = (True, "5.81.0", "https://ghost.org")
+        mock_notifier = MagicMock()
+        mock_notifier.send_ghost_update_notification.return_value = (True, "ok")
+
+        mocks = {
+            "models": MagicMock(Setting=mock_setting),
+            "ghost": mock_ghost,
+            "notifier": mock_notifier,
+        }
+        with _SysModulesPatch(mocks):
+            _check_ghost_release(app)
+
+        mock_notifier.send_ghost_update_notification.assert_called_once_with(
+            "5.80.0", "5.81.0", "https://ghost.org"
+        )
+
+    def test_skips_notification_when_already_notified_for_version(self):
+        from scheduler import _check_ghost_release
+
+        app = _make_app()
+
+        mock_setting = MagicMock()
+        mock_setting.get.side_effect = lambda k, d="": {
+            "ghost_guest_id": "7",
+            "ghost_current_version": "5.80.0",
+            "ghost_auto_upgrade": "false",
+            "ghost_last_notified_version": "5.81.0",
         }.get(k, d)
 
         mock_ghost = MagicMock()
@@ -1048,9 +1177,7 @@ class TestCheckGhostRelease:
         with _SysModulesPatch(mocks):
             _check_ghost_release(app)
 
-        mock_notifier.send_ghost_update_notification.assert_called_once_with(
-            "5.80.0", "5.81.0", "https://ghost.org"
-        )
+        mock_notifier.send_ghost_update_notification.assert_not_called()
 
     def test_no_notification_when_no_update_available(self):
         from scheduler import _check_ghost_release
@@ -1083,12 +1210,14 @@ class TestCheckGhostRelease:
             "ghost_guest_id": "7",
             "ghost_current_version": "5.80.0",
             "ghost_auto_upgrade": "true",
+            "ghost_last_notified_version": "",
         }.get(k, d)
 
         mock_ghost = MagicMock()
         mock_ghost.check_ghost_release.return_value = (True, "5.81.0", "https://ghost.org")
         mock_ghost.run_ghost_upgrade.return_value = (True, "")
         mock_notifier = MagicMock()
+        mock_notifier.send_ghost_update_notification.return_value = (True, "ok")
         mock_audit = MagicMock()
         mock_db = MagicMock()
 
@@ -1113,11 +1242,13 @@ class TestCheckGhostRelease:
             "ghost_guest_id": "7",
             "ghost_current_version": "5.80.0",
             "ghost_auto_upgrade": "false",
+            "ghost_last_notified_version": "",
         }.get(k, d)
 
         mock_ghost = MagicMock()
         mock_ghost.check_ghost_release.return_value = (True, "5.81.0", "https://ghost.org")
         mock_notifier = MagicMock()
+        mock_notifier.send_ghost_update_notification.return_value = (True, "ok")
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
@@ -1128,6 +1259,178 @@ class TestCheckGhostRelease:
             _check_ghost_release(app)
 
         mock_ghost.run_ghost_upgrade.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _check_host_updates
+# ---------------------------------------------------------------------------
+
+
+class TestCheckHostUpdates:
+    def test_returns_early_when_scan_disabled(self):
+        from scheduler import _check_host_updates
+
+        app = _make_app()
+
+        mock_setting = MagicMock()
+        mock_setting.get.side_effect = lambda k, d="": {
+            "scan_enabled": "false",
+        }.get(k, d)
+        mock_host_model = MagicMock()
+        mock_notifier = MagicMock()
+
+        mocks = {
+            "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
+            "notifier": mock_notifier,
+        }
+        with _SysModulesPatch(mocks):
+            _check_host_updates(app)
+
+        mock_host_model.query.all.assert_not_called()
+
+    def test_returns_early_when_no_hosts(self):
+        from scheduler import _check_host_updates
+
+        app = _make_app()
+
+        mock_setting = MagicMock()
+        mock_setting.get.return_value = "true"
+        mock_host_model = MagicMock()
+        mock_host_model.query.all.return_value = []
+        mock_notifier = MagicMock()
+
+        mocks = {
+            "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
+            "notifier": mock_notifier,
+        }
+        with _SysModulesPatch(mocks):
+            _check_host_updates(app)
+
+        mock_notifier.send_host_update_notification.assert_not_called()
+
+    def test_sends_notification_for_pve_host_with_updates(self):
+        from scheduler import _check_host_updates
+
+        app = _make_app()
+
+        mock_setting = MagicMock()
+        mock_setting.get.return_value = "true"
+
+        mock_host = MagicMock()
+        mock_host.name = "pve1"
+        mock_host.host_type = "pve"
+        mock_host.is_pbs = False
+
+        mock_host_model = MagicMock()
+        mock_host_model.query.all.return_value = [mock_host]
+
+        mock_proxmox_client = MagicMock()
+        mock_proxmox_client.get_local_node_name.return_value = "node1"
+        mock_proxmox_client.get_apt_updates.return_value = [{"Package": "pve-manager"}]
+
+        mock_notifier = MagicMock()
+        mock_proxmox_api = MagicMock()
+        mock_proxmox_api.ProxmoxClient.return_value = mock_proxmox_client
+
+        mocks = {
+            "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
+            "proxmox_api": mock_proxmox_api,
+            "notifier": mock_notifier,
+        }
+        with _SysModulesPatch(mocks):
+            _check_host_updates(app)
+
+        mock_notifier.send_host_update_notification.assert_called_once()
+        results = mock_notifier.send_host_update_notification.call_args[0][0]
+        assert len(results) == 1
+        assert results[0]["name"] == "pve1"
+        assert results[0]["update_count"] == 1
+
+    def test_sends_notification_for_pbs_host(self):
+        from scheduler import _check_host_updates
+
+        app = _make_app()
+
+        mock_setting = MagicMock()
+        mock_setting.get.return_value = "true"
+
+        mock_host = MagicMock()
+        mock_host.name = "pbs1"
+        mock_host.host_type = "pbs"
+        mock_host.is_pbs = True
+
+        mock_host_model = MagicMock()
+        mock_host_model.query.all.return_value = [mock_host]
+
+        mock_pbs_client_inst = MagicMock()
+        mock_pbs_client_inst.get_apt_updates.return_value = [{"Package": "proxmox-backup-server"}, {"Package": "pbs-i18n"}]
+
+        mock_pbs = MagicMock()
+        mock_pbs.PBSClient.return_value = mock_pbs_client_inst
+
+        mock_notifier = MagicMock()
+
+        mocks = {
+            "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
+            "pbs_client": mock_pbs,
+            "notifier": mock_notifier,
+        }
+        with _SysModulesPatch(mocks):
+            _check_host_updates(app)
+
+        results = mock_notifier.send_host_update_notification.call_args[0][0]
+        assert results[0]["update_count"] == 2
+        assert results[0]["host_type"] == "pbs"
+
+    def test_skips_host_on_api_error(self):
+        from scheduler import _check_host_updates
+
+        app = _make_app()
+
+        mock_setting = MagicMock()
+        mock_setting.get.return_value = "true"
+
+        mock_host_ok = MagicMock()
+        mock_host_ok.name = "pve1"
+        mock_host_ok.host_type = "pve"
+        mock_host_ok.is_pbs = False
+
+        mock_host_fail = MagicMock()
+        mock_host_fail.name = "pve2"
+        mock_host_fail.host_type = "pve"
+        mock_host_fail.is_pbs = False
+
+        mock_host_model = MagicMock()
+        mock_host_model.query.all.return_value = [mock_host_fail, mock_host_ok]
+
+        call_count = [0]
+
+        def make_client(host):
+            call_count[0] += 1
+            client = MagicMock()
+            if host.name == "pve2":
+                client.get_local_node_name.side_effect = Exception("unreachable")
+            else:
+                client.get_local_node_name.return_value = "node1"
+                client.get_apt_updates.return_value = [{"Package": "pkg1"}]
+            return client
+
+        mock_proxmox_api = MagicMock()
+        mock_proxmox_api.ProxmoxClient.side_effect = make_client
+        mock_notifier = MagicMock()
+
+        mocks = {
+            "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
+            "proxmox_api": mock_proxmox_api,
+            "notifier": mock_notifier,
+        }
+        with _SysModulesPatch(mocks):
+            _check_host_updates(app)
+
+        # Only the successful host should be in results
+        results = mock_notifier.send_host_update_notification.call_args[0][0]
+        assert len(results) == 1
+        assert results[0]["name"] == "pve1"
 
 
 # ---------------------------------------------------------------------------

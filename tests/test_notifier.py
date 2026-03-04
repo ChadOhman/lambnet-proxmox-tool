@@ -4,7 +4,8 @@ All outbound HTTP calls are intercepted with unittest.mock.patch so no real
 network activity occurs.  The test suite exercises:
 - _send_discord / _get_discord_config helpers
 - send_test_notification
-- send_update_notification (scan result aggregation, security/normal paths)
+- send_update_notification (scan result aggregation, security/normal paths, dedup)
+- send_host_update_notification
 - send_mastodon_update_notification
 - send_ghost_update_notification
 - send_app_update_notification
@@ -21,6 +22,7 @@ from notifier import (
     _get_discord_config,
     send_test_notification,
     send_update_notification,
+    send_host_update_notification,
     send_mastodon_update_notification,
     send_ghost_update_notification,
     send_app_update_notification,
@@ -594,6 +596,189 @@ class TestSendUpdateNotification:
             with app.app_context():
                 # Should not raise
                 send_update_notification(results)
+
+    def test_dedup_skips_when_hash_unchanged(self, app):
+        """Same scan results should not trigger a second notification."""
+        with app.app_context():
+            self._enable_discord(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        results = [_make_scan_result(guest_name="web01", total_updates=3, security_updates=1)]
+
+        # First call — should send and store hash
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                send_update_notification(results)
+
+        # Second call with same results — should skip
+        with patch("urllib.request.urlopen") as mock_open:
+            with app.app_context():
+                send_update_notification(results)
+
+        mock_open.assert_not_called()
+
+    def test_dedup_sends_when_results_change(self, app):
+        """Changed scan results should trigger a new notification."""
+        with app.app_context():
+            self._enable_discord(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        results_v1 = [_make_scan_result(guest_name="web01", total_updates=3)]
+
+        # First call
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                send_update_notification(results_v1)
+
+        # Second call with different results
+        results_v2 = [_make_scan_result(guest_name="web01", total_updates=5)]
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_update_notification(results_v2)
+
+        assert len(captured) == 1  # notification was sent
+
+
+# ---------------------------------------------------------------------------
+# send_host_update_notification
+# ---------------------------------------------------------------------------
+
+
+class TestSendHostUpdateNotification:
+    def _enable(self, app):
+        Setting.set("discord_enabled", "true")
+        Setting.set("discord_webhook_url", "https://discord.com/api/webhooks/1/tok")
+        Setting.set("discord_notify_updates", "true")
+
+    def test_happy_path_sends_notification(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        host_results = [
+            {"name": "pve1", "host_type": "pve", "update_count": 5},
+            {"name": "pbs1", "host_type": "pbs", "update_count": 2},
+        ]
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_host_update_notification(host_results)
+
+        assert len(captured) == 1
+        body = json.loads(captured[0].data.decode())
+        assert "7" in body["embeds"][0]["title"]  # 5 + 2 = 7
+
+    def test_empty_results_sends_nothing(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        with patch("urllib.request.urlopen") as mock_open:
+            with app.app_context():
+                send_host_update_notification([])
+
+        mock_open.assert_not_called()
+
+    def test_zero_updates_sends_nothing(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        host_results = [{"name": "pve1", "host_type": "pve", "update_count": 0}]
+        with patch("urllib.request.urlopen") as mock_open:
+            with app.app_context():
+                send_host_update_notification(host_results)
+
+        mock_open.assert_not_called()
+
+    def test_disabled_sends_nothing(self, app):
+        with app.app_context():
+            Setting.set("discord_notify_updates", "false")
+
+        host_results = [{"name": "pve1", "host_type": "pve", "update_count": 3}]
+        with patch("urllib.request.urlopen") as mock_open:
+            with app.app_context():
+                send_host_update_notification(host_results)
+
+        mock_open.assert_not_called()
+
+    def test_dedup_skips_when_hash_unchanged(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        host_results = [{"name": "pve1", "host_type": "pve", "update_count": 3}]
+
+        # First call — sends
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                send_host_update_notification(host_results)
+
+        # Second call with same data — skipped
+        with patch("urllib.request.urlopen") as mock_open:
+            with app.app_context():
+                send_host_update_notification(host_results)
+
+        mock_open.assert_not_called()
+
+    def test_dedup_sends_when_counts_change(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        results_v1 = [{"name": "pve1", "host_type": "pve", "update_count": 3}]
+
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                send_host_update_notification(results_v1)
+
+        results_v2 = [{"name": "pve1", "host_type": "pve", "update_count": 5}]
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_host_update_notification(results_v2)
+
+        assert len(captured) == 1
+
+    def test_embed_contains_host_type_labels(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        host_results = [
+            {"name": "pve1", "host_type": "pve", "update_count": 1},
+            {"name": "pbs1", "host_type": "pbs", "update_count": 1},
+        ]
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_host_update_notification(host_results)
+
+        body = json.loads(captured[0].data.decode())
+        field_names = [f["name"] for f in body["embeds"][0]["fields"]]
+        assert any("PVE" in n for n in field_names)
+        assert any("PBS" in n for n in field_names)
 
 
 # ---------------------------------------------------------------------------
