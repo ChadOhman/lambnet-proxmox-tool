@@ -461,51 +461,13 @@
                 </button>
             </div>
             <div class="card-body">
-                <form method="post" action="/settings/backups">
-                    <div class="mb-3">
-                        <label class="form-label">Default Backup Storage</label>
-                        <select class="form-select font-monospace" name="backup_storage" id="backupStorageSelect">
-                            <option value="">-- None (use per-guest storage) --</option>
-                            {% for st in backup_storages %}
-                            <option value="{{ st.storage }}" {{ 'selected' if settings.backup_storage == st.storage }}>
-                                {{ st.storage }} ({{ st.type }}){% if st.avail %} — {{ (st.avail / 1073741824) | round(1) }} GB free{% endif %}
-                            </option>
-                            {% endfor %}
-                            {% if settings.backup_storage and not (backup_storages | selectattr('storage', 'equalto', settings.backup_storage) | list) %}
-                            <option value="{{ settings.backup_storage }}" selected>{{ settings.backup_storage }} (saved)</option>
-                            {% endif %}
-                        </select>
-                        <div class="form-text">
-                            Proxmox storage ID for vzdump backups. Must support backup content type.
-                            {% if not backup_storages %}<span class="text-warning">No storages discovered — click <strong>Refresh Storages</strong> to poll Proxmox hosts.</span>{% endif %}
-                            {% if backup_storages_cache_time %}<span class="text-muted ms-1">Last refreshed: {{ backup_storages_cache_time }}</span>{% endif %}
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Backup Mode</label>
-                        <select class="form-select" name="backup_mode">
-                            <option value="snapshot" {{ 'selected' if settings.backup_mode == 'snapshot' }}>Snapshot (no downtime)</option>
-                            <option value="suspend" {{ 'selected' if settings.backup_mode == 'suspend' }}>Suspend (brief pause)</option>
-                            <option value="stop" {{ 'selected' if settings.backup_mode == 'stop' }}>Stop (guest stopped during backup)</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Compression</label>
-                        <select class="form-select" name="backup_compress">
-                            <option value="zstd" {{ 'selected' if settings.backup_compress == 'zstd' }}>ZSTD (recommended)</option>
-                            <option value="lzo" {{ 'selected' if settings.backup_compress == 'lzo' }}>LZO (fast)</option>
-                            <option value="gzip" {{ 'selected' if settings.backup_compress == 'gzip' }}>GZIP (compatible)</option>
-                            <option value="0" {{ 'selected' if settings.backup_compress == '0' }}>None</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Save Backup Settings</button>
-                </form>
-
-                <hr class="border-secondary my-4">
-                <h6 class="mb-3"><i class="bi bi-tags"></i> Per-Tag Backup Overrides</h6>
-                <p class="form-text mt-0 mb-3">Override the global defaults for guests with specific tags. The first matching tag is used.</p>
+                <p class="form-text mt-0 mb-3">
+                    Configure backup storage, mode, and compression per tag. Guests must have a matching tag to use default backup settings.
+                    {% if not backup_storages %}<br><span class="text-warning">No storages discovered — click <strong>Refresh Storages</strong> to poll Proxmox hosts.</span>{% endif %}
+                    {% if backup_storages_cache_time %}<br><span class="text-muted">Storages last refreshed: {{ backup_storages_cache_time }}</span>{% endif %}
+                </p>
                 <form method="post" action="/settings/backups/tag-defaults" id="tagDefaultsForm">
-                    <table class="table table-dark table-sm align-middle" aria-label="Per-tag backup overrides">
+                    <table class="table table-dark table-sm align-middle" aria-label="Per-tag backup defaults">
                         <thead>
                             <tr>
                                 <th>Tag</th>
@@ -523,10 +485,12 @@
                                     <span class="badge bg-secondary">{{ tag_name }}</span>
                                 </td>
                                 <td>
-                                    <select class="form-select form-select-sm font-monospace tag-storage-select" name="tag_storage">
-                                        <option value="">-- Global default --</option>
+                                    <select class="form-select form-select-sm font-monospace tag-storage-select" name="tag_storage" required>
+                                        <option value="">-- Select storage --</option>
                                         {% for st in backup_storages %}
-                                        <option value="{{ st.storage }}" {{ 'selected' if cfg.get('storage') == st.storage }}>{{ st.storage }}</option>
+                                        <option value="{{ st.storage }}" {{ 'selected' if cfg.get('storage') == st.storage }}>
+                                            {{ st.storage }} ({{ st.type }}){% if st.avail %} — {{ (st.avail / 1073741824) | round(1) }} GB free{% endif %}
+                                        </option>
                                         {% endfor %}
                                         {% if cfg.get('storage') and not (backup_storages | selectattr('storage', 'equalto', cfg.get('storage')) | list) %}
                                         <option value="{{ cfg.storage }}" selected>{{ cfg.storage }} (saved)</option>
@@ -535,7 +499,6 @@
                                 </td>
                                 <td>
                                     <select class="form-select form-select-sm" name="tag_mode">
-                                        <option value="">-- Global default --</option>
                                         <option value="snapshot" {{ 'selected' if cfg.get('mode') == 'snapshot' }}>Snapshot</option>
                                         <option value="suspend" {{ 'selected' if cfg.get('mode') == 'suspend' }}>Suspend</option>
                                         <option value="stop" {{ 'selected' if cfg.get('mode') == 'stop' }}>Stop</option>
@@ -543,7 +506,6 @@
                                 </td>
                                 <td>
                                     <select class="form-select form-select-sm" name="tag_compress">
-                                        <option value="">-- Global default --</option>
                                         <option value="zstd" {{ 'selected' if cfg.get('compress') == 'zstd' }}>ZSTD</option>
                                         <option value="lzo" {{ 'selected' if cfg.get('compress') == 'lzo' }}>LZO</option>
                                         <option value="gzip" {{ 'selected' if cfg.get('compress') == 'gzip' }}>GZIP</option>
@@ -551,7 +513,7 @@
                                     </select>
                                 </td>
                                 <td>
-                                    <button type="button" class="btn btn-outline-danger btn-sm remove-tag-row" aria-label="Remove override for {{ tag_name }}"><i class="bi bi-x-lg"></i></button>
+                                    <button type="button" class="btn btn-outline-danger btn-sm remove-tag-row" aria-label="Remove backup config for {{ tag_name }}"><i class="bi bi-x-lg"></i></button>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -567,10 +529,10 @@
                             {% endif %}
                             {% endfor %}
                         </select>
-                        <button type="button" class="btn btn-outline-success btn-sm" id="addTagOverrideBtn" aria-label="Add tag override"><i class="bi bi-plus-lg"></i> Add</button>
+                        <button type="button" class="btn btn-outline-success btn-sm" id="addTagOverrideBtn" aria-label="Add tag backup config"><i class="bi bi-plus-lg"></i> Add</button>
                     </div>
                     {% endif %}
-                    <button type="submit" class="btn btn-primary">Save Tag Overrides</button>
+                    <button type="submit" class="btn btn-primary">Save Backup Defaults</button>
                 </form>
             </div>
         </div>
@@ -666,28 +628,16 @@
             .then(r => r.json())
             .then(data => {
                 if (data.ok) {
-                    // Rebuild the main storage select
-                    const sel = document.getElementById('backupStorageSelect');
-                    const current = sel.value;
-                    sel.innerHTML = '<option value="">-- None (use per-guest storage) --</option>';
-                    data.storages.forEach(st => {
-                        const opt = document.createElement('option');
-                        opt.value = st.storage;
-                        let label = st.storage + ' (' + st.type + ')';
-                        if (st.avail) label += ' \u2014 ' + (st.avail / 1073741824).toFixed(1) + ' GB free';
-                        opt.textContent = label;
-                        if (st.storage === current) opt.selected = true;
-                        sel.appendChild(opt);
-                    });
-
-                    // Also rebuild tag-override storage selects
+                    // Rebuild all tag storage selects with fresh data
                     document.querySelectorAll('.tag-storage-select').forEach(tsel => {
                         const cur = tsel.value;
-                        tsel.innerHTML = '<option value="">-- Global default --</option>';
+                        tsel.innerHTML = '<option value="">-- Select storage --</option>';
                         data.storages.forEach(st => {
                             const opt = document.createElement('option');
                             opt.value = st.storage;
-                            opt.textContent = st.storage;
+                            let label = st.storage + ' (' + st.type + ')';
+                            if (st.avail) label += ' \u2014 ' + (st.avail / 1073741824).toFixed(1) + ' GB free';
+                            opt.textContent = label;
                             if (st.storage === cur) opt.selected = true;
                             tsel.appendChild(opt);
                         });
@@ -720,20 +670,20 @@
             const tr = document.createElement('tr');
 
             // Build storage options
-            let storageOpts = '<option value="">-- Global default --</option>';
+            let storageOpts = '<option value="">-- Select storage --</option>';
             (window._backupStorages || []).forEach(st => {
-                storageOpts += '<option value="' + st.storage + '">' + st.storage + '</option>';
+                let label = st.storage + ' (' + st.type + ')';
+                if (st.avail) label += ' \u2014 ' + (st.avail / 1073741824).toFixed(1) + ' GB free';
+                storageOpts += '<option value="' + st.storage + '">' + label + '</option>';
             });
 
             tr.innerHTML = '<td><input type="hidden" name="tag_name" value="' + tagName + '"><span class="badge bg-secondary">' + tagName + '</span></td>'
-                + '<td><select class="form-select form-select-sm font-monospace tag-storage-select" name="tag_storage">' + storageOpts + '</select></td>'
+                + '<td><select class="form-select form-select-sm font-monospace tag-storage-select" name="tag_storage" required>' + storageOpts + '</select></td>'
                 + '<td><select class="form-select form-select-sm" name="tag_mode">'
-                + '<option value="">-- Global default --</option>'
                 + '<option value="snapshot">Snapshot</option><option value="suspend">Suspend</option><option value="stop">Stop</option></select></td>'
                 + '<td><select class="form-select form-select-sm" name="tag_compress">'
-                + '<option value="">-- Global default --</option>'
                 + '<option value="zstd">ZSTD</option><option value="lzo">LZO</option><option value="gzip">GZIP</option><option value="0">None</option></select></td>'
-                + '<td><button type="button" class="btn btn-outline-danger btn-sm remove-tag-row" aria-label="Remove override for ' + tagName + '"><i class="bi bi-x-lg"></i></button></td>';
+                + '<td><button type="button" class="btn btn-outline-danger btn-sm remove-tag-row" aria-label="Remove backup config for ' + tagName + '"><i class="bi bi-x-lg"></i></button></td>';
             tbody.appendChild(tr);
 
             // Remove tag from the "add" dropdown

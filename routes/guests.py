@@ -235,8 +235,9 @@ def detail(guest_id):
                 snapshots = client.list_snapshots(node, guest.vmid, guest.guest_type)
                 backup_storages = client.list_node_storages(node, content_type="backup")
                 hardware = client.get_guest_config(node, guest.vmid, guest.guest_type)
-                # List backups from the default storage (or all backup-capable storages)
-                default_storage = Setting.get("backup_storage", "")
+                # List backups from the tag/legacy default storage (or all backup-capable storages)
+                tag_cfg = _get_tag_backup_defaults(guest)
+                default_storage = tag_cfg.get("storage") or Setting.get("backup_storage", "")
                 if default_storage:
                     backups = client.list_backups(node, guest.vmid, default_storage)
                 else:
@@ -622,7 +623,7 @@ def create_backup(guest_id):
     protected = "protected" in request.form
     notes = request.form.get("notes", "").strip()
 
-    # Fall back: per-tag override → global defaults
+    # Fall back: per-tag config → legacy global defaults (grandfather clause)
     if not storage or not mode or not compress:
         tag_defaults = _get_tag_backup_defaults(guest)
         if not storage:
@@ -633,7 +634,7 @@ def create_backup(guest_id):
             compress = tag_defaults.get("compress") or Setting.get("backup_compress", "zstd")
 
     if not storage:
-        flash("No backup storage configured. Set a default in Settings or specify one.", "error")
+        flash("No backup storage configured. Add a backup config for one of this guest's tags in Settings.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
     client = ProxmoxClient(guest.proxmox_host)
@@ -668,7 +669,7 @@ def delete_backup(guest_id, volid):
         flash("Guest must be linked to a Proxmox host with a VMID.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    storage = volid.split(":")[0] if ":" in volid else Setting.get("backup_storage", "")
+    storage = volid.split(":")[0] if ":" in volid else (_get_tag_backup_defaults(guest).get("storage") or Setting.get("backup_storage", ""))
 
     client = ProxmoxClient(guest.proxmox_host)
     node = client.find_guest_node(guest.vmid)
@@ -700,7 +701,7 @@ def toggle_backup_protection(guest_id, volid):
         flash("Guest must be linked to a Proxmox host with a VMID.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    storage = volid.split(":")[0] if ":" in volid else Setting.get("backup_storage", "")
+    storage = volid.split(":")[0] if ":" in volid else (_get_tag_backup_defaults(guest).get("storage") or Setting.get("backup_storage", ""))
     protect = request.form.get("protected", "1") == "1"
 
     client = ProxmoxClient(guest.proxmox_host)
@@ -733,7 +734,7 @@ def update_backup_notes(guest_id, volid):
         flash("Guest must be linked to a Proxmox host with a VMID.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    storage = volid.split(":")[0] if ":" in volid else Setting.get("backup_storage", "")
+    storage = volid.split(":")[0] if ":" in volid else (_get_tag_backup_defaults(guest).get("storage") or Setting.get("backup_storage", ""))
     notes = request.form.get("notes", "").strip()
 
     client = ProxmoxClient(guest.proxmox_host)

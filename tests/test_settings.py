@@ -119,38 +119,6 @@ class TestScanSettings:
             assert Setting.get("service_check_enabled") == "false"
 
 
-class TestBackupSettings:
-    def test_save_backup_settings(self, app, auth_client):
-        resp = auth_client.post(
-            "/settings/backups",
-            data={
-                "backup_storage": "local-backup",
-                "backup_mode": "suspend",
-                "backup_compress": "lzo",
-            },
-            follow_redirects=False,
-        )
-        assert resp.status_code == 302
-
-        with app.app_context():
-            assert Setting.get("backup_storage") == "local-backup"
-            assert Setting.get("backup_mode") == "suspend"
-            assert Setting.get("backup_compress") == "lzo"
-
-    def test_save_backup_settings_defaults(self, app, auth_client):
-        resp = auth_client.post(
-            "/settings/backups",
-            data={},
-            follow_redirects=False,
-        )
-        assert resp.status_code == 302
-
-        with app.app_context():
-            assert Setting.get("backup_storage") == ""
-            assert Setting.get("backup_mode") == "snapshot"
-            assert Setting.get("backup_compress") == "zstd"
-
-
 class TestUnifiSettings:
     def test_save_unifi_settings(self, app, auth_client):
         resp = auth_client.post(
@@ -642,14 +610,32 @@ class TestBackupTagDefaults:
             assert "" not in overrides
             assert "staging" in overrides
 
-    def test_save_tag_overrides_global_default_fallthrough(self, app, auth_client):
-        """Empty storage/mode/compress values should not be saved (falls through to global)."""
+    def test_save_tag_overrides_skips_empty_storage(self, app, auth_client):
+        """Rows with empty storage are skipped (storage is required)."""
         resp = auth_client.post(
             "/settings/backups/tag-defaults",
             data={
                 "tag_name": ["production"],
                 "tag_storage": [""],
                 "tag_mode": ["snapshot"],
+                "tag_compress": ["zstd"],
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+        with app.app_context():
+            overrides = json.loads(Setting.get("backup_tag_defaults"))
+            assert "production" not in overrides
+
+    def test_save_tag_overrides_defaults_mode_and_compress(self, app, auth_client):
+        """Empty mode/compress default to snapshot/zstd."""
+        resp = auth_client.post(
+            "/settings/backups/tag-defaults",
+            data={
+                "tag_name": ["production"],
+                "tag_storage": ["pbs-prod"],
+                "tag_mode": [""],
                 "tag_compress": [""],
             },
             follow_redirects=False,
@@ -658,9 +644,9 @@ class TestBackupTagDefaults:
 
         with app.app_context():
             overrides = json.loads(Setting.get("backup_tag_defaults"))
-            assert "storage" not in overrides["production"]
+            assert overrides["production"]["storage"] == "pbs-prod"
             assert overrides["production"]["mode"] == "snapshot"
-            assert "compress" not in overrides["production"]
+            assert overrides["production"]["compress"] == "zstd"
 
 
 class TestSettingsIndexCache:

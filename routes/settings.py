@@ -49,9 +49,7 @@ def _get_settings_dict():
         "unifi_log_retention_days": Setting.get("unifi_log_retention_days", "60"),
         "app_auto_update": Setting.get("app_auto_update", "false"),
         "app_update_branch": Setting.get("app_update_branch", ""),
-        "backup_storage": Setting.get("backup_storage", ""),
-        "backup_mode": Setting.get("backup_mode", "snapshot"),
-        "backup_compress": Setting.get("backup_compress", "zstd"),
+        # Global backup_storage/mode/compress removed; per-tag overrides only
     }
 
 
@@ -191,22 +189,6 @@ def save_scan():
 
 
 
-@bp.route("/backups", methods=["POST"])
-def save_backups():
-    backup_storage = request.form.get("backup_storage", "").strip()
-    backup_mode = request.form.get("backup_mode", "snapshot").strip()
-    backup_compress = request.form.get("backup_compress", "zstd").strip()
-
-    Setting.set("backup_storage", backup_storage)
-    Setting.set("backup_mode", backup_mode)
-    Setting.set("backup_compress", backup_compress)
-
-    log_action("settings_backups_save", "settings", resource_name="backups")
-    db.session.commit()
-    flash("Backup settings saved.", "success")
-    return redirect(url_for("settings.index"))
-
-
 @bp.route("/backups/refresh-storages", methods=["POST"])
 def refresh_backup_storages():
     """Re-poll all PVE hosts for backup-capable storages and update the cache."""
@@ -255,15 +237,13 @@ def save_backup_tag_defaults():
         name = name.strip()
         if not name:
             continue
-        override = {}
-        if storage.strip():
-            override["storage"] = storage.strip()
-        if mode.strip():
-            override["mode"] = mode.strip()
-        if compress.strip():
-            override["compress"] = compress.strip()
-        if override:
-            overrides[name] = override
+        storage = storage.strip()
+        if not storage:
+            continue  # storage is required
+        override = {"storage": storage}
+        override["mode"] = mode.strip() or "snapshot"
+        override["compress"] = compress.strip() or "zstd"
+        overrides[name] = override
 
     Setting.set("backup_tag_defaults", json.dumps(overrides))
     log_action("settings_backup_tag_defaults_save", "settings", resource_name="backup_tag_defaults")
