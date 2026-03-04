@@ -233,7 +233,7 @@ def save_backup_tag_defaults():
     tag_compresses = request.form.getlist("tag_compress")
 
     overrides = {}
-    for name, storage, mode, compress in zip(tag_names, tag_storages, tag_modes, tag_compresses):
+    for name, storage, mode, compress in zip(tag_names, tag_storages, tag_modes, tag_compresses, strict=False):
         name = name.strip()
         if not name:
             continue
