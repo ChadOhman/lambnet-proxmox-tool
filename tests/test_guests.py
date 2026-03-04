@@ -1,7 +1,8 @@
 """Tests for guest list route and status filters."""
+import json
 import pytest
 from datetime import datetime, timezone
-from models import db, Guest, UpdatePackage
+from models import db, Guest, Tag, Setting, UpdatePackage
 
 _NOW = datetime.now(timezone.utc)
 
@@ -100,3 +101,74 @@ class TestGuestList:
         assert b"Pending Updates" in resp.data
         # There should be a way to clear the filter (link back to /guests/)
         assert b"/guests/" in resp.data
+
+
+class TestGetTagBackupDefaults:
+    """Tests for _get_tag_backup_defaults helper in routes/guests.py."""
+
+    def test_returns_empty_when_no_setting(self, app):
+        from routes.guests import _get_tag_backup_defaults
+        with app.app_context():
+            guest = Guest(name="test-guest", guest_type="ct")
+            db.session.add(guest)
+            db.session.commit()
+            assert _get_tag_backup_defaults(guest) == {}
+
+    def test_returns_override_for_matching_tag(self, app):
+        from routes.guests import _get_tag_backup_defaults
+        with app.app_context():
+            tag = Tag(name="production", color="#ff0000")
+            guest = Guest(name="prod-guest", guest_type="ct")
+            guest.tags.append(tag)
+            db.session.add_all([tag, guest])
+            db.session.commit()
+
+            overrides = {"production": {"storage": "pbs-prod", "mode": "snapshot"}}
+            Setting.set("backup_tag_defaults", json.dumps(overrides))
+
+            result = _get_tag_backup_defaults(guest)
+            assert result["storage"] == "pbs-prod"
+            assert result["mode"] == "snapshot"
+
+    def test_returns_first_matching_tag(self, app):
+        from routes.guests import _get_tag_backup_defaults
+        with app.app_context():
+            tag1 = Tag(name="alpha", color="#aaa")
+            tag2 = Tag(name="beta", color="#bbb")
+            guest = Guest(name="multi-tag-guest", guest_type="ct")
+            guest.tags.extend([tag1, tag2])
+            db.session.add_all([tag1, tag2, guest])
+            db.session.commit()
+
+            overrides = {
+                "alpha": {"storage": "storage-a"},
+                "beta": {"storage": "storage-b"},
+            }
+            Setting.set("backup_tag_defaults", json.dumps(overrides))
+
+            result = _get_tag_backup_defaults(guest)
+            assert result["storage"] == "storage-a"
+
+    def test_returns_empty_when_no_tag_matches(self, app):
+        from routes.guests import _get_tag_backup_defaults
+        with app.app_context():
+            tag = Tag(name="staging", color="#ccc")
+            guest = Guest(name="staging-guest", guest_type="ct")
+            guest.tags.append(tag)
+            db.session.add_all([tag, guest])
+            db.session.commit()
+
+            overrides = {"production": {"storage": "pbs-prod"}}
+            Setting.set("backup_tag_defaults", json.dumps(overrides))
+
+            assert _get_tag_backup_defaults(guest) == {}
+
+    def test_handles_invalid_json(self, app):
+        from routes.guests import _get_tag_backup_defaults
+        with app.app_context():
+            guest = Guest(name="bad-json-guest", guest_type="ct")
+            db.session.add(guest)
+            db.session.commit()
+
+            Setting.set("backup_tag_defaults", "not-valid-json{")
+            assert _get_tag_backup_defaults(guest) == {}

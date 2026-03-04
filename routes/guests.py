@@ -1,3 +1,4 @@
+import json
 import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
@@ -6,6 +7,21 @@ from proxmox_api import ProxmoxClient
 from audit import log_action
 
 logger = logging.getLogger(__name__)
+
+
+def _get_tag_backup_defaults(guest):
+    """Return backup defaults for the first matching tag override, or empty dict."""
+    raw = Setting.get("backup_tag_defaults", "")
+    if not raw:
+        return {}
+    try:
+        overrides = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    for tag in guest.tags:
+        if tag.name in overrides:
+            return overrides[tag.name]
+    return {}
 
 bp = Blueprint("guests", __name__)
 
@@ -606,13 +622,15 @@ def create_backup(guest_id):
     protected = "protected" in request.form
     notes = request.form.get("notes", "").strip()
 
-    # Fall back to global defaults
-    if not storage:
-        storage = Setting.get("backup_storage", "")
-    if not mode:
-        mode = Setting.get("backup_mode", "snapshot")
-    if not compress:
-        compress = Setting.get("backup_compress", "zstd")
+    # Fall back: per-tag override → global defaults
+    if not storage or not mode or not compress:
+        tag_defaults = _get_tag_backup_defaults(guest)
+        if not storage:
+            storage = tag_defaults.get("storage") or Setting.get("backup_storage", "")
+        if not mode:
+            mode = tag_defaults.get("mode") or Setting.get("backup_mode", "snapshot")
+        if not compress:
+            compress = tag_defaults.get("compress") or Setting.get("backup_compress", "zstd")
 
     if not storage:
         flash("No backup storage configured. Set a default in Settings or specify one.", "error")

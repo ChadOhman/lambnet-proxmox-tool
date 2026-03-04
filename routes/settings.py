@@ -1,5 +1,7 @@
+import json
 import os
 import subprocess
+from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
 from models import db, Setting
@@ -53,6 +55,35 @@ def _get_settings_dict():
     }
 
 
+def _get_backup_template_context():
+    """Return backup-related template variables (storages cache, tag defaults, tags)."""
+    backup_storages = []
+    cache_raw = Setting.get("backup_storages_cache", "")
+    if cache_raw:
+        try:
+            backup_storages = json.loads(cache_raw)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    cache_time = Setting.get("backup_storages_cache_time", "")
+
+    backup_tag_defaults = {}
+    raw = Setting.get("backup_tag_defaults", "")
+    if raw:
+        try:
+            backup_tag_defaults = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    from models import Tag
+    all_tags = Tag.query.order_by(Tag.name).all()
+
+    return {
+        "backup_storages": backup_storages,
+        "backup_storages_cache_time": cache_time,
+        "backup_tag_defaults": backup_tag_defaults,
+        "all_tags": all_tags,
+    }
+
+
 def _get_latest_release():
     """Fetch the latest release version from GitHub. Returns version string or None."""
     import urllib.request
@@ -74,28 +105,7 @@ def _get_latest_release():
 def index():
     settings = _get_settings_dict()
     latest_release = _get_latest_release()
-
-    # Collect backup-capable storages from all non-PBS Proxmox hosts for the dropdown
-    backup_storages = []
-    seen = set()
-    try:
-        from models import ProxmoxHost
-        from proxmox_api import ProxmoxClient
-        for host in ProxmoxHost.query.filter(ProxmoxHost.host_type != "pbs").all():
-            try:
-                client = ProxmoxClient(host)
-                nodes = client.api.nodes.get()
-                if nodes:
-                    storages = client.list_node_storages(nodes[0]['node'], content_type="backup")
-                    for st in storages:
-                        sid = st.get('storage', '')
-                        if sid and sid not in seen:
-                            seen.add(sid)
-                            backup_storages.append(st)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    backup_ctx = _get_backup_template_context()
 
     # GeoIP file status for the upload widget
     geoip_db_path = settings.get("unifi_geoip_db_path", "")
@@ -107,7 +117,7 @@ def index():
         except OSError:
             geoip_db_info = {"path": geoip_db_path, "size_mb": None}
 
-    return render_template("settings.html", settings=settings, update_available=False, update_version=None, latest_release=latest_release, backup_storages=backup_storages, geoip_db_info=geoip_db_info)
+    return render_template("settings.html", settings=settings, update_available=False, update_version=None, latest_release=latest_release, geoip_db_info=geoip_db_info, **backup_ctx)
 
 
 @bp.route("/discord", methods=["POST"])
@@ -196,6 +206,70 @@ def save_backups():
     flash("Backup settings saved.", "success")
     return redirect(url_for("settings.index"))
 
+
+@bp.route("/backups/refresh-storages", methods=["POST"])
+def refresh_backup_storages():
+    """Re-poll all PVE hosts for backup-capable storages and update the cache."""
+    storages = []
+    seen = set()
+    try:
+        from models import ProxmoxHost
+        from proxmox_api import ProxmoxClient
+        for host in ProxmoxHost.query.filter(ProxmoxHost.host_type != "pbs").all():
+            try:
+                client = ProxmoxClient(host)
+                nodes = client.api.nodes.get()
+                if nodes:
+                    node_storages = client.list_node_storages(nodes[0]['node'], content_type="backup")
+                    for st in node_storages:
+                        sid = st.get('storage', '')
+                        if sid and sid not in seen:
+                            seen.add(sid)
+                            storages.append(st)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    cached_at = datetime.now().isoformat()
+    Setting.set("backup_storages_cache", json.dumps(storages))
+    Setting.set("backup_storages_cache_time", cached_at)
+
+    is_xhr = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    if is_xhr:
+        return jsonify({"ok": True, "storages": storages, "cached_at": cached_at})
+    flash(f"Backup storages refreshed ({len(storages)} found).", "success")
+    return redirect(url_for("settings.index"))
+
+
+@bp.route("/backups/tag-defaults", methods=["POST"])
+def save_backup_tag_defaults():
+    """Save per-tag backup override settings."""
+    tag_names = request.form.getlist("tag_name")
+    tag_storages = request.form.getlist("tag_storage")
+    tag_modes = request.form.getlist("tag_mode")
+    tag_compresses = request.form.getlist("tag_compress")
+
+    overrides = {}
+    for name, storage, mode, compress in zip(tag_names, tag_storages, tag_modes, tag_compresses):
+        name = name.strip()
+        if not name:
+            continue
+        override = {}
+        if storage.strip():
+            override["storage"] = storage.strip()
+        if mode.strip():
+            override["mode"] = mode.strip()
+        if compress.strip():
+            override["compress"] = compress.strip()
+        if override:
+            overrides[name] = override
+
+    Setting.set("backup_tag_defaults", json.dumps(overrides))
+    log_action("settings_backup_tag_defaults_save", "settings", resource_name="backup_tag_defaults")
+    db.session.commit()
+    flash("Per-tag backup defaults saved.", "success")
+    return redirect(url_for("settings.index"))
 
 
 @bp.route("/unifi", methods=["POST"])
@@ -452,6 +526,7 @@ def check_update():
                     update_available=True,
                     update_version=f"branch '{update_branch}' (latest: {sha} - {message})",
                     latest_release=_get_latest_release(),
+                    **_get_backup_template_context(),
                 )
         except Exception as e:
             flash(f"Could not check branch '{update_branch}': {e}", "error")
@@ -465,7 +540,7 @@ def check_update():
             latest = data.get("tag_name", "").lstrip("v")
             if latest and latest != current_version:
                 settings = _get_settings_dict()
-                return render_template("settings.html", settings=settings, update_available=True, update_version=latest, latest_release=latest)
+                return render_template("settings.html", settings=settings, update_available=True, update_version=latest, latest_release=latest, **_get_backup_template_context())
             flash(f"You are running the latest version (v{current_version}).", "success")
     except Exception as e:
         flash(f"Could not check for updates: {e}", "error")

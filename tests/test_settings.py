@@ -560,3 +560,122 @@ class TestCheckUpdate:
 
         assert resp.status_code == 200
         assert b"Could not check branch" in resp.data
+
+
+class TestRefreshBackupStorages:
+    def test_refresh_storages_xhr_returns_json(self, app, auth_client):
+        """AJAX refresh should poll Proxmox and return JSON with storages list."""
+        with patch("models.ProxmoxHost") as MockHost, \
+             patch("proxmox_api.ProxmoxClient"):
+            MockHost.query.filter.return_value.all.return_value = []
+            resp = auth_client.post(
+                "/settings/backups/refresh-storages",
+                headers={"X-Requested-With": "XMLHttpRequest"},
+            )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert isinstance(data["storages"], list)
+        assert "cached_at" in data
+
+    def test_refresh_storages_saves_cache(self, app, auth_client):
+        """Refresh should persist the storages list in the Setting table."""
+        with patch("models.ProxmoxHost") as MockHost, \
+             patch("proxmox_api.ProxmoxClient"):
+            MockHost.query.filter.return_value.all.return_value = []
+            auth_client.post(
+                "/settings/backups/refresh-storages",
+                headers={"X-Requested-With": "XMLHttpRequest"},
+            )
+        with app.app_context():
+            assert Setting.get("backup_storages_cache") is not None
+            assert Setting.get("backup_storages_cache_time") is not None
+
+    def test_refresh_storages_form_post_redirects(self, app, auth_client):
+        """Non-AJAX POST should redirect back to settings."""
+        with patch("models.ProxmoxHost") as MockHost, \
+             patch("proxmox_api.ProxmoxClient"):
+            MockHost.query.filter.return_value.all.return_value = []
+            resp = auth_client.post(
+                "/settings/backups/refresh-storages",
+                follow_redirects=False,
+            )
+        assert resp.status_code == 302
+
+
+class TestBackupTagDefaults:
+    def test_save_tag_overrides(self, app, auth_client):
+        resp = auth_client.post(
+            "/settings/backups/tag-defaults",
+            data={
+                "tag_name": ["production", "dev"],
+                "tag_storage": ["pbs-prod", "local"],
+                "tag_mode": ["snapshot", "stop"],
+                "tag_compress": ["zstd", "lzo"],
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+        with app.app_context():
+            raw = Setting.get("backup_tag_defaults")
+            overrides = json.loads(raw)
+            assert overrides["production"]["storage"] == "pbs-prod"
+            assert overrides["production"]["mode"] == "snapshot"
+            assert overrides["dev"]["compress"] == "lzo"
+
+    def test_save_tag_overrides_skips_empty_names(self, app, auth_client):
+        resp = auth_client.post(
+            "/settings/backups/tag-defaults",
+            data={
+                "tag_name": ["", "staging"],
+                "tag_storage": ["local", "remote"],
+                "tag_mode": ["", "suspend"],
+                "tag_compress": ["", "gzip"],
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+        with app.app_context():
+            overrides = json.loads(Setting.get("backup_tag_defaults"))
+            assert "" not in overrides
+            assert "staging" in overrides
+
+    def test_save_tag_overrides_global_default_fallthrough(self, app, auth_client):
+        """Empty storage/mode/compress values should not be saved (falls through to global)."""
+        resp = auth_client.post(
+            "/settings/backups/tag-defaults",
+            data={
+                "tag_name": ["production"],
+                "tag_storage": [""],
+                "tag_mode": ["snapshot"],
+                "tag_compress": [""],
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+        with app.app_context():
+            overrides = json.loads(Setting.get("backup_tag_defaults"))
+            assert "storage" not in overrides["production"]
+            assert overrides["production"]["mode"] == "snapshot"
+            assert "compress" not in overrides["production"]
+
+
+class TestSettingsIndexCache:
+    def test_index_loads_storages_from_cache(self, app, auth_client):
+        """Settings index should read storages from cache, not poll API."""
+        storages = [{"storage": "local-backup", "type": "dir", "avail": 1073741824}]
+        with app.app_context():
+            Setting.set("backup_storages_cache", json.dumps(storages))
+            Setting.set("backup_storages_cache_time", "2026-03-04T12:00:00")
+
+        resp = auth_client.get("/settings/")
+        assert resp.status_code == 200
+        assert b"local-backup" in resp.data
+
+    def test_index_renders_without_cache(self, app, auth_client):
+        """Settings page should load even with no cached storages."""
+        resp = auth_client.get("/settings/")
+        assert resp.status_code == 200

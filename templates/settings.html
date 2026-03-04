@@ -454,14 +454,17 @@
         </div>
 
         <div class="card bg-dark mt-4">
-            <div class="card-header">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-hdd"></i> Backup Defaults</h5>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="refreshStoragesBtn" aria-label="Refresh backup storages from Proxmox">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh Storages
+                </button>
             </div>
             <div class="card-body">
                 <form method="post" action="/settings/backups">
                     <div class="mb-3">
                         <label class="form-label">Default Backup Storage</label>
-                        <select class="form-select font-monospace" name="backup_storage">
+                        <select class="form-select font-monospace" name="backup_storage" id="backupStorageSelect">
                             <option value="">-- None (use per-guest storage) --</option>
                             {% for st in backup_storages %}
                             <option value="{{ st.storage }}" {{ 'selected' if settings.backup_storage == st.storage }}>
@@ -474,7 +477,8 @@
                         </select>
                         <div class="form-text">
                             Proxmox storage ID for vzdump backups. Must support backup content type.
-                            {% if not backup_storages %}<span class="text-warning">No storages discovered — ensure a Proxmox host is configured and reachable.</span>{% endif %}
+                            {% if not backup_storages %}<span class="text-warning">No storages discovered — click <strong>Refresh Storages</strong> to poll Proxmox hosts.</span>{% endif %}
+                            {% if backup_storages_cache_time %}<span class="text-muted ms-1">Last refreshed: {{ backup_storages_cache_time }}</span>{% endif %}
                         </div>
                     </div>
                     <div class="mb-3">
@@ -495,6 +499,78 @@
                         </select>
                     </div>
                     <button type="submit" class="btn btn-primary">Save Backup Settings</button>
+                </form>
+
+                <hr class="border-secondary my-4">
+                <h6 class="mb-3"><i class="bi bi-tags"></i> Per-Tag Backup Overrides</h6>
+                <p class="form-text mt-0 mb-3">Override the global defaults for guests with specific tags. The first matching tag is used.</p>
+                <form method="post" action="/settings/backups/tag-defaults" id="tagDefaultsForm">
+                    <table class="table table-dark table-sm align-middle" aria-label="Per-tag backup overrides">
+                        <thead>
+                            <tr>
+                                <th>Tag</th>
+                                <th>Storage</th>
+                                <th>Mode</th>
+                                <th>Compression</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tagOverrideRows">
+                            {% for tag_name, cfg in backup_tag_defaults.items() %}
+                            <tr>
+                                <td>
+                                    <input type="hidden" name="tag_name" value="{{ tag_name }}">
+                                    <span class="badge bg-secondary">{{ tag_name }}</span>
+                                </td>
+                                <td>
+                                    <select class="form-select form-select-sm font-monospace tag-storage-select" name="tag_storage">
+                                        <option value="">-- Global default --</option>
+                                        {% for st in backup_storages %}
+                                        <option value="{{ st.storage }}" {{ 'selected' if cfg.get('storage') == st.storage }}>{{ st.storage }}</option>
+                                        {% endfor %}
+                                        {% if cfg.get('storage') and not (backup_storages | selectattr('storage', 'equalto', cfg.get('storage')) | list) %}
+                                        <option value="{{ cfg.storage }}" selected>{{ cfg.storage }} (saved)</option>
+                                        {% endif %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <select class="form-select form-select-sm" name="tag_mode">
+                                        <option value="">-- Global default --</option>
+                                        <option value="snapshot" {{ 'selected' if cfg.get('mode') == 'snapshot' }}>Snapshot</option>
+                                        <option value="suspend" {{ 'selected' if cfg.get('mode') == 'suspend' }}>Suspend</option>
+                                        <option value="stop" {{ 'selected' if cfg.get('mode') == 'stop' }}>Stop</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <select class="form-select form-select-sm" name="tag_compress">
+                                        <option value="">-- Global default --</option>
+                                        <option value="zstd" {{ 'selected' if cfg.get('compress') == 'zstd' }}>ZSTD</option>
+                                        <option value="lzo" {{ 'selected' if cfg.get('compress') == 'lzo' }}>LZO</option>
+                                        <option value="gzip" {{ 'selected' if cfg.get('compress') == 'gzip' }}>GZIP</option>
+                                        <option value="0" {{ 'selected' if cfg.get('compress') == '0' }}>None</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <button type="button" class="btn btn-outline-danger btn-sm remove-tag-row" aria-label="Remove override for {{ tag_name }}"><i class="bi bi-x-lg"></i></button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% if all_tags %}
+                    <div class="d-flex gap-2 align-items-center mb-3">
+                        <select class="form-select form-select-sm" id="addTagSelect" style="max-width: 200px;">
+                            <option value="">Add tag...</option>
+                            {% for tag in all_tags %}
+                            {% if tag.name not in backup_tag_defaults %}
+                            <option value="{{ tag.name }}">{{ tag.name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="btn btn-outline-success btn-sm" id="addTagOverrideBtn" aria-label="Add tag override"><i class="bi bi-plus-lg"></i> Add</button>
+                    </div>
+                    {% endif %}
+                    <button type="submit" class="btn btn-primary">Save Tag Overrides</button>
                 </form>
             </div>
         </div>
@@ -569,4 +645,121 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    // Refresh backup storages via AJAX
+    const refreshBtn = document.getElementById('refreshStoragesBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            const btn = this;
+            const icon = btn.querySelector('i');
+            btn.disabled = true;
+            icon.classList.add('spin');
+
+            fetch('/settings/backups/refresh-storages', {
+                method: 'POST',
+                headers: {'X-Requested-With': 'XMLHttpRequest'}
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok) {
+                    // Rebuild the main storage select
+                    const sel = document.getElementById('backupStorageSelect');
+                    const current = sel.value;
+                    sel.innerHTML = '<option value="">-- None (use per-guest storage) --</option>';
+                    data.storages.forEach(st => {
+                        const opt = document.createElement('option');
+                        opt.value = st.storage;
+                        let label = st.storage + ' (' + st.type + ')';
+                        if (st.avail) label += ' \u2014 ' + (st.avail / 1073741824).toFixed(1) + ' GB free';
+                        opt.textContent = label;
+                        if (st.storage === current) opt.selected = true;
+                        sel.appendChild(opt);
+                    });
+
+                    // Also rebuild tag-override storage selects
+                    document.querySelectorAll('.tag-storage-select').forEach(tsel => {
+                        const cur = tsel.value;
+                        tsel.innerHTML = '<option value="">-- Global default --</option>';
+                        data.storages.forEach(st => {
+                            const opt = document.createElement('option');
+                            opt.value = st.storage;
+                            opt.textContent = st.storage;
+                            if (st.storage === cur) opt.selected = true;
+                            tsel.appendChild(opt);
+                        });
+                    });
+
+                    // Store storages globally for new rows
+                    window._backupStorages = data.storages;
+                }
+            })
+            .catch(() => {})
+            .finally(() => {
+                btn.disabled = false;
+                icon.classList.remove('spin');
+            });
+        });
+    }
+
+    // Store initial storages for use when adding new tag rows
+    window._backupStorages = {{ backup_storages | tojson }};
+
+    // Add tag override row
+    const addBtn = document.getElementById('addTagOverrideBtn');
+    if (addBtn) {
+        addBtn.addEventListener('click', function() {
+            const tagSel = document.getElementById('addTagSelect');
+            const tagName = tagSel.value;
+            if (!tagName) return;
+
+            const tbody = document.getElementById('tagOverrideRows');
+            const tr = document.createElement('tr');
+
+            // Build storage options
+            let storageOpts = '<option value="">-- Global default --</option>';
+            (window._backupStorages || []).forEach(st => {
+                storageOpts += '<option value="' + st.storage + '">' + st.storage + '</option>';
+            });
+
+            tr.innerHTML = '<td><input type="hidden" name="tag_name" value="' + tagName + '"><span class="badge bg-secondary">' + tagName + '</span></td>'
+                + '<td><select class="form-select form-select-sm font-monospace tag-storage-select" name="tag_storage">' + storageOpts + '</select></td>'
+                + '<td><select class="form-select form-select-sm" name="tag_mode">'
+                + '<option value="">-- Global default --</option>'
+                + '<option value="snapshot">Snapshot</option><option value="suspend">Suspend</option><option value="stop">Stop</option></select></td>'
+                + '<td><select class="form-select form-select-sm" name="tag_compress">'
+                + '<option value="">-- Global default --</option>'
+                + '<option value="zstd">ZSTD</option><option value="lzo">LZO</option><option value="gzip">GZIP</option><option value="0">None</option></select></td>'
+                + '<td><button type="button" class="btn btn-outline-danger btn-sm remove-tag-row" aria-label="Remove override for ' + tagName + '"><i class="bi bi-x-lg"></i></button></td>';
+            tbody.appendChild(tr);
+
+            // Remove tag from the "add" dropdown
+            tagSel.querySelector('option[value="' + tagName + '"]').remove();
+            tagSel.value = '';
+        });
+    }
+
+    // Remove tag override row (event delegation)
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.remove-tag-row');
+        if (!btn) return;
+        const tr = btn.closest('tr');
+        const tagName = tr.querySelector('input[name="tag_name"]').value;
+        tr.remove();
+
+        // Re-add to the "add" dropdown
+        const addSel = document.getElementById('addTagSelect');
+        if (addSel) {
+            const opt = document.createElement('option');
+            opt.value = tagName;
+            opt.textContent = tagName;
+            addSel.appendChild(opt);
+        }
+    });
+})();
+</script>
+<style>.spin { animation: spin 1s linear infinite; } @keyframes spin { 100% { transform: rotate(360deg); } }</style>
 {% endblock %}
