@@ -85,6 +85,37 @@ def _check_version_range(installed, requirement):
 DEFAULT_MASTODON_REPO = "mastodon/mastodon"
 _REPO_RE = re.compile(r'^[\w.\-]+/[\w.\-]+$')
 
+# Patterns for parsing Mastodon's lib/mastodon/version.rb
+_VER_MAJOR_RE = re.compile(r'def major\s+(\d+)')
+_VER_MINOR_RE = re.compile(r'def minor\s+(\d+)')
+_VER_PATCH_RE = re.compile(r'def patch\s+(\d+)')
+_VER_PRE_RE = re.compile(r"def default_prerelease\s+'([^']*)'")
+
+
+def _fetch_branch_version(repo, branch):
+    """Fetch the version from a repo branch's lib/mastodon/version.rb.
+
+    Returns the version string (e.g. '4.6.0-alpha.5') or '' on failure.
+    """
+    try:
+        url = f"https://raw.githubusercontent.com/{repo}/{branch}/lib/mastodon/version.rb"
+        req = Request(url, headers={"User-Agent": "MCAT"})
+        with urlopen(req, timeout=15) as resp:
+            content = resp.read().decode()
+        major = _VER_MAJOR_RE.search(content)
+        minor = _VER_MINOR_RE.search(content)
+        patch = _VER_PATCH_RE.search(content)
+        if not (major and minor and patch):
+            return ""
+        version = f"{major.group(1)}.{minor.group(1)}.{patch.group(1)}"
+        pre = _VER_PRE_RE.search(content)
+        if pre and pre.group(1):
+            version += f"-{pre.group(1)}"
+        return version
+    except Exception as e:
+        logger.debug("Could not fetch branch version from %s/%s: %s", repo, branch, e)
+        return ""
+
 
 def _version_gt(candidate: str, current: str) -> bool:
     """True if candidate semver is strictly greater than current.
@@ -120,6 +151,10 @@ def _version_gt(candidate: str, current: str) -> bool:
 def check_mastodon_release():
     """Check GitHub for the latest Mastodon release.
 
+    Checks both the latest formal GitHub Release and the version on the
+    configured branch (via lib/mastodon/version.rb).  Returns whichever
+    is newer so that nightly/alpha users see the correct latest version.
+
     Returns (update_available, latest_version, release_url).
     """
     try:
@@ -127,13 +162,28 @@ def check_mastodon_release():
         if not _REPO_RE.match(repo):
             logger.error("Invalid mastodon_repo format: %r — expected 'owner/repo'", repo)
             return False, "", ""
-        releases_url = f"https://api.github.com/repos/{repo}/releases/latest"
-        req = Request(releases_url, headers={"User-Agent": "MCAT"})
-        with urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode())
 
-        latest = data.get("tag_name", "").lstrip("v")
-        release_url = data.get("html_url", "")
+        # 1. Check latest formal GitHub Release
+        latest = ""
+        release_url = ""
+        try:
+            releases_url = f"https://api.github.com/repos/{repo}/releases/latest"
+            req = Request(releases_url, headers={"User-Agent": "MCAT"})
+            with urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode())
+            latest = data.get("tag_name", "").lstrip("v")
+            release_url = data.get("html_url", "")
+        except Exception as e:
+            logger.debug("Could not fetch GitHub release for %s: %s", repo, e)
+
+        # 2. Check version on the configured branch (or main)
+        branch = Setting.get("mastodon_branch", "") or "main"
+        branch_version = _fetch_branch_version(repo, branch)
+
+        # Use the higher of the two versions
+        if branch_version and (not latest or _version_gt(branch_version, latest)):
+            latest = branch_version
+            release_url = f"https://github.com/{repo}/tree/{branch}"
 
         if not latest:
             return False, "", ""
