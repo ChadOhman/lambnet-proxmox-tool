@@ -823,6 +823,46 @@ class TestSendGhostUpdateNotification:
         body = json.loads(captured[0].data.decode())
         assert any(url in f["value"] for f in body["embeds"][0]["fields"])
 
+    def test_auto_upgrade_note_in_description(self, app):
+        with app.app_context():
+            self._enable(app)
+            Setting.set("ghost_auto_upgrade", "true")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_ghost_update_notification("5.0.0", "5.2.3", None)
+
+        body = json.loads(captured[0].data.decode())
+        desc = body["embeds"][0]["description"]
+        assert "auto" in desc.lower() or "Auto" in desc
+
+    def test_manual_note_when_auto_upgrade_disabled(self, app):
+        with app.app_context():
+            self._enable(app)
+            Setting.set("ghost_auto_upgrade", "false")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_ghost_update_notification("5.0.0", "5.2.3", None)
+
+        body = json.loads(captured[0].data.decode())
+        desc = body["embeds"][0]["description"]
+        assert "Log in" in desc
+
 
 # ---------------------------------------------------------------------------
 # send_app_update_notification

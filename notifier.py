@@ -158,6 +158,9 @@ def send_ghost_update_notification(current_version, new_version, release_url):
     if Setting.get("discord_notify_ghost", "true") != "true":
         return False, "Ghost notifications disabled"
 
+    auto_upgrade = Setting.get("ghost_auto_upgrade", "false") == "true"
+    note = "Auto-upgrade is enabled and will run shortly." if auto_upgrade else "Log in to MCAT to upgrade."
+
     fields = [
         {"name": "Current Version", "value": f"v{current_version or 'unknown'}", "inline": True},
         {"name": "New Version", "value": f"v{new_version}", "inline": True},
@@ -167,7 +170,7 @@ def send_ghost_update_notification(current_version, new_version, release_url):
 
     embeds = [{
         "title": f"\U0001f47b Ghost update available: v{new_version}",
-        "description": "Log in to MCAT to upgrade.",
+        "description": note,
         "color": _COLOR_YELLOW,
         "fields": fields,
         "footer": {"text": "Sent by Mastodon Canada Administration Tool"},

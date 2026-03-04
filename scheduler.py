@@ -105,7 +105,7 @@ def _check_mastodon_release(app):
 
 
 def _check_ghost_release(app):
-    """Check for new Ghost releases."""
+    """Check for new Ghost releases and optionally auto-upgrade."""
     with app.app_context():
         from models import Setting
 
@@ -124,6 +124,21 @@ def _check_ghost_release(app):
 
         from notifier import send_ghost_update_notification
         send_ghost_update_notification(current, latest, release_url)
+
+        # Auto-upgrade if enabled
+        if Setting.get("ghost_auto_upgrade", "false") == "true":
+            logger.info("Auto-upgrade enabled, starting Ghost upgrade...")
+            from ghost import run_ghost_upgrade
+            from audit import log_action
+            from models import db
+            ok, log_output = run_ghost_upgrade()
+            log_action("ghost_upgrade", "settings", resource_name="ghost",
+                       details={"status": "success" if ok else "error", "trigger": "auto"})
+            db.session.commit()
+            if ok:
+                logger.info("Ghost auto-upgrade completed successfully")
+            else:
+                logger.error("Ghost auto-upgrade failed")
 
 
 def _run_discovery(app):

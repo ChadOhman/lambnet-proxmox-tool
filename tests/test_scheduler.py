@@ -1033,6 +1033,7 @@ class TestCheckGhostRelease:
         mock_setting.get.side_effect = lambda k, d="": {
             "ghost_guest_id": "7",
             "ghost_current_version": "5.80.0",
+            "ghost_auto_upgrade": "false",
         }.get(k, d)
 
         mock_ghost = MagicMock()
@@ -1071,6 +1072,62 @@ class TestCheckGhostRelease:
             _check_ghost_release(app)
 
         mock_notifier.send_ghost_update_notification.assert_not_called()
+
+    def test_auto_upgrade_triggered_when_enabled(self):
+        from scheduler import _check_ghost_release
+
+        app = _make_app()
+
+        mock_setting = MagicMock()
+        mock_setting.get.side_effect = lambda k, d="": {
+            "ghost_guest_id": "7",
+            "ghost_current_version": "5.80.0",
+            "ghost_auto_upgrade": "true",
+        }.get(k, d)
+
+        mock_ghost = MagicMock()
+        mock_ghost.check_ghost_release.return_value = (True, "5.81.0", "https://ghost.org")
+        mock_ghost.run_ghost_upgrade.return_value = (True, "")
+        mock_notifier = MagicMock()
+        mock_audit = MagicMock()
+        mock_db = MagicMock()
+
+        mocks = {
+            "models": MagicMock(Setting=mock_setting, db=mock_db),
+            "ghost": mock_ghost,
+            "notifier": mock_notifier,
+            "audit": mock_audit,
+        }
+        with _SysModulesPatch(mocks):
+            _check_ghost_release(app)
+
+        mock_ghost.run_ghost_upgrade.assert_called_once()
+
+    def test_auto_upgrade_not_triggered_when_disabled(self):
+        from scheduler import _check_ghost_release
+
+        app = _make_app()
+
+        mock_setting = MagicMock()
+        mock_setting.get.side_effect = lambda k, d="": {
+            "ghost_guest_id": "7",
+            "ghost_current_version": "5.80.0",
+            "ghost_auto_upgrade": "false",
+        }.get(k, d)
+
+        mock_ghost = MagicMock()
+        mock_ghost.check_ghost_release.return_value = (True, "5.81.0", "https://ghost.org")
+        mock_notifier = MagicMock()
+
+        mocks = {
+            "models": MagicMock(Setting=mock_setting),
+            "ghost": mock_ghost,
+            "notifier": mock_notifier,
+        }
+        with _SysModulesPatch(mocks):
+            _check_ghost_release(app)
+
+        mock_ghost.run_ghost_upgrade.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
