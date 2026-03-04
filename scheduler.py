@@ -545,6 +545,7 @@ def init_scheduler(app):
         id="discovery",
         name="Refresh guest discovery for all hosts",
         replace_existing=True,
+        max_instances=1,
     )
 
     # Scan job - runs every N hours
@@ -556,6 +557,7 @@ def init_scheduler(app):
         id="scan_all",
         name="Scan all guests for updates",
         replace_existing=True,
+        max_instances=1,
     )
 
     # Auto-update check - runs every 15 minutes to check maintenance windows
@@ -566,6 +568,7 @@ def init_scheduler(app):
         id="auto_update",
         name="Check maintenance windows and apply updates",
         replace_existing=True,
+        max_instances=1,
     )
 
     # Mastodon release check - runs alongside the scan job
@@ -576,6 +579,7 @@ def init_scheduler(app):
         id="mastodon_check",
         name="Check for Mastodon releases",
         replace_existing=True,
+        max_instances=1,
     )
 
     # Ghost release check - runs alongside the scan job
@@ -586,6 +590,7 @@ def init_scheduler(app):
         id="ghost_check",
         name="Check for Ghost releases",
         replace_existing=True,
+        max_instances=1,
     )
 
     # Host update check - runs alongside the guest scan
@@ -596,6 +601,7 @@ def init_scheduler(app):
         id="host_update_check",
         name="Check Proxmox hosts for APT updates",
         replace_existing=True,
+        max_instances=1,
     )
 
     # Service health checks - runs every N minutes
@@ -606,6 +612,7 @@ def init_scheduler(app):
         id="service_health",
         name="Check service health on all guests",
         replace_existing=True,
+        max_instances=1,
     )
 
     # App self-update check - runs every 6 hours
@@ -616,6 +623,7 @@ def init_scheduler(app):
         id="app_update_check",
         name="Check for app updates",
         replace_existing=True,
+        max_instances=1,
     )
 
     # Audit log retention purge - runs daily
@@ -626,6 +634,7 @@ def init_scheduler(app):
         id="audit_log_purge",
         name="Purge audit log entries older than 90 days",
         replace_existing=True,
+        max_instances=1,
     )
 
     # UniFi API event poll - runs every N minutes
@@ -636,6 +645,7 @@ def init_scheduler(app):
         id="unifi_event_poll",
         name="Poll UniFi API for events and alarms",
         replace_existing=True,
+        max_instances=1,
     )
 
     # UniFi log retention purge - runs daily
@@ -646,6 +656,7 @@ def init_scheduler(app):
         id="unifi_log_purge",
         name="Purge UniFi log entries past retention period",
         replace_existing=True,
+        max_instances=1,
     )
 
     _scheduler.start()

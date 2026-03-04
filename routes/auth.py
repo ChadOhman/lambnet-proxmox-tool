@@ -3,7 +3,7 @@ import threading
 import time
 import zoneinfo
 from urllib.parse import urlparse
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_user, logout_user, login_required, current_user
 from models import db, User
 from audit import log_action
@@ -66,6 +66,8 @@ def login():
 
         user = User.query.filter_by(username=username).first()
         if user and user.check_password(password) and user.is_active:
+            # Regenerate session to prevent session fixation attacks
+            session.clear()
             login_user(user, remember="remember" in request.form)
             log_action("login", "user", resource_id=user.id, resource_name=user.username)
             db.session.commit()
@@ -95,7 +97,7 @@ def logout():
     if is_cf_user:
         from models import Setting
         team_domain = Setting.get("cf_access_team_domain", "")
-        if team_domain:
+        if team_domain and team_domain.endswith(".cloudflareaccess.com"):
             return redirect(f"https://{team_domain}/cdn-cgi/access/logout")
     flash("You have been logged out.", "info")
     return redirect(url_for("auth.login"))

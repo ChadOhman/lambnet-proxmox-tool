@@ -210,6 +210,8 @@ def create_app(test_config=None):
         src = urlparse(source)
         req = urlparse(request.host_url)
         if (src.scheme, src.netloc) != (req.scheme, req.netloc):
+            logger.warning("CSRF origin mismatch: source=%s expected=%s path=%s",
+                           source, request.host_url, request.path)
             abort(403, description="Cross-site request blocked")
 
     @app.after_request
@@ -254,6 +256,16 @@ def create_app(test_config=None):
             abort(403)
         session["safety_mode"] = not session.get("safety_mode", False)
         return redirect(request.referrer or "/")
+
+    @app.route("/health")
+    def health_check():
+        """Lightweight health check for load balancers and monitoring."""
+        from flask import jsonify
+        try:
+            db.session.execute(db.text("SELECT 1"))
+            return jsonify({"status": "ok"}), 200
+        except Exception:
+            return jsonify({"status": "error", "detail": "database unreachable"}), 503
 
     return app
 
@@ -389,6 +401,32 @@ def _migrate_schema():
         db.session.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_svc_metric_service_captured "
             "ON service_metric_snapshots (service_id, captured_at)"
+        ))
+        db.session.commit()
+
+    # Performance indexes for common query patterns
+    if "guests" in table_names:
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_guest_host_vmid "
+            "ON guests (proxmox_host_id, vmid)"
+        ))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_guest_status "
+            "ON guests (status)"
+        ))
+        db.session.commit()
+
+    if "update_packages" in table_names:
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_update_pkg_guest_status "
+            "ON update_packages (guest_id, status)"
+        ))
+        db.session.commit()
+
+    if "audit_logs" in table_names:
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_audit_log_timestamp "
+            "ON audit_logs (timestamp)"
         ))
         db.session.commit()
 

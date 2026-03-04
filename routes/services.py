@@ -10,7 +10,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from sqlalchemy import func
 from flask_login import login_required, current_user
 from audit import log_action
-from models import db, AuditLog, Guest, GuestService, ServiceMetricSnapshot
+from models import db, AuditLog, Guest, Tag, GuestService, ServiceMetricSnapshot
 from scanner import (check_service_statuses, service_action, get_service_logs, get_service_stats,
                      sidekiq_clear_dead, sidekiq_retry_dead,
                      sidekiq_clear_retry, sidekiq_retry_retry,
@@ -39,6 +39,16 @@ def _require_login():
 def index():
     service_filter = request.args.get("service", "")
     query = GuestService.query.join(Guest).filter(Guest.enabled == True)
+
+    # Filter by user's tag-based access (non-admin users only see services
+    # on guests they have tag access to)
+    if not current_user.is_admin:
+        user_tag_ids = [t.id for t in current_user.allowed_tags]
+        if user_tag_ids:
+            query = query.filter(Guest.tags.any(Tag.id.in_(user_tag_ids)))
+        else:
+            query = query.filter(False)  # no tags = no access
+
     if service_filter:
         query = query.filter(GuestService.service_name == service_filter)
     services = query.order_by(Guest.name, GuestService.service_name).all()
