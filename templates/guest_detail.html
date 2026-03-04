@@ -730,7 +730,7 @@
         <h5 class="mb-0"><i class="bi bi-router"></i> UniFi Network</h5>
         <div class="d-flex align-items-center gap-2">
             <small class="text-muted" id="unifi-poll-time">
-                {% if unifi_last_polled %}{{ unifi_last_polled[:19] | replace('T', ' ') }} UTC{% endif %}
+                {% if unifi_last_polled %}{{ unifi_last_polled | local_dt('%Y-%m-%d %H:%M') }}{% endif %}
             </small>
             <button class="btn btn-sm btn-outline-secondary" id="unifi-refresh-btn" onclick="refreshUnifiStats()">
                 <i class="bi bi-arrow-clockwise"></i>
@@ -854,8 +854,11 @@
                 set('u-network', s.network || 'Unknown');
                 set('u-uptime', fmtUptime(s.uptime));
 
-                const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
-                set('unifi-poll-time', ts + ' UTC');
+                const el = document.getElementById('unifi-poll-time');
+                if (el) {
+                    el.innerHTML = '<span data-utc="' + new Date().toISOString() + '"></span>';
+                    if (window.localizeTimestamps) window.localizeTimestamps();
+                }
             })
             .catch(() => {})
             .finally(() => { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>'; });
@@ -869,7 +872,7 @@
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-router"></i> UniFi Network</h5></div>
     <div class="card-body">
         <p class="text-muted mb-0">Guest MAC {% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i> hidden</span>{% else %}<code>{{ guest.mac_address }}</code>{% endif %} not found on UniFi network (offline or not connected).
-            {% if unifi_last_polled %}<br><small>Last polled: {{ unifi_last_polled[:19] | replace('T', ' ') }} UTC</small>{% endif %}
+            {% if unifi_last_polled %}<br><small>Last polled: {{ unifi_last_polled | local_dt('%Y-%m-%d %H:%M') }}</small>{% endif %}
         </p>
     </div>
 </div>

@@ -464,7 +464,7 @@
                 <p class="form-text mt-0 mb-3">
                     Configure backup storage, mode, and compression per tag. Guests must have a matching tag to use default backup settings.
                     {% if not backup_storages %}<br><span class="text-warning">No storages discovered — click <strong>Refresh Storages</strong> to poll Proxmox hosts.</span>{% endif %}
-                    {% if backup_storages_cache_time %}<br><span class="text-muted">Storages last refreshed: {{ backup_storages_cache_time }}</span>{% endif %}
+                    {% if backup_storages_cache_time %}<br><span class="text-muted">Storages last refreshed: {{ backup_storages_cache_time | local_dt('%Y-%m-%d %H:%M') }}</span>{% endif %}
                 </p>
                 <form method="post" action="/settings/backups/tag-defaults" id="tagDefaultsForm">
                     <table class="table table-dark table-sm align-middle" aria-label="Per-tag backup defaults">

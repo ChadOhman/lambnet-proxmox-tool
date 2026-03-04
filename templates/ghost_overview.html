@@ -105,7 +105,7 @@
                             <td class="text-muted">Last Upgrade</td>
                             <td>
                                 {% if settings.last_upgrade_at %}
-                                <small class="font-monospace">{{ settings.last_upgrade_at }}</small>
+                                <small class="font-monospace">{{ settings.last_upgrade_at | local_dt('%Y-%m-%d %H:%M') }}</small>
                                 {% if settings.last_upgrade_status == 'success' %}
                                 <span class="badge bg-success ms-1">Success</span>
                                 {% elif settings.last_upgrade_status == 'error' %}

@@ -151,6 +151,7 @@ def create_app(test_config=None):
     # Custom Jinja filters
     from datetime import datetime, timezone as tz
     from markupsafe import Markup
+    import zoneinfo
 
     @app.template_filter("timestamp_to_datetime")
     def timestamp_to_datetime(epoch):
@@ -162,15 +163,29 @@ def create_app(test_config=None):
 
     @app.template_filter("local_dt")
     def local_dt_filter(dt, fmt="%m/%d %H:%M"):
-        """Render a datetime as a <span data-utc="ISO"> element for client-side localization.
-        The fallback text is the UTC value so the page is readable before JS runs.
+        """Render a datetime as a <span data-utc="ISO"> element.
+
+        Server-side conversion uses zoneinfo (IANA/eggert tz database) when
+        the user has a saved timezone.  The data-utc attribute is kept so
+        client-side JS can refine or handle users without a saved timezone.
         """
         if dt is None:
             return Markup("")
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=tz.utc)
         iso = dt.isoformat()
-        display = dt.strftime(fmt)
+        # Server-side tz conversion via zoneinfo (IANA tz data)
+        user_tz = None
+        try:
+            from flask_login import current_user
+            if current_user.is_authenticated and current_user.timezone:
+                user_tz = zoneinfo.ZoneInfo(current_user.timezone)
+        except Exception:
+            pass
+        if user_tz:
+            display = dt.astimezone(user_tz).strftime(fmt)
+        else:
+            display = dt.strftime(fmt)
         return Markup('<span data-utc="{}">{}</span>').format(iso, display)
 
     # Security headers

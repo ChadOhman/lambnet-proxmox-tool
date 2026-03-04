@@ -9,6 +9,17 @@ from credential_store import encrypt
 from config import BASE_DIR, DATA_DIR
 from audit import log_action
 
+
+def _parse_iso(value):
+    """Parse an ISO 8601 string into a timezone-aware datetime, or return None."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
 bp = Blueprint("settings", __name__)
 
 
@@ -62,7 +73,7 @@ def _get_backup_template_context():
             backup_storages = json.loads(cache_raw)
         except (json.JSONDecodeError, TypeError):
             pass
-    cache_time = Setting.get("backup_storages_cache_time", "")
+    cache_time = _parse_iso(Setting.get("backup_storages_cache_time", ""))
 
     backup_tag_defaults = {}
     raw = Setting.get("backup_tag_defaults", "")

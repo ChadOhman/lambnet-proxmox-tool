@@ -1,9 +1,20 @@
 import logging
 import threading as _threading
+from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required
 from models import db, Setting, Guest
 from audit import log_action
+
+
+def _parse_iso(value):
+    """Parse an ISO 8601 string into a timezone-aware datetime, or return None."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
 
 # ---------------------------------------------------------------------------
 # In-memory job state — mirrors the pattern from routes/mastodon.py
@@ -36,7 +47,7 @@ def _get_ghost_settings():
         "latest_version": Setting.get("ghost_latest_version", ""),
         "latest_release_url": Setting.get("ghost_latest_release_url", ""),
         "update_available": Setting.get("ghost_update_available", "") == "true",
-        "last_upgrade_at": Setting.get("ghost_last_upgrade_at", ""),
+        "last_upgrade_at": _parse_iso(Setting.get("ghost_last_upgrade_at", "")),
         "last_upgrade_status": Setting.get("ghost_last_upgrade_status", ""),
         "last_upgrade_log": Setting.get("ghost_last_upgrade_log", ""),
         "protection_type": Setting.get("ghost_protection_type", "snapshot"),

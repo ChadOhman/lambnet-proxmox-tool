@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from models import db, Guest, GuestService, ProxmoxHost, Credential, Tag, Setting, UpdatePackage, AuditLog
@@ -7,6 +8,16 @@ from proxmox_api import ProxmoxClient
 from audit import log_action
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_iso(value):
+    """Parse an ISO 8601 string into a timezone-aware datetime, or return None."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
 
 
 def _get_tag_backup_defaults(guest):
@@ -254,7 +265,7 @@ def detail(guest_id):
     if guest.mac_address:
         unifi_map = _get_unifi_mac_map()
         unifi_client = unifi_map.get(guest.mac_address)
-        unifi_last_polled = Setting.get("unifi_last_polled", "")
+        unifi_last_polled = _parse_iso(Setting.get("unifi_last_polled", ""))
 
     # Recent audit activity for this guest (last 7 days)
     from datetime import datetime, timedelta, timezone
