@@ -81,7 +81,7 @@ def index():
     try:
         from models import ProxmoxHost
         from proxmox_api import ProxmoxClient
-        for host in ProxmoxHost.query.filter_by(is_pbs=False).all():
+        for host in ProxmoxHost.query.filter(ProxmoxHost.host_type != "pbs").all():
             try:
                 client = ProxmoxClient(host)
                 nodes = client.api.nodes.get()
