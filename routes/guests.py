@@ -235,9 +235,9 @@ def detail(guest_id):
                 snapshots = client.list_snapshots(node, guest.vmid, guest.guest_type)
                 backup_storages = client.list_node_storages(node, content_type="backup")
                 hardware = client.get_guest_config(node, guest.vmid, guest.guest_type)
-                # List backups from the tag/legacy default storage (or all backup-capable storages)
+                # List backups from per-guest/tag/legacy default storage (or all backup-capable storages)
                 tag_cfg = _get_tag_backup_defaults(guest)
-                default_storage = tag_cfg.get("storage") or Setting.get("backup_storage", "")
+                default_storage = guest.backup_storage or tag_cfg.get("storage") or Setting.get("backup_storage", "")
                 if default_storage:
                     backups = client.list_backups(node, guest.vmid, default_storage)
                 else:
@@ -605,6 +605,26 @@ def rollback_snapshot(guest_id, snapname):
     return redirect(url_for("guests.detail", guest_id=guest.id))
 
 
+@bp.route("/<int:guest_id>/backup-defaults", methods=["POST"])
+@login_required
+def save_backup_defaults(guest_id):
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest_id))
+
+    guest = Guest.query.get_or_404(guest_id)
+    guest.backup_storage = request.form.get("backup_storage", "").strip() or None
+    guest.backup_mode = request.form.get("backup_mode", "").strip() or None
+    guest.backup_compress = request.form.get("backup_compress", "").strip() or None
+    db.session.commit()
+
+    log_action("guest_backup_defaults_save", "guest", resource_id=guest.id, resource_name=guest.name,
+               details={"storage": guest.backup_storage, "mode": guest.backup_mode, "compress": guest.backup_compress})
+    db.session.commit()
+    flash("Backup defaults saved.", "success")
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
 @bp.route("/<int:guest_id>/backup/create", methods=["POST"])
 @login_required
 def create_backup(guest_id):
@@ -623,15 +643,15 @@ def create_backup(guest_id):
     protected = "protected" in request.form
     notes = request.form.get("notes", "").strip()
 
-    # Fall back: per-tag config → legacy global defaults (grandfather clause)
+    # Fall back: per-guest → per-tag → legacy global defaults (grandfather clause)
     if not storage or not mode or not compress:
         tag_defaults = _get_tag_backup_defaults(guest)
         if not storage:
-            storage = tag_defaults.get("storage") or Setting.get("backup_storage", "")
+            storage = guest.backup_storage or tag_defaults.get("storage") or Setting.get("backup_storage", "")
         if not mode:
-            mode = tag_defaults.get("mode") or Setting.get("backup_mode", "snapshot")
+            mode = guest.backup_mode or tag_defaults.get("mode") or Setting.get("backup_mode", "snapshot")
         if not compress:
-            compress = tag_defaults.get("compress") or Setting.get("backup_compress", "zstd")
+            compress = guest.backup_compress or tag_defaults.get("compress") or Setting.get("backup_compress", "zstd")
 
     if not storage:
         flash("No backup storage configured. Add a backup config for one of this guest's tags in Settings.", "error")
@@ -669,7 +689,7 @@ def delete_backup(guest_id, volid):
         flash("Guest must be linked to a Proxmox host with a VMID.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    storage = volid.split(":")[0] if ":" in volid else (_get_tag_backup_defaults(guest).get("storage") or Setting.get("backup_storage", ""))
+    storage = volid.split(":")[0] if ":" in volid else (guest.backup_storage or _get_tag_backup_defaults(guest).get("storage") or Setting.get("backup_storage", ""))
 
     client = ProxmoxClient(guest.proxmox_host)
     node = client.find_guest_node(guest.vmid)
@@ -701,7 +721,7 @@ def toggle_backup_protection(guest_id, volid):
         flash("Guest must be linked to a Proxmox host with a VMID.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    storage = volid.split(":")[0] if ":" in volid else (_get_tag_backup_defaults(guest).get("storage") or Setting.get("backup_storage", ""))
+    storage = volid.split(":")[0] if ":" in volid else (guest.backup_storage or _get_tag_backup_defaults(guest).get("storage") or Setting.get("backup_storage", ""))
     protect = request.form.get("protected", "1") == "1"
 
     client = ProxmoxClient(guest.proxmox_host)
@@ -734,7 +754,7 @@ def update_backup_notes(guest_id, volid):
         flash("Guest must be linked to a Proxmox host with a VMID.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    storage = volid.split(":")[0] if ":" in volid else (_get_tag_backup_defaults(guest).get("storage") or Setting.get("backup_storage", ""))
+    storage = volid.split(":")[0] if ":" in volid else (guest.backup_storage or _get_tag_backup_defaults(guest).get("storage") or Setting.get("backup_storage", ""))
     notes = request.form.get("notes", "").strip()
 
     client = ProxmoxClient(guest.proxmox_host)

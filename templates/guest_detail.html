@@ -553,13 +553,60 @@
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-hdd"></i> Backups</h5>
         {% if current_user.can_manage_guests %}
-        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#createBackupForm">
-            <i class="bi bi-plus-lg"></i> Create Backup
-        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#backupDefaults" aria-label="Configure backup defaults">
+                <i class="bi bi-gear"></i> Defaults
+            </button>
+            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#createBackupForm">
+                <i class="bi bi-plus-lg"></i> Create Backup
+            </button>
+        </div>
         {% endif %}
     </div>
     <div class="card-body">
         {% if current_user.can_manage_guests %}
+        <div class="collapse mb-3" id="backupDefaults">
+            <form method="post" action="/guests/{{ guest.id }}/backup-defaults" class="border border-secondary rounded p-3 mb-2">
+                <h6 class="mb-2"><i class="bi bi-gear"></i> Per-Guest Backup Defaults</h6>
+                <p class="form-text mt-0 mb-2">Override tag-level defaults for this guest. Leave empty to inherit from tag.</p>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label form-label-sm">Storage</label>
+                        <select class="form-select form-select-sm font-monospace" name="backup_storage">
+                            <option value="">-- Inherit from tag --</option>
+                            {% for st in backup_storages %}
+                            <option value="{{ st.storage }}" {{ 'selected' if guest.backup_storage == st.storage }}>{{ st.storage }}</option>
+                            {% endfor %}
+                            {% if guest.backup_storage and not (backup_storages | selectattr('storage', 'equalto', guest.backup_storage) | list) %}
+                            <option value="{{ guest.backup_storage }}" selected>{{ guest.backup_storage }} (saved)</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm">Mode</label>
+                        <select class="form-select form-select-sm" name="backup_mode">
+                            <option value="" {{ 'selected' if not guest.backup_mode }}>-- Inherit from tag --</option>
+                            <option value="snapshot" {{ 'selected' if guest.backup_mode == 'snapshot' }}>Snapshot</option>
+                            <option value="suspend" {{ 'selected' if guest.backup_mode == 'suspend' }}>Suspend</option>
+                            <option value="stop" {{ 'selected' if guest.backup_mode == 'stop' }}>Stop</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm">Compression</label>
+                        <select class="form-select form-select-sm" name="backup_compress">
+                            <option value="" {{ 'selected' if not guest.backup_compress }}>-- Inherit from tag --</option>
+                            <option value="zstd" {{ 'selected' if guest.backup_compress == 'zstd' }}>ZSTD</option>
+                            <option value="lzo" {{ 'selected' if guest.backup_compress == 'lzo' }}>LZO</option>
+                            <option value="gzip" {{ 'selected' if guest.backup_compress == 'gzip' }}>GZIP</option>
+                            <option value="0" {{ 'selected' if guest.backup_compress == '0' }}>None</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
+                    </div>
+                </div>
+            </form>
+        </div>
         <div class="collapse mb-3" id="createBackupForm">
             <form method="post" action="/guests/{{ guest.id }}/backup/create">
                 <div class="row g-2 align-items-end">

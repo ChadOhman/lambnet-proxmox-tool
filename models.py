@@ -405,6 +405,9 @@ class Guest(db.Model):
     power_state = db.Column(db.String(16), default="unknown")  # running, stopped, paused, unknown
     reboot_required = db.Column(db.Boolean, default=False)
     require_snapshot = db.Column(db.String(16), default="inherit")  # inherit, yes, no
+    backup_storage = db.Column(db.String(128), nullable=True)  # per-guest backup storage override
+    backup_mode = db.Column(db.String(32), nullable=True)       # per-guest backup mode override
+    backup_compress = db.Column(db.String(32), nullable=True)   # per-guest compression override
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     updates = db.relationship("UpdatePackage", backref="guest", lazy=True, cascade="all, delete-orphan")

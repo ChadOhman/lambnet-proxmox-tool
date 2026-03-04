@@ -172,3 +172,74 @@ class TestGetTagBackupDefaults:
 
             Setting.set("backup_tag_defaults", "not-valid-json{")
             assert _get_tag_backup_defaults(guest) == {}
+
+
+class TestSaveBackupDefaults:
+    """Tests for the per-guest backup defaults save endpoint."""
+
+    def _make_guest(self, app):
+        with app.app_context():
+            guest = Guest(name="_backup-defaults-test", guest_type="ct")
+            db.session.add(guest)
+            db.session.commit()
+            return guest.id
+
+    def test_save_backup_defaults(self, app, auth_client):
+        gid = self._make_guest(app)
+        resp = auth_client.post(
+            f"/guests/{gid}/backup-defaults",
+            data={"backup_storage": "pbs-prod", "backup_mode": "snapshot", "backup_compress": "zstd"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+        with app.app_context():
+            guest = Guest.query.get(gid)
+            assert guest.backup_storage == "pbs-prod"
+            assert guest.backup_mode == "snapshot"
+            assert guest.backup_compress == "zstd"
+
+    def test_save_empty_clears_defaults(self, app, auth_client):
+        gid = self._make_guest(app)
+        with app.app_context():
+            guest = Guest.query.get(gid)
+            guest.backup_storage = "old-storage"
+            guest.backup_mode = "stop"
+            db.session.commit()
+
+        resp = auth_client.post(
+            f"/guests/{gid}/backup-defaults",
+            data={"backup_storage": "", "backup_mode": "", "backup_compress": ""},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+        with app.app_context():
+            guest = Guest.query.get(gid)
+            assert guest.backup_storage is None
+            assert guest.backup_mode is None
+            assert guest.backup_compress is None
+
+    def test_guest_defaults_override_tag_defaults(self, app):
+        """Per-guest defaults should take priority over tag defaults in the fallback chain."""
+        with app.app_context():
+            tag = Tag(name="override-test-tag", color="#000")
+            guest = Guest(name="override-test-guest", guest_type="ct",
+                         backup_storage="guest-storage", backup_mode="stop")
+            guest.tags.append(tag)
+            db.session.add_all([tag, guest])
+            db.session.commit()
+
+            overrides = {"override-test-tag": {"storage": "tag-storage", "mode": "snapshot", "compress": "lzo"}}
+            Setting.set("backup_tag_defaults", json.dumps(overrides))
+
+            # Per-guest storage and mode should win; compress inherits from tag
+            from routes.guests import _get_tag_backup_defaults
+            tag_cfg = _get_tag_backup_defaults(guest)
+            storage = guest.backup_storage or tag_cfg.get("storage", "")
+            mode = guest.backup_mode or tag_cfg.get("mode", "")
+            compress = guest.backup_compress or tag_cfg.get("compress", "")
+
+            assert storage == "guest-storage"
+            assert mode == "stop"
+            assert compress == "lzo"  # inherited from tag

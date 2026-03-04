@@ -271,6 +271,18 @@ def _migrate_schema():
             logger.info("Adding reboot_required column to guests table...")
             db.session.execute(text("ALTER TABLE guests ADD COLUMN reboot_required BOOLEAN DEFAULT 0"))
             db.session.commit()
+        if "backup_storage" not in guest_columns:
+            logger.info("Adding backup_storage column to guests table...")
+            db.session.execute(text("ALTER TABLE guests ADD COLUMN backup_storage VARCHAR(128)"))
+            db.session.commit()
+        if "backup_mode" not in guest_columns:
+            logger.info("Adding backup_mode column to guests table...")
+            db.session.execute(text("ALTER TABLE guests ADD COLUMN backup_mode VARCHAR(32)"))
+            db.session.commit()
+        if "backup_compress" not in guest_columns:
+            logger.info("Adding backup_compress column to guests table...")
+            db.session.execute(text("ALTER TABLE guests ADD COLUMN backup_compress VARCHAR(32)"))
+            db.session.commit()
 
     if "users" in table_names:
         user_columns = [c["name"] for c in inspector.get_columns("users")]
