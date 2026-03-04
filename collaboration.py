@@ -195,7 +195,7 @@ class TerminalSessionRegistry:
 
     def create(self, guest_id: int, guest_name: str,
                owner_user_id: int, owner_username: str) -> TerminalSession:
-        session_id = uuid.uuid4().hex[:8]
+        session_id = uuid.uuid4().hex
         session = TerminalSession(session_id, guest_id, guest_name,
                                   owner_user_id, owner_username)
         with self._lock:

@@ -580,7 +580,7 @@ class TestTerminalSessionRegistry:
     def test_create_assigns_session_id(self):
         reg = TerminalSessionRegistry()
         session = reg.create(10, "vm-web", 1, "alice")
-        assert len(session.session_id) == 8
+        assert len(session.session_id) == 32
 
     def test_create_stores_guest_metadata(self):
         reg = TerminalSessionRegistry()

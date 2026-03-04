@@ -1,7 +1,12 @@
+import re
+
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from models import db, User, Role, Tag, TagUnifiNetwork, Setting, AuditLog, Credential, ScanResult
 from audit import log_action
+
+# Strict hex-color validation: #RRGGBB only
+_HEX_COLOR_RE = re.compile(r'^#[0-9a-fA-F]{6}$')
 
 bp = Blueprint("security", __name__)
 
@@ -327,6 +332,9 @@ def add_tag():
     if not name:
         flash("Tag name is required.", "error")
         return redirect(url_for("security.index"))
+
+    if not _HEX_COLOR_RE.match(color):
+        color = "#6c757d"  # fallback to default grey for invalid colors
 
     if Tag.query.filter_by(name=name).first():
         flash(f"Tag '{name}' already exists.", "error")

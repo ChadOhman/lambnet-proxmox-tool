@@ -302,12 +302,21 @@ def edit(guest_id):
     guest.require_snapshot = request.form.get("require_snapshot", "inherit")
 
     cred_id = request.form.get("credential_id")
-    guest.credential_id = int(cred_id) if cred_id else None
+    try:
+        guest.credential_id = int(cred_id) if cred_id else None
+    except (TypeError, ValueError):
+        flash("Invalid credential selection.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
 
     # Update tags
     tag_ids = request.form.getlist("tag_ids")
     if tag_ids:
-        tags = Tag.query.filter(Tag.id.in_([int(t) for t in tag_ids])).all()
+        try:
+            parsed_tag_ids = [int(t) for t in tag_ids]
+        except (TypeError, ValueError):
+            flash("Invalid tag selection.", "error")
+            return redirect(url_for("guests.detail", guest_id=guest.id))
+        tags = Tag.query.filter(Tag.id.in_(parsed_tag_ids)).all()
         guest.tags = tags
     else:
         guest.tags = []
