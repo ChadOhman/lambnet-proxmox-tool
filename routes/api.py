@@ -82,8 +82,10 @@ def _run_update_background(app, guest_id, dist_upgrade=False):
         )
 
         try:
-            # SSH path
-            if guest.connection_method in ("ssh", "auto") and guest.ip_address and guest.ip_address.lower() not in ("dhcp", "dhcp6", "auto"):
+            # SSH path — preferred for updates (streaming output, long timeout support).
+            # Try SSH even for "agent" connection method if the guest has a usable IP.
+            has_usable_ip = guest.ip_address and guest.ip_address.lower() not in ("dhcp", "dhcp6", "auto")
+            if has_usable_ip:
                 credential = guest.credential
                 if not credential:
                     from models import Credential
@@ -157,16 +159,11 @@ def _run_update_background(app, guest_id, dist_upgrade=False):
                             break
 
                     if node:
-                        job.append("$ apt-get update\n")
-                        update_out, update_err = client.exec_guest_agent(node, guest.vmid, "apt-get update", timeout=120)
-                        if update_out:
-                            job.append(update_out)
-                        if update_err:
-                            job.append(f"\n{update_err}\n")
-                        # Force fresh TLS session before long-running upgrade
-                        client.reconnect()
-                        job.append(f"\n$ {cmd}\n")
-                        stdout, err = client.exec_guest_agent(node, guest.vmid, cmd, timeout=600)
+                        # Run update + upgrade as a single command to avoid guest agent
+                        # channel issues (broken pipe) between sequential exec calls
+                        combined = f"sh -c 'apt-get update && {cmd}'"
+                        job.append(f"$ apt-get update && {cmd}\n")
+                        stdout, err = client.exec_guest_agent(node, guest.vmid, combined, timeout=600)
                         if err is None:
                             if stdout:
                                 job.append(stdout)
