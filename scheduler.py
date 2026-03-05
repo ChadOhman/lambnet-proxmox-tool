@@ -248,6 +248,53 @@ def _check_elk_release(app):
                 logger.error("Elk auto-upgrade failed")
 
 
+def _check_jitsi_release(app):
+    """Check for new Jitsi releases and optionally auto-upgrade."""
+    with app.app_context():
+        from models import Setting
+
+        # Only check if a Jitsi guest is configured and installed
+        if not Setting.get("jitsi_guest_id"):
+            return
+        if Setting.get("jitsi_installed", "false") != "true":
+            return
+
+        from jitsi import check_jitsi_release
+        update_available, latest, release_url = check_jitsi_release()
+
+        if not update_available:
+            return
+
+        current = Setting.get("jitsi_current_version", "")
+        logger.info(f"Jitsi update available: v{current} -> v{latest}")
+
+        # Send Discord notification (only if not already notified for this version)
+        last_notified = Setting.get("jitsi_last_notified_version", "")
+        if latest != last_notified:
+            from notifier import send_jitsi_update_notification
+            ok, _msg = send_jitsi_update_notification(current, latest, release_url)
+            if ok:
+                Setting.set("jitsi_last_notified_version", latest)
+
+        # Auto-upgrade if enabled
+        if Setting.get("jitsi_auto_upgrade", "false") == "true":
+            logger.info("Auto-upgrade enabled, starting Jitsi upgrade...")
+            from jitsi import run_jitsi_upgrade
+            from audit import log_action
+            from models import db
+            from notifier import send_upgrade_started_notification, send_upgrade_result_notification
+            send_upgrade_started_notification("jitsi", latest, "auto")
+            ok, log_output = run_jitsi_upgrade()
+            log_action("jitsi_upgrade", "settings", resource_name="jitsi",
+                       details={"status": "success" if ok else "error", "trigger": "auto"})
+            db.session.commit()
+            send_upgrade_result_notification("jitsi", latest, ok, "auto")
+            if ok:
+                logger.info("Jitsi auto-upgrade completed successfully")
+            else:
+                logger.error("Jitsi auto-upgrade failed")
+
+
 def _run_discovery(app):
     """Refresh guest discovery for all Proxmox hosts."""
     with app.app_context():
@@ -713,6 +760,17 @@ def init_scheduler(app):
         max_instances=1,
     )
 
+    # Jitsi release check - runs alongside the scan job
+    _scheduler.add_job(
+        _check_jitsi_release,
+        trigger=IntervalTrigger(hours=interval_hours),
+        args=[app],
+        id="jitsi_check",
+        name="Check for Jitsi releases",
+        replace_existing=True,
+        max_instances=1,
+    )
+
     # Host update check - runs alongside the guest scan
     _scheduler.add_job(
         _check_host_updates,
@@ -780,7 +838,7 @@ def init_scheduler(app):
     )
 
     _scheduler.start()
-    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, ghost check every {interval_hours}h, peertube check every {interval_hours}h, elk check every {interval_hours}h, host update check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
+    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, ghost check every {interval_hours}h, peertube check every {interval_hours}h, elk check every {interval_hours}h, jitsi check every {interval_hours}h, host update check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
 
     return _scheduler
 
@@ -794,6 +852,7 @@ def reschedule_jobs(interval_hours, discovery_hours, service_check_minutes):
     _scheduler.reschedule_job("ghost_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("peertube_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("elk_check", trigger=IntervalTrigger(hours=interval_hours))
+    _scheduler.reschedule_job("jitsi_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("host_update_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("discovery", trigger=IntervalTrigger(hours=discovery_hours))
     _scheduler.reschedule_job("service_health", trigger=IntervalTrigger(minutes=service_check_minutes))

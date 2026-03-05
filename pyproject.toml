@@ -11,6 +11,7 @@ omit = [
     "mastodon.py",
     "ghost.py",
     "elk.py",
+    "jitsi.py",
     "unifi_client.py",
     "unifi_geoip.py",
 ]

@@ -1,0 +1,360 @@
+import logging
+import threading as _threading
+from datetime import datetime
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask_login import login_required
+from models import db, Setting, Guest
+from audit import log_action
+
+
+def _parse_iso(value):
+    """Parse an ISO 8601 string into a timezone-aware datetime, or return None."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
+# ---------------------------------------------------------------------------
+# In-memory job state — three jobs: upgrade, preflight, and install
+# ---------------------------------------------------------------------------
+_upgrade_job = {"running": False, "success": None, "log": []}
+_preflight_job = {"running": False, "success": None, "log": []}
+_install_job = {"running": False, "success": None, "log": []}
+
+logger = logging.getLogger(__name__)
+
+bp = Blueprint("jitsi", __name__)
+
+
+@bp.before_request
+@login_required
+def _require_login():
+    from flask_login import current_user
+    if not current_user.can_update:
+        flash("'Apply Updates' permission required.", "error")
+        return redirect(url_for("dashboard.index"))
+
+
+def _get_jitsi_settings():
+    return {
+        "guest_id": Setting.get("jitsi_guest_id", ""),
+        "hostname": Setting.get("jitsi_hostname", ""),
+        "cert_type": Setting.get("jitsi_cert_type", "self-signed"),
+        "letsencrypt_email": Setting.get("jitsi_letsencrypt_email", ""),
+        "url": Setting.get("jitsi_url", ""),
+        "auto_upgrade": Setting.get("jitsi_auto_upgrade", "false"),
+        "current_version": Setting.get("jitsi_current_version", ""),
+        "latest_version": Setting.get("jitsi_latest_version", ""),
+        "latest_release_url": "",
+        "update_available": Setting.get("jitsi_update_available", "") == "true",
+        "installed": Setting.get("jitsi_installed", "") == "true",
+        "last_upgrade_at": _parse_iso(Setting.get("jitsi_last_upgrade_at", "")),
+        "last_upgrade_status": Setting.get("jitsi_last_upgrade_status", ""),
+        "last_upgrade_log": Setting.get("jitsi_last_upgrade_log", ""),
+        "last_install_at": _parse_iso(Setting.get("jitsi_last_install_at", "")),
+        "last_install_status": Setting.get("jitsi_last_install_status", ""),
+        "last_install_log": Setting.get("jitsi_last_install_log", ""),
+        "protection_type": Setting.get("jitsi_protection_type", "snapshot"),
+        "backup_storage": Setting.get("jitsi_backup_storage", ""),
+        "backup_mode": Setting.get("jitsi_backup_mode", "snapshot"),
+    }
+
+
+@bp.route("/upgrade")
+def upgrade_page():
+    settings = _get_jitsi_settings()
+    guests = Guest.query.filter_by(enabled=True).order_by(Guest.name).all()
+
+    backup_storages = []
+    snapshots_supported = True
+    snapshot_blockers = []
+
+    guest_id = settings.get("guest_id", "")
+    if guest_id:
+        try:
+            g = Guest.query.get(int(guest_id))
+            if g and g.proxmox_host and not g.proxmox_host.is_pbs:
+                from proxmox_api import ProxmoxClient
+                client = ProxmoxClient(g.proxmox_host)
+                node = client.find_guest_node(g.vmid)
+                if node:
+                    backup_storages = client.list_node_storages(node, content_type="backup")
+                    if not client.guest_supports_snapshot(node, g.vmid, g.guest_type):
+                        snapshots_supported = False
+                        snapshot_blockers.append(g.name)
+        except Exception as e:
+            logger.warning("Could not check snapshot/backup support: %s", e)
+
+    return render_template(
+        "jitsi.html",
+        settings=settings,
+        guests=guests,
+        backup_storages=backup_storages,
+        snapshots_supported=snapshots_supported,
+        snapshot_blockers=snapshot_blockers,
+    )
+
+
+@bp.route("/save", methods=["POST"])
+def save():
+    Setting.set("jitsi_guest_id", request.form.get("jitsi_guest_id", "").strip())
+    Setting.set("jitsi_hostname", request.form.get("jitsi_hostname", "").strip())
+    cert_type = request.form.get("jitsi_cert_type", "self-signed")
+    Setting.set("jitsi_cert_type",
+                cert_type if cert_type in ("letsencrypt", "self-signed", "custom") else "self-signed")
+    Setting.set("jitsi_letsencrypt_email",
+                request.form.get("jitsi_letsencrypt_email", "").strip())
+    Setting.set("jitsi_url", request.form.get("jitsi_url", "").strip())
+    Setting.set("jitsi_current_version", request.form.get("jitsi_current_version", "").strip())
+    Setting.set("jitsi_auto_upgrade",
+                "true" if "jitsi_auto_upgrade" in request.form else "false")
+    protection_type = request.form.get("jitsi_protection_type", "snapshot")
+    Setting.set("jitsi_protection_type",
+                protection_type if protection_type in ("snapshot", "backup") else "snapshot")
+    Setting.set("jitsi_backup_storage", request.form.get("jitsi_backup_storage", "").strip())
+    backup_mode = request.form.get("jitsi_backup_mode", "snapshot")
+    Setting.set("jitsi_backup_mode",
+                backup_mode if backup_mode in ("snapshot", "suspend", "stop") else "snapshot")
+
+    log_action("jitsi_config_save", "settings", resource_name="jitsi")
+    db.session.commit()
+    flash("Jitsi settings saved.", "success")
+    return redirect(url_for("jitsi.upgrade_page"))
+
+
+@bp.route("/check", methods=["POST"])
+def check():
+    from jitsi import check_jitsi_release
+
+    guest_id = Setting.get("jitsi_guest_id", "")
+    if not guest_id:
+        flash("Jitsi guest is not configured. Cannot check for updates.", "warning")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    update_available, latest, release_url = check_jitsi_release()
+    current = Setting.get("jitsi_current_version", "")
+
+    if not latest:
+        flash("Could not fetch latest Jitsi version from apt repository.", "error")
+    elif update_available:
+        flash(f"Jitsi update available: v{current} \u2192 v{latest}", "warning")
+    elif current:
+        flash(f"Jitsi is up to date (v{current}).", "success")
+    else:
+        flash(
+            f"Latest Jitsi version: v{latest}. "
+            "Set your current version to enable update detection.",
+            "info",
+        )
+
+    return redirect(url_for("jitsi.upgrade_page"))
+
+
+@bp.route("/upgrade/status")
+def upgrade_status():
+    return jsonify({
+        "running": _upgrade_job["running"],
+        "success": _upgrade_job["success"],
+        "log": _upgrade_job["log"],
+    })
+
+
+@bp.route("/preflight/status")
+def preflight_status():
+    return jsonify({
+        "running": _preflight_job["running"],
+        "success": _preflight_job["success"],
+        "log": _preflight_job["log"],
+    })
+
+
+@bp.route("/install/status")
+def install_status():
+    return jsonify({
+        "running": _install_job["running"],
+        "success": _install_job["success"],
+        "log": _install_job["log"],
+    })
+
+
+@bp.route("/preflight", methods=["POST"])
+def preflight():
+    from jitsi import run_jitsi_preflight
+    from flask import current_app
+
+    if _upgrade_job["running"] or _install_job["running"]:
+        return jsonify({"error": "An operation is already in progress"}), 409
+    if _preflight_job["running"]:
+        return jsonify({"error": "A pre-flight check is already in progress"}), 409
+
+    _preflight_job.update({"running": True, "success": None, "log": []})
+
+    def _cb(msg):
+        _preflight_job["log"].append(msg)
+
+    _app = current_app._get_current_object()
+
+    def _bg():
+        ok = False
+        try:
+            with _app.app_context():
+                ok, _ = run_jitsi_preflight(log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _preflight_job["running"] = False
+        _preflight_job["success"] = ok
+
+    try:
+        import gevent as _gevent
+        _gevent.spawn(_bg)
+    except ImportError:
+        _threading.Thread(target=_bg, daemon=True).start()
+
+    return jsonify({"started": True})
+
+
+@bp.route("/upgrade", methods=["POST"])
+def upgrade():
+    from jitsi import run_jitsi_upgrade
+    from flask import current_app
+    from flask_login import current_user
+
+    if _upgrade_job["running"] or _install_job["running"]:
+        flash("An operation is already in progress.", "warning")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    skip_protection = (
+        current_user.is_super_admin
+        and request.form.get("skip_protection") == "1"
+    )
+
+    _upgrade_job.update({"running": True, "success": None, "log": []})
+    target_version = Setting.get("jitsi_latest_version", "")
+
+    def _cb(msg):
+        _upgrade_job["log"].append(msg)
+
+    _app = current_app._get_current_object()
+
+    def _bg():
+        ok = False
+        try:
+            with _app.app_context():
+                from notifier import send_upgrade_started_notification
+                send_upgrade_started_notification("jitsi", target_version, "manual")
+                ok, _ = run_jitsi_upgrade(log_callback=_cb, skip_protection=skip_protection)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _upgrade_job["running"] = False
+        _upgrade_job["success"] = ok
+        from datetime import datetime, timezone
+        with _app.app_context():
+            now = datetime.now(timezone.utc).isoformat()
+            Setting.set("jitsi_last_upgrade_at", now)
+            Setting.set("jitsi_last_upgrade_status", "success" if ok else "error")
+            Setting.set("jitsi_last_upgrade_log", "\n".join(_upgrade_job["log"]))
+            log_action("jitsi_upgrade", "settings", resource_name="jitsi",
+                       details={"status": "success" if ok else "error"})
+            db.session.commit()
+            from notifier import send_upgrade_result_notification
+            send_upgrade_result_notification("jitsi", target_version, ok, "manual")
+
+    try:
+        import gevent as _gevent
+        _gevent.spawn(_bg)
+    except ImportError:
+        _threading.Thread(target=_bg, daemon=True).start()
+
+    return redirect(url_for("jitsi.upgrade_page"))
+
+
+@bp.route("/install", methods=["POST"])
+def install():
+    from jitsi import run_jitsi_install
+    from flask import current_app
+
+    if _upgrade_job["running"] or _install_job["running"]:
+        flash("An operation is already in progress.", "warning")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    _install_job.update({"running": True, "success": None, "log": []})
+
+    def _cb(msg):
+        _install_job["log"].append(msg)
+
+    _app = current_app._get_current_object()
+
+    def _bg():
+        ok = False
+        try:
+            with _app.app_context():
+                ok, _ = run_jitsi_install(log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _install_job["running"] = False
+        _install_job["success"] = ok
+        from datetime import datetime, timezone
+        with _app.app_context():
+            now = datetime.now(timezone.utc).isoformat()
+            Setting.set("jitsi_last_install_at", now)
+            Setting.set("jitsi_last_install_status", "success" if ok else "error")
+            Setting.set("jitsi_last_install_log", "\n".join(_install_job["log"]))
+            if ok:
+                Setting.set("jitsi_installed", "true")
+            log_action("jitsi_install", "settings", resource_name="jitsi",
+                       details={"status": "success" if ok else "error"})
+            db.session.commit()
+
+    try:
+        import gevent as _gevent
+        _gevent.spawn(_bg)
+    except ImportError:
+        _threading.Thread(target=_bg, daemon=True).start()
+
+    return redirect(url_for("jitsi.upgrade_page"))
+
+
+@bp.route("/detect-versions", methods=["POST"])
+def detect_versions():
+    from jitsi import detect_jitsi_version
+
+    guest_id = Setting.get("jitsi_guest_id", "")
+
+    if not guest_id:
+        flash("Jitsi guest is not configured.", "warning")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    try:
+        guest = Guest.query.get(int(guest_id))
+    except (TypeError, ValueError):
+        flash("Invalid Jitsi guest ID.", "error")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    if not guest:
+        flash("Jitsi guest not found.", "error")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    version, error = detect_jitsi_version(guest)
+    if version:
+        Setting.set("jitsi_current_version", version)
+        if Setting.get("jitsi_installed") != "true":
+            Setting.set("jitsi_installed", "true")
+        db.session.commit()
+        flash(f"Detected Jitsi version: {version}", "success")
+    else:
+        # Jitsi not found on guest — reset installed state
+        if Setting.get("jitsi_installed") == "true":
+            Setting.set("jitsi_installed", "false")
+            Setting.set("jitsi_current_version", "")
+            db.session.commit()
+            flash(f"Jitsi not found on guest: {error}. Marked as not installed.", "warning")
+        else:
+            flash(f"Could not detect Jitsi version: {error}", "warning")
+
+    return redirect(url_for("jitsi.upgrade_page"))
