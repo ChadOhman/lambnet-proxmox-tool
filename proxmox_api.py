@@ -28,7 +28,7 @@ class ProxmoxClient:
             kwargs["user"] = self.host_model.username or "root@pam"
             kwargs["password"] = decrypt(self.host_model.encrypted_password)
 
-        self._api = ProxmoxAPI(**kwargs)
+        self._api = ProxmoxAPI(timeout=30, **kwargs)
         return self._api
 
     @property
@@ -239,8 +239,12 @@ class ProxmoxClient:
             logger.debug(f"Could not get MAC for {guest_type}/{vmid}: {e}")
         return None
 
-    def exec_guest_agent(self, node, vmid, command):
-        """Execute a command via QEMU guest agent and return output."""
+    def exec_guest_agent(self, node, vmid, command, timeout=120):
+        """Execute a command via QEMU guest agent and return output.
+
+        Args:
+            timeout: Max seconds to wait for command completion (default 120).
+        """
         try:
             result = self.api.nodes(node).qemu(vmid).agent.exec.post(command=command)
             pid = result.get("pid")
@@ -248,7 +252,9 @@ class ProxmoxClient:
                 return None, "No PID returned"
 
             # Poll for completion
-            for _ in range(60):
+            poll_interval = 2
+            max_polls = max(timeout // poll_interval, 1)
+            for _ in range(max_polls):
                 try:
                     status = self.api.nodes(node).qemu(vmid).agent("exec-status").get(pid=pid)
                     if status.get("exited"):
@@ -260,7 +266,7 @@ class ProxmoxClient:
                         return stdout, stderr or f"Exit code {exitcode}"
                 except Exception:
                     pass
-                time.sleep(2)
+                time.sleep(poll_interval)
 
             return None, "Timeout waiting for command"
         except Exception as e:

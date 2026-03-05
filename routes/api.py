@@ -158,13 +158,13 @@ def _run_update_background(app, guest_id, dist_upgrade=False):
 
                     if node:
                         job.append("$ apt-get update\n")
-                        update_out, update_err = client.exec_guest_agent(node, guest.vmid, "apt-get update")
+                        update_out, update_err = client.exec_guest_agent(node, guest.vmid, "apt-get update", timeout=120)
                         if update_out:
                             job.append(update_out)
                         if update_err:
                             job.append(f"\n{update_err}\n")
                         job.append(f"\n$ {cmd}\n")
-                        stdout, err = client.exec_guest_agent(node, guest.vmid, cmd)
+                        stdout, err = client.exec_guest_agent(node, guest.vmid, cmd, timeout=600)
                         if err is None:
                             if stdout:
                                 job.append(stdout)
