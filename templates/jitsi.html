@@ -235,6 +235,146 @@
                     <code>10000/udp</code> (WebRTC media) cannot traverse Cloudflare tunnels &mdash; clients will fall back to
                     <code>5349/tcp</code> (TURN) which can be tunnelled, but with higher latency.
                     For best call quality, allow direct UDP on <code>10000/udp</code> to the guest.
+                    <a class="d-block mt-1 small" data-bs-toggle="collapse" href="#cfSetupGuide" role="button" aria-expanded="false" aria-controls="cfSetupGuide">
+                        <i class="bi bi-book"></i> Show full setup guide
+                    </a>
+                </div>
+
+                <div class="collapse mb-3" id="cfSetupGuide">
+                    <div class="card card-body bg-black border-secondary small" style="max-height: 500px; overflow-y: auto;">
+
+<h6 class="text-info mb-2">Cloudflare Zero Trust + Jitsi Meet Setup</h6>
+
+<p>Cloudflare tunnels only carry TCP/HTTP traffic. Jitsi's video bridge (JVB) uses <code>10000/udp</code> for media, which cannot traverse a tunnel. Two options:</p>
+
+<p><strong>Option A: Tunnel everything (TCP-only, easiest)</strong><br>
+All traffic goes through Cloudflare. Media falls back to TURN over TCP. Slightly higher latency but no firewall changes needed.</p>
+
+<p><strong>Option B: Tunnel HTTP + direct UDP (best quality)</strong><br>
+Web UI through Cloudflare tunnel, media direct over UDP. Requires opening <code>10000/udp</code> on your firewall/NAT to the Jitsi guest.</p>
+
+<hr class="border-secondary my-2">
+
+<h6 class="text-warning mb-1">1. Cloudflare Tunnel Route</h6>
+<p>Create a public hostname in your Cloudflare tunnel pointing to the Jitsi guest:</p>
+<pre class="bg-dark rounded p-2 mb-2">Hostname: {{ settings.hostname or 'meet.example.com' }}
+Service:  https://{{ '&lt;guest-internal-ip&gt;' }}:443
+TLS:      No TLS Verify (self-signed cert on guest)
+
+# Under Additional Settings:
+HTTP Host Header: {{ settings.hostname or 'meet.example.com' }}</pre>
+
+<hr class="border-secondary my-2">
+
+<h6 class="text-warning mb-1">2. JVB NAT Harvester (Option B only)</h6>
+<p>Tell JVB its public IP so it can send correct ICE candidates. Edit on the Jitsi guest:</p>
+<pre class="bg-dark rounded p-2 mb-2"># /etc/jitsi/videobridge/sip-communicator.properties
+org.ice4j.ice.harvest.NAT_HARVESTER_LOCAL_ADDRESS=&lt;guest-internal-ip&gt;
+org.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS=&lt;your-public-ip&gt;
+
+# Then restart:
+sudo systemctl restart jitsi-videobridge2</pre>
+<p>Skip this step for Option A (tunnel-only) &mdash; all media goes through TURN.</p>
+
+<hr class="border-secondary my-2">
+
+<h6 class="text-warning mb-1">3. Configure coturn (TURN relay)</h6>
+<p>coturn is installed by <code>jitsi-meet-turnserver</code>. Verify/edit its config:</p>
+<pre class="bg-dark rounded p-2 mb-2"># /etc/turnserver.conf
+listening-port=3478
+tls-listening-port=5349
+fingerprint
+lt-cred-mech
+use-auth-secret
+static-auth-secret=&lt;same-as-prosody-turncredentials_secret&gt;
+realm={{ settings.hostname or 'meet.example.com' }}
+cert=/etc/jitsi/meet/{{ settings.hostname or 'meet.example.com' }}.crt
+pkey=/etc/jitsi/meet/{{ settings.hostname or 'meet.example.com' }}.key
+no-multicast-peers
+
+# Allow the Jitsi guest's internal subnet for relay:
+allowed-peer-ip=10.0.0.0/8
+
+# Then restart:
+sudo systemctl restart coturn</pre>
+
+<hr class="border-secondary my-2">
+
+<h6 class="text-warning mb-1">4. Advertise TURN to clients via Prosody</h6>
+<p>Prosody tells clients where the TURN server is. Verify the <code>external_services</code> block:</p>
+<pre class="bg-dark rounded p-2 mb-2"># /etc/prosody/conf.d/{{ settings.hostname or 'meet.example.com' }}.cfg.lua
+-- Inside the VirtualHost section, look for or add:
+external_services = {
+    { type = "stun", host = "{{ settings.hostname or 'meet.example.com' }}", port = 3478 },
+    { type = "turn", host = "{{ settings.hostname or 'meet.example.com' }}", port = 3478, transport = "udp", secret = true, ttl = 86400, algorithm = "turn" },
+    { type = "turns", host = "{{ settings.hostname or 'meet.example.com' }}", port = 5349, transport = "tcp", secret = true, ttl = 86400, algorithm = "turn" },
+};
+
+-- The secret is read from:
+-- /etc/jitsi/meet/{{ settings.hostname or 'meet.example.com' }}-oauthl-oauthSecret.key
+-- (auto-generated during install, shared with coturn)
+
+# Then restart:
+sudo systemctl restart prosody</pre>
+
+<hr class="border-secondary my-2">
+
+<h6 class="text-warning mb-1">5. Nginx WebSocket proxy</h6>
+<p>Ensure the Jitsi nginx config proxies WebSocket paths (usually auto-configured):</p>
+<pre class="bg-dark rounded p-2 mb-2"># /etc/nginx/sites-available/{{ settings.hostname or 'meet.example.com' }}.conf
+# These blocks should already exist after install:
+location /xmpp-websocket {
+    proxy_pass http://127.0.0.1:5280/xmpp-websocket;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+
+location /colibri-ws/ {
+    proxy_pass http://127.0.0.1:9090/colibri-ws/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}</pre>
+
+<hr class="border-secondary my-2">
+
+<h6 class="text-warning mb-1">6. Firewall summary</h6>
+<table class="table table-dark table-sm table-bordered mb-2">
+    <thead><tr><th>Port</th><th>Protocol</th><th>Purpose</th><th>Tunnel?</th></tr></thead>
+    <tbody>
+        <tr><td>443</td><td>TCP</td><td>HTTPS (web UI, BOSH, WebSocket)</td><td class="text-success">Yes</td></tr>
+        <tr><td>80</td><td>TCP</td><td>HTTP redirect</td><td class="text-success">Yes</td></tr>
+        <tr><td>10000</td><td>UDP</td><td>JVB media (WebRTC)</td><td class="text-danger">No &mdash; open on firewall (Option B) or skip (Option A, use TURN)</td></tr>
+        <tr><td>5349</td><td>TCP</td><td>TURN TLS relay</td><td class="text-success">Yes (via separate tunnel route) or open on firewall</td></tr>
+        <tr><td>3478</td><td>UDP</td><td>STUN/TURN</td><td class="text-danger">No &mdash; open on firewall or rely on 5349/tcp</td></tr>
+    </tbody>
+</table>
+
+<hr class="border-secondary my-2">
+
+<h6 class="text-warning mb-1">7. Force TCP-only (Option A)</h6>
+<p>To force all media through TURN/TCP (no direct UDP), disable UDP candidates in the JVB:</p>
+<pre class="bg-dark rounded p-2 mb-2"># /etc/jitsi/videobridge/jvb.conf
+# Add inside the videobridge { } block:
+ice {
+    udp {
+        port = 10000
+    }
+    tcp {
+        enabled = true
+        port = 4443
+    }
+}
+
+# /etc/jitsi/meet/{{ settings.hostname or 'meet.example.com' }}-config.js
+# Force TURN by setting:
+config.p2p = { enabled: false };
+config.openBridgeChannel = 'websocket';</pre>
+
+<p class="text-muted mb-0"><i class="bi bi-info-circle"></i> After any config changes, restart all Jitsi services:
+<code>sudo systemctl restart prosody jicofo jitsi-videobridge2 coturn nginx</code></p>
+                    </div>
                 </div>
 
                 {% if settings.installed and settings.current_version and settings.latest_version and settings.update_available %}
