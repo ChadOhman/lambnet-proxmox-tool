@@ -244,6 +244,86 @@ def send_ghost_update_notification(current_version, new_version, release_url):
     return ok, msg
 
 
+def send_upgrade_started_notification(service, version, trigger):
+    """Send notification that an upgrade has been triggered.
+
+    service: "mastodon" or "ghost"
+    version: target version string (may be empty if unknown)
+    trigger: "manual" or "auto"
+    """
+    setting_key = f"discord_notify_{service}_upgrade_started"
+    if Setting.get(setting_key, "true") != "true":
+        return False, f"{service} upgrade-started notifications disabled"
+
+    label = service.capitalize()
+    icon = "\U0001f43b" if service == "mastodon" else "\U0001f47b"
+    trigger_label = "Automatic" if trigger == "auto" else "Manual"
+    version_str = f" to v{version}" if version else ""
+
+    embeds = [{
+        "title": f"{icon} {label} upgrade started{version_str}",
+        "description": f"A {trigger_label.lower()} upgrade has been initiated.",
+        "color": _COLOR_YELLOW,
+        "fields": [
+            {"name": "Trigger", "value": trigger_label, "inline": True},
+        ],
+        "footer": {"text": "Sent by Mastodon Canada Administration Tool"},
+    }]
+    if version:
+        embeds[0]["fields"].append(
+            {"name": "Target Version", "value": f"v{version}", "inline": True}
+        )
+
+    ok, msg = _send_discord(embeds)
+    if ok:
+        logger.info(f"{label} upgrade-started notification sent (trigger={trigger})")
+    else:
+        logger.error(f"Failed to send {label} upgrade-started notification: {msg}")
+    return ok, msg
+
+
+def send_upgrade_result_notification(service, version, success, trigger):
+    """Send notification about upgrade outcome.
+
+    service: "mastodon" or "ghost"
+    version: version string (may be empty)
+    success: True if upgrade succeeded, False otherwise
+    trigger: "manual" or "auto"
+    """
+    setting_key = f"discord_notify_{service}_upgrade_result"
+    if Setting.get(setting_key, "true") != "true":
+        return False, f"{service} upgrade-result notifications disabled"
+
+    label = service.capitalize()
+    icon = "\U0001f43b" if service == "mastodon" else "\U0001f47b"
+    trigger_label = "Automatic" if trigger == "auto" else "Manual"
+    version_str = f" to v{version}" if version else ""
+
+    if success:
+        title = f"{icon} {label} upgrade succeeded{version_str}"
+        color = _COLOR_GREEN
+    else:
+        title = f"{icon} {label} upgrade failed{version_str}"
+        color = _COLOR_RED
+
+    embeds = [{
+        "title": title,
+        "color": color,
+        "fields": [
+            {"name": "Trigger", "value": trigger_label, "inline": True},
+            {"name": "Result", "value": "Success" if success else "Failed", "inline": True},
+        ],
+        "footer": {"text": "Sent by Mastodon Canada Administration Tool"},
+    }]
+
+    ok, msg = _send_discord(embeds)
+    if ok:
+        logger.info(f"{label} upgrade-result notification sent (success={success})")
+    else:
+        logger.error(f"Failed to send {label} upgrade-result notification: {msg}")
+    return ok, msg
+
+
 def send_app_update_notification(current_version, new_version):
     """Send notification about a new MCAT app release."""
     if Setting.get("discord_notify_app", "true") != "true":

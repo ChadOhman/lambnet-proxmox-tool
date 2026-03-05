@@ -46,10 +46,30 @@
                                 {{ 'checked' if settings.discord_notify_mastodon != 'false' }}>
                             <label class="form-check-label" for="discordNotifyMastodon">Mastodon version updates</label>
                         </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_mastodon_upgrade_started" id="discordNotifyMastodonUpgradeStarted"
+                                {{ 'checked' if settings.discord_notify_mastodon_upgrade_started != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyMastodonUpgradeStarted">Mastodon upgrade started</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_mastodon_upgrade_result" id="discordNotifyMastodonUpgradeResult"
+                                {{ 'checked' if settings.discord_notify_mastodon_upgrade_result != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyMastodonUpgradeResult">Mastodon upgrade result (success/failure)</label>
+                        </div>
                         <div class="form-check">
                             <input type="checkbox" class="form-check-input" name="discord_notify_ghost" id="discordNotifyGhost"
                                 {{ 'checked' if settings.discord_notify_ghost != 'false' }}>
                             <label class="form-check-label" for="discordNotifyGhost">Ghost version updates</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_ghost_upgrade_started" id="discordNotifyGhostUpgradeStarted"
+                                {{ 'checked' if settings.discord_notify_ghost_upgrade_started != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyGhostUpgradeStarted">Ghost upgrade started</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_ghost_upgrade_result" id="discordNotifyGhostUpgradeResult"
+                                {{ 'checked' if settings.discord_notify_ghost_upgrade_result != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyGhostUpgradeResult">Ghost upgrade result (success/failure)</label>
                         </div>
                         <div class="form-check">
                             <input type="checkbox" class="form-check-input" name="discord_notify_app" id="discordNotifyApp"

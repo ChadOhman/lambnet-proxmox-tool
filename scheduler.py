@@ -98,10 +98,13 @@ def _check_mastodon_release(app):
             from mastodon import run_mastodon_upgrade
             from audit import log_action
             from models import db
+            from notifier import send_upgrade_started_notification, send_upgrade_result_notification
+            send_upgrade_started_notification("mastodon", latest, "auto")
             ok, log_output = run_mastodon_upgrade()
             log_action("mastodon_upgrade", "settings", resource_name="mastodon",
                        details={"status": "success" if ok else "error", "trigger": "auto"})
             db.session.commit()
+            send_upgrade_result_notification("mastodon", latest, ok, "auto")
             if ok:
                 logger.info("Mastodon auto-upgrade completed successfully")
             else:
@@ -140,10 +143,13 @@ def _check_ghost_release(app):
             from ghost import run_ghost_upgrade
             from audit import log_action
             from models import db
+            from notifier import send_upgrade_started_notification, send_upgrade_result_notification
+            send_upgrade_started_notification("ghost", latest, "auto")
             ok, log_output = run_ghost_upgrade()
             log_action("ghost_upgrade", "settings", resource_name="ghost",
                        details={"status": "success" if ok else "error", "trigger": "auto"})
             db.session.commit()
+            send_upgrade_result_notification("ghost", latest, ok, "auto")
             if ok:
                 logger.info("Ghost auto-upgrade completed successfully")
             else:

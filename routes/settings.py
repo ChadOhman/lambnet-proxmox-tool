@@ -38,7 +38,11 @@ def _get_settings_dict():
         "discord_notify_updates": Setting.get("discord_notify_updates", "true"),
         "discord_notify_updates_security_only": Setting.get("discord_notify_updates_security_only", "false"),
         "discord_notify_mastodon": Setting.get("discord_notify_mastodon", "true"),
+        "discord_notify_mastodon_upgrade_started": Setting.get("discord_notify_mastodon_upgrade_started", "true"),
+        "discord_notify_mastodon_upgrade_result": Setting.get("discord_notify_mastodon_upgrade_result", "true"),
         "discord_notify_ghost": Setting.get("discord_notify_ghost", "true"),
+        "discord_notify_ghost_upgrade_started": Setting.get("discord_notify_ghost_upgrade_started", "true"),
+        "discord_notify_ghost_upgrade_result": Setting.get("discord_notify_ghost_upgrade_result", "true"),
         "discord_notify_app": Setting.get("discord_notify_app", "true"),
         "scan_interval": Setting.get("scan_interval", "6"),
         "scan_enabled": Setting.get("scan_enabled", "true"),
@@ -136,7 +140,11 @@ def save_discord():
     notify_updates = "discord_notify_updates" in request.form
     notify_security_only = "discord_notify_updates_security_only" in request.form
     notify_mastodon = "discord_notify_mastodon" in request.form
+    notify_mastodon_upgrade_started = "discord_notify_mastodon_upgrade_started" in request.form
+    notify_mastodon_upgrade_result = "discord_notify_mastodon_upgrade_result" in request.form
     notify_ghost = "discord_notify_ghost" in request.form
+    notify_ghost_upgrade_started = "discord_notify_ghost_upgrade_started" in request.form
+    notify_ghost_upgrade_result = "discord_notify_ghost_upgrade_result" in request.form
     notify_app = "discord_notify_app" in request.form
 
     if webhook_url:
@@ -145,7 +153,11 @@ def save_discord():
     Setting.set("discord_notify_updates", "true" if notify_updates else "false")
     Setting.set("discord_notify_updates_security_only", "true" if notify_security_only else "false")
     Setting.set("discord_notify_mastodon", "true" if notify_mastodon else "false")
+    Setting.set("discord_notify_mastodon_upgrade_started", "true" if notify_mastodon_upgrade_started else "false")
+    Setting.set("discord_notify_mastodon_upgrade_result", "true" if notify_mastodon_upgrade_result else "false")
     Setting.set("discord_notify_ghost", "true" if notify_ghost else "false")
+    Setting.set("discord_notify_ghost_upgrade_started", "true" if notify_ghost_upgrade_started else "false")
+    Setting.set("discord_notify_ghost_upgrade_result", "true" if notify_ghost_upgrade_result else "false")
     Setting.set("discord_notify_app", "true" if notify_app else "false")
 
     log_action("settings_discord_save", "settings", resource_name="discord")

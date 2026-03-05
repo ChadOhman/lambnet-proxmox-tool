@@ -230,6 +230,7 @@ def upgrade():
     )
 
     _upgrade_job.update({"running": True, "success": None, "log": []})
+    target_version = Setting.get("ghost_latest_version", "")
 
     def _cb(msg):
         _upgrade_job["log"].append(msg)
@@ -240,6 +241,8 @@ def upgrade():
         ok = False
         try:
             with _app.app_context():
+                from notifier import send_upgrade_started_notification
+                send_upgrade_started_notification("ghost", target_version, "manual")
                 ok, _ = run_ghost_upgrade(log_callback=_cb, skip_protection=skip_protection)
         except Exception as e:
             _cb(f"FATAL ERROR: {e}")
@@ -255,6 +258,8 @@ def upgrade():
             log_action("ghost_upgrade", "settings", resource_name="ghost",
                        details={"status": "success" if ok else "error"})
             db.session.commit()
+            from notifier import send_upgrade_result_notification
+            send_upgrade_result_notification("ghost", target_version, ok, "manual")
 
     try:
         import gevent as _gevent
