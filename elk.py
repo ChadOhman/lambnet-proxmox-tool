@@ -624,7 +624,9 @@ def run_elk_install(log_callback=None):
                 if code != 0:
                     log("git not found — installing...")
                     stdout, stderr, code = ssh.execute_sudo(
-                        "apt-get update -qq && apt-get install -y -qq git",
+                        "DEBIAN_FRONTEND=noninteractive"
+                        " apt-get update -qq && DEBIAN_FRONTEND=noninteractive"
+                        " apt-get install -y -qq git",
                         timeout=120,
                     )
                     _log_cmd_output(log, stdout, stderr, code, max_chars=1000)
@@ -641,14 +643,16 @@ def run_elk_install(log_callback=None):
                 )
                 if code != 0:
                     log("Node.js not found — installing via NodeSource...")
-                    # Install Node.js 20.x LTS via NodeSource
+                    # Install Node.js 22.x LTS via NodeSource
+                    # (Elk requires Node 22+ for native TypeScript support)
                     node_setup_cmds = (
-                        "apt-get update -qq && apt-get install -y -qq ca-certificates curl gnupg"
+                        "export DEBIAN_FRONTEND=noninteractive"
+                        " && apt-get update -qq && apt-get install -y -qq ca-certificates curl gnupg"
                         " && mkdir -p /etc/apt/keyrings"
                         " && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
                         " | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg --yes"
                         " && echo 'deb [signed-by=/etc/apt/keyrings/nodesource.gpg]"
-                        " https://deb.nodesource.com/node_20.x nodistro main'"
+                        " https://deb.nodesource.com/node_22.x nodistro main'"
                         " > /etc/apt/sources.list.d/nodesource.list"
                         " && apt-get update -qq && apt-get install -y -qq nodejs"
                     )
