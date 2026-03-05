@@ -82,6 +82,14 @@ class TestPeerTubeRouteAuth:
         resp = client.get("/peertube/preflight/status", follow_redirects=False)
         assert resp.status_code == 302
 
+    def test_install_post_unauthenticated(self, client):
+        resp = client.post("/peertube/install", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_install_status_unauthenticated(self, client):
+        resp = client.get("/peertube/install/status", follow_redirects=False)
+        assert resp.status_code == 302
+
 
 class TestPeerTubeRouteViewer:
     """Viewer users (can_update=False) should be denied access."""
@@ -136,6 +144,14 @@ class TestPeerTubeRouteAuthed:
 
     def test_preflight_status_returns_json(self, auth_client):
         resp = auth_client.get("/peertube/preflight/status")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "running" in data
+        assert "success" in data
+        assert "log" in data
+
+    def test_install_status_returns_json(self, auth_client):
+        resp = auth_client.get("/peertube/install/status")
         assert resp.status_code == 200
         data = resp.get_json()
         assert "running" in data
@@ -226,6 +242,64 @@ class TestPeerTubeRouteAuthed:
         )
         with app.app_context():
             assert Setting.get("peertube_backup_mode") == "snapshot"
+
+    def test_save_persists_db_host(self, app, auth_client):
+        """POST /peertube/save persists db_host field."""
+        from models import Setting
+
+        auth_client.post(
+            "/peertube/save",
+            data={
+                "peertube_db_host": "10.0.0.5",
+                "peertube_protection_type": "snapshot",
+            },
+            follow_redirects=False,
+        )
+        with app.app_context():
+            assert Setting.get("peertube_db_host") == "10.0.0.5"
+
+    def test_save_encrypts_db_password(self, app, auth_client):
+        """POST /peertube/save encrypts the DB password."""
+        from models import Setting
+
+        auth_client.post(
+            "/peertube/save",
+            data={
+                "peertube_db_password": "mysecretpass",
+                "peertube_protection_type": "snapshot",
+            },
+            follow_redirects=False,
+        )
+        with app.app_context():
+            stored = Setting.get("peertube_db_password", "")
+            assert stored != ""
+            assert stored != "mysecretpass"
+            # Verify it can be decrypted back
+            from credential_store import decrypt
+            assert decrypt(stored) == "mysecretpass"
+
+    def test_save_keeps_existing_password_when_blank(self, app, auth_client):
+        """Submitting blank password preserves existing encrypted value."""
+        from models import Setting
+        from credential_store import encrypt
+
+        with app.app_context():
+            Setting.set("peertube_db_password", encrypt("existing"))
+            from models import db
+            db.session.commit()
+
+        auth_client.post(
+            "/peertube/save",
+            data={
+                "peertube_db_password": "",
+                "peertube_protection_type": "snapshot",
+            },
+            follow_redirects=False,
+        )
+        with app.app_context():
+            stored = Setting.get("peertube_db_password", "")
+            from credential_store import decrypt
+            assert decrypt(stored) == "existing"
 
     def test_check_no_guest_configured(self, app, auth_client):
         """Check redirects even without configuration."""

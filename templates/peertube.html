@@ -5,11 +5,11 @@
 <nav aria-label="breadcrumb" class="mb-3">
     <ol class="breadcrumb">
         <li class="breadcrumb-item"><a href="/applications">Applications</a></li>
-        <li class="breadcrumb-item active">PeerTube Upgrade Management</li>
+        <li class="breadcrumb-item active">PeerTube Management</li>
     </ol>
 </nav>
 
-<h2 class="mb-4"><i class="bi bi-play-btn"></i> PeerTube Upgrade</h2>
+<h2 class="mb-4"><i class="bi bi-play-btn"></i> PeerTube</h2>
 
 <div class="row g-4">
     <div class="col-lg-6">
@@ -42,14 +42,29 @@
                             </option>
                             {% endfor %}
                         </select>
-                        <div class="form-text">The VM/CT running PostgreSQL. A pg_dump backup will be created before upgrading.</div>
+                        <div class="form-text">The VM/CT running PostgreSQL. Used for DB setup during install and pg_dump before upgrades.</div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Database Name</label>
+                            <input type="text" class="form-control font-monospace" name="peertube_db_name"
+                                   value="{{ settings.db_name or 'peertube' }}" placeholder="peertube">
+                            <div class="form-text">PostgreSQL database name (suffix <code>_prod</code> added automatically).</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Database Host</label>
+                            <input type="text" class="form-control font-monospace" name="peertube_db_host"
+                                   value="{{ settings.db_host }}" placeholder="e.g. 10.0.0.5">
+                            <div class="form-text">PostgreSQL host IP. Leave blank to use DB guest IP.</div>
+                        </div>
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label">Database Name</label>
-                        <input type="text" class="form-control font-monospace" name="peertube_db_name"
-                               value="{{ settings.db_name or 'peertube' }}" placeholder="peertube">
-                        <div class="form-text">PostgreSQL database name for pg_dump backup.</div>
+                        <label class="form-label">Database Password</label>
+                        <input type="password" class="form-control font-monospace" name="peertube_db_password"
+                               value="" placeholder="{{ '(encrypted)' if settings.db_password else '(not set)' }}">
+                        <div class="form-text">Password for the PeerTube PostgreSQL user. Leave blank to keep existing. Stored encrypted.</div>
                     </div>
 
                     <div class="mb-3">
@@ -130,10 +145,10 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label">Instance URL <small class="text-muted">(optional)</small></label>
+                        <label class="form-label">Instance URL{% if not settings.installed %} <small class="text-warning">(required for install)</small>{% else %} <small class="text-muted">(optional)</small>{% endif %}</label>
                         <input type="text" class="form-control font-monospace" name="peertube_url"
                                value="{{ settings.url }}" placeholder="https://videos.example.com">
-                        <div class="form-text">Your PeerTube instance URL — used for display purposes only.</div>
+                        <div class="form-text">Your PeerTube instance URL — used as <code>webserver.hostname</code> in production.yaml during install.</div>
                     </div>
 
                     <div class="mb-3">
@@ -171,7 +186,17 @@
             <div class="card-body">
                 <table class="table table-dark table-sm mb-3">
                     <tr>
-                        <td class="text-muted" style="width: 40%">Current Version</td>
+                        <td class="text-muted" style="width: 40%">Status</td>
+                        <td>
+                            {% if settings.installed %}
+                            <span class="badge bg-success">Installed</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Not installed</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Current Version</td>
                         <td>
                             {% if settings.current_version %}
                             <span class="badge bg-primary">v{{ settings.current_version }}</span>
@@ -207,24 +232,26 @@
                     </tr>
                 </table>
 
-                {% if settings.current_version and settings.latest_version and settings.update_available %}
+                {% if settings.installed and settings.current_version and settings.latest_version and settings.update_available %}
                 <div class="alert alert-warning py-2 mb-3">
                     <i class="bi bi-exclamation-triangle"></i>
                     <strong>Update available:</strong> v{{ settings.current_version }} &rarr; v{{ settings.latest_version }}
                 </div>
-                {% elif settings.current_version and settings.latest_version %}
+                {% elif settings.installed and settings.current_version and settings.latest_version %}
                 <div class="alert alert-success py-2 mb-3">
                     <i class="bi bi-check-circle"></i> PeerTube is up to date.
                 </div>
                 {% endif %}
 
                 <div class="d-flex gap-2 flex-wrap align-items-center">
+                    {% if settings.installed %}
                     <form method="post" action="/peertube/detect-versions">
                         <button type="submit" class="btn btn-outline-success"
                                 title="SSH into the PeerTube guest to detect the installed version">
                             <i class="bi bi-search"></i> Detect Version
                         </button>
                     </form>
+                    {% endif %}
                     <form method="post" action="/peertube/check">
                         <button type="submit" class="btn btn-outline-info">
                             <i class="bi bi-arrow-repeat"></i> Check for Updates
@@ -235,6 +262,14 @@
                             onclick="startPreflight()">
                         <i class="bi bi-clipboard2-check"></i> Pre-flight Check
                     </button>
+                    {% if not settings.installed %}
+                    <form method="post" action="/peertube/install" id="installForm"
+                          onsubmit="return startInstall(event)">
+                        <button type="submit" class="btn btn-success" id="installBtn">
+                            <i class="bi bi-download"></i> Install PeerTube
+                        </button>
+                    </form>
+                    {% else %}
                     <form method="post" action="/peertube/upgrade" id="upgradeForm"
                           onsubmit="return startUpgrade(event)">
                         {% if current_user.is_super_admin %}
@@ -252,48 +287,80 @@
                         </button>
                     </form>
                     {% endif %}
+                    {% endif %}
                 </div>
                 <div class="mt-2" id="preflightStatusBadge"></div>
             </div>
         </div>
 
-        <!-- Upgrade Log -->
-        <div class="card bg-dark mt-4" id="upgradeLogCard">
+        <!-- Operation Log -->
+        <div class="card bg-dark mt-4" id="logCard">
             <div class="card-header d-flex align-items-center justify-content-between">
                 <h5 class="mb-0">
-                    <i class="bi bi-terminal"></i> Upgrade Log
-                    <span id="upgradeStatusBadge" class="ms-2">
-                        {% if settings.last_upgrade_status == 'success' %}
-                        <span class="badge bg-success">Success</span>
-                        {% elif settings.last_upgrade_status == 'error' %}
-                        <span class="badge bg-danger">Failed</span>
+                    <i class="bi bi-terminal"></i> Operation Log
+                    <span id="operationStatusBadge" class="ms-2">
+                        {% if settings.installed and settings.last_upgrade_status == 'success' %}
+                        <span class="badge bg-success">Upgrade Success</span>
+                        {% elif settings.installed and settings.last_upgrade_status == 'error' %}
+                        <span class="badge bg-danger">Upgrade Failed</span>
+                        {% elif settings.last_install_status == 'success' %}
+                        <span class="badge bg-success">Install Success</span>
+                        {% elif settings.last_install_status == 'error' %}
+                        <span class="badge bg-danger">Install Failed</span>
                         {% endif %}
                     </span>
                 </h5>
-                <span id="upgradeSpinner" class="d-none">
+                <span id="operationSpinner" class="d-none">
                     <span class="spinner-border spinner-border-sm text-warning me-1"></span>
-                    <small class="text-warning">Upgrade in progress&hellip;</small>
+                    <small class="text-warning">Operation in progress&hellip;</small>
                 </span>
             </div>
             <div class="card-body">
-                <p class="text-muted mb-2" id="upgradeTimestamp">
-                    {% if settings.last_upgrade_at %}
-                    <small><i class="bi bi-clock"></i> {{ settings.last_upgrade_at | local_dt('%Y-%m-%d %H:%M') }}</small>
+                <p class="text-muted mb-2" id="operationTimestamp">
+                    {% if settings.installed and settings.last_upgrade_at %}
+                    <small><i class="bi bi-clock"></i> Last upgrade: {{ settings.last_upgrade_at | local_dt('%Y-%m-%d %H:%M') }}</small>
+                    {% elif settings.last_install_at %}
+                    <small><i class="bi bi-clock"></i> Installed: {{ settings.last_install_at | local_dt('%Y-%m-%d %H:%M') }}</small>
                     {% endif %}
                 </p>
-                <pre id="liveUpgradeLog" class="bg-black border border-secondary rounded p-3 mb-0"
-                     style="max-height: 500px; overflow-y: auto; font-size: 0.85em; white-space: pre-wrap;">{% if settings.last_upgrade_log %}{{ settings.last_upgrade_log }}{% else %}No upgrades have been run yet.{% endif %}</pre>
+                <pre id="liveLog" class="bg-black border border-secondary rounded p-3 mb-0"
+                     style="max-height: 500px; overflow-y: auto; font-size: 0.85em; white-space: pre-wrap;">{% if settings.installed and settings.last_upgrade_log %}{{ settings.last_upgrade_log }}{% elif settings.last_install_log %}{{ settings.last_install_log }}{% else %}No operations have been run yet.{% endif %}</pre>
             </div>
         </div>
 
-        <!-- Upgrade Steps Reference -->
+        <!-- Steps Reference -->
         {% set _app_guest = guests | selectattr('id', 'equalto', settings.guest_id | int) | first | default(None) %}
         {% set _db_guest = guests | selectattr('id', 'equalto', settings.db_guest_id | int) | first | default(None) %}
         <div class="card bg-dark mt-4">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-list-ol"></i> Upgrade Steps</h5>
+                <h5 class="mb-0"><i class="bi bi-list-ol"></i> {% if settings.installed %}Upgrade{% else %}Install{% endif %} Steps</h5>
             </div>
             <div class="card-body">
+                {% if not settings.installed %}
+                <ol class="small mb-0">
+                    <li>
+                        {% if settings.protection_type == 'backup' %}
+                        Backup (vzdump) to <code>{{ settings.backup_storage or '(storage not set)' }}</code>
+                        {% else %}
+                        Snapshot
+                        {% endif %}
+                        guest(s)
+                    </li>
+                    <li>Install prerequisites: curl, ffmpeg, python3, unzip, Node.js, yarn</li>
+                    <li>Install and start Redis</li>
+                    {% if settings.db_guest_id %}
+                    <li>Set up PostgreSQL: create user, database (<code>{{ settings.db_name or 'peertube' }}_prod</code>), extensions</li>
+                    {% endif %}
+                    <li>Create system user <code>{{ settings.user or 'peertube' }}</code></li>
+                    <li>Create directory structure in <code>{{ settings.peertube_dir or '/var/www/peertube' }}</code></li>
+                    <li>Download and extract latest PeerTube release</li>
+                    <li>Install Node.js dependencies</li>
+                    <li>Generate <code>production.yaml</code> configuration</li>
+                    <li>Apply TCP tuning</li>
+                    <li>Create and start <code>peertube</code> systemd service</li>
+                    <li>Verify deployment and detect version</li>
+                </ol>
+                {% else %}
                 <ol class="small mb-0">
                     <li>
                         {% if settings.protection_type == 'backup' %}
@@ -313,6 +380,8 @@
                     <li>Verify service is active</li>
                     <li>Clean up: <code>pnpm store prune</code></li>
                 </ol>
+                {% endif %}
+                <p class="small text-muted mt-2 mb-0"><i class="bi bi-info-circle"></i> PeerTube listens on <code>127.0.0.1:9000</code>. Nginx reverse proxy setup is handled separately.</p>
             </div>
         </div>
     </div>
@@ -336,7 +405,7 @@ function _setPreflightBadge(success) {
     const badge = document.getElementById('preflightStatusBadge');
     if (!badge) return;
     if (success === true) {
-        badge.innerHTML = '<span class="badge bg-info">Ready to upgrade</span>';
+        badge.innerHTML = '<span class="badge bg-info">Ready</span>';
     } else if (success === false) {
         badge.innerHTML = '<span class="badge bg-warning text-dark">Not ready</span>';
     }
@@ -346,7 +415,7 @@ function pollPreflightStatus() {
     fetch('/peertube/preflight/status')
         .then(r => r.json())
         .then(data => {
-            const logEl = document.getElementById('liveUpgradeLog');
+            const logEl = document.getElementById('liveLog');
             const newLines = data.log.slice(_preflightLogLen);
             if (newLines.length) {
                 if (_preflightLogLen === 0) logEl.textContent = '';
@@ -357,7 +426,7 @@ function pollPreflightStatus() {
             if (data.running) {
                 setTimeout(pollPreflightStatus, 1500);
             } else {
-                _setUpgradeRunning(false);
+                _setOperationRunning(false);
                 const preflightBtn = document.getElementById('preflightBtn');
                 if (preflightBtn) preflightBtn.disabled = false;
                 if (data.success !== null) _setPreflightBadge(data.success);
@@ -368,22 +437,22 @@ function pollPreflightStatus() {
 
 function startPreflight() {
     _preflightLogLen = 0;
-    const logEl = document.getElementById('liveUpgradeLog');
+    const logEl = document.getElementById('liveLog');
     logEl.textContent = 'Starting pre-flight check\u2026\n';
-    document.getElementById('upgradeStatusBadge').innerHTML = '';
+    document.getElementById('operationStatusBadge').innerHTML = '';
     const badgeEl = document.getElementById('preflightStatusBadge');
     if (badgeEl) badgeEl.innerHTML = '';
-    _setUpgradeRunning(true);
+    _setOperationRunning(true);
     const preflightBtn = document.getElementById('preflightBtn');
     if (preflightBtn) preflightBtn.disabled = true;
-    document.getElementById('upgradeLogCard').scrollIntoView({behavior: 'smooth'});
+    document.getElementById('logCard').scrollIntoView({behavior: 'smooth'});
 
     fetch('/peertube/preflight', {method: 'POST'})
         .then(r => {
             if (r.status === 409) {
                 return r.json().then(d => {
                     logEl.textContent = 'ERROR: ' + (d.error || 'Another operation is in progress') + '\n';
-                    _setUpgradeRunning(false);
+                    _setOperationRunning(false);
                     if (preflightBtn) preflightBtn.disabled = false;
                 });
             }
@@ -391,35 +460,38 @@ function startPreflight() {
         })
         .catch(() => {
             logEl.textContent = 'ERROR: Could not start pre-flight check\n';
-            _setUpgradeRunning(false);
+            _setOperationRunning(false);
             if (preflightBtn) preflightBtn.disabled = false;
         });
 }
 
-// ── Live upgrade log polling ──────────────────────────────────────────────────
+// ── Live operation log polling ────────────────────────────────────────────────
 let _logLen = 0;
 
-function _setUpgradeRunning(running) {
-    const spinner = document.getElementById('upgradeSpinner');
-    const btn = document.getElementById('upgradeBtn');
+function _setOperationRunning(running) {
+    const spinner = document.getElementById('operationSpinner');
+    const upgradeBtn = document.getElementById('upgradeBtn');
+    const installBtn = document.getElementById('installBtn');
     spinner.classList.toggle('d-none', !running);
-    if (btn) btn.disabled = running;
+    if (upgradeBtn) upgradeBtn.disabled = running;
+    if (installBtn) installBtn.disabled = running;
 }
 
-function _setUpgradeBadge(success) {
-    const badge = document.getElementById('upgradeStatusBadge');
+function _setOperationBadge(success, type) {
+    const badge = document.getElementById('operationStatusBadge');
+    const label = type === 'install' ? 'Install' : 'Upgrade';
     if (success === true) {
-        badge.innerHTML = '<span class="badge bg-success">Success</span>';
+        badge.innerHTML = '<span class="badge bg-success">' + label + ' Success</span>';
     } else if (success === false) {
-        badge.innerHTML = '<span class="badge bg-danger">Failed</span>';
+        badge.innerHTML = '<span class="badge bg-danger">' + label + ' Failed</span>';
     }
 }
 
-function pollUpgradeStatus() {
-    fetch('/peertube/upgrade/status')
+function pollOperationStatus(endpoint, type) {
+    fetch(endpoint)
         .then(r => r.json())
         .then(data => {
-            const logEl = document.getElementById('liveUpgradeLog');
+            const logEl = document.getElementById('liveLog');
             const newLines = data.log.slice(_logLen);
             if (newLines.length) {
                 if (_logLen === 0) logEl.textContent = '';
@@ -428,13 +500,13 @@ function pollUpgradeStatus() {
                 logEl.scrollTop = logEl.scrollHeight;
             }
             if (data.running) {
-                setTimeout(pollUpgradeStatus, 1500);
+                setTimeout(() => pollOperationStatus(endpoint, type), 1500);
             } else {
-                _setUpgradeRunning(false);
-                if (data.success !== null) _setUpgradeBadge(data.success);
+                _setOperationRunning(false);
+                if (data.success !== null) _setOperationBadge(data.success, type);
             }
         })
-        .catch(() => setTimeout(pollUpgradeStatus, 3000));
+        .catch(() => setTimeout(() => pollOperationStatus(endpoint, type), 3000));
 }
 
 function startUpgrade(e) {
@@ -455,29 +527,77 @@ function startUpgrade(e) {
     if (!confirm(msg)) return false;
 
     _logLen = 0;
-    document.getElementById('liveUpgradeLog').textContent = 'Starting upgrade\u2026\n';
-    document.getElementById('upgradeStatusBadge').innerHTML = '';
-    _setUpgradeRunning(true);
-    document.getElementById('upgradeLogCard').scrollIntoView({behavior: 'smooth'});
-    setTimeout(pollUpgradeStatus, 1500);
+    document.getElementById('liveLog').textContent = 'Starting upgrade\u2026\n';
+    document.getElementById('operationStatusBadge').innerHTML = '';
+    _setOperationRunning(true);
+    document.getElementById('logCard').scrollIntoView({behavior: 'smooth'});
+    setTimeout(() => pollOperationStatus('/peertube/upgrade/status', 'upgrade'), 1500);
+    return true;
+}
+
+function startInstall(e) {
+    const msg = 'This will install PeerTube:\n'
+        + '1. Snapshot/backup guest(s)\n'
+        + '2. Install prerequisites (curl, ffmpeg, Node.js, yarn)\n'
+        + '3. Install and start Redis\n'
+        + '4. Set up PostgreSQL (create user, database, extensions)\n'
+        + '5. Create system user and directory structure\n'
+        + '6. Download and extract latest release\n'
+        + '7. Install Node.js dependencies\n'
+        + '8. Generate production.yaml\n'
+        + '9. Create and start systemd service\n\n'
+        + 'Continue?';
+    if (!confirm(msg)) return false;
+
+    _logLen = 0;
+    document.getElementById('liveLog').textContent = 'Starting installation\u2026\n';
+    document.getElementById('operationStatusBadge').innerHTML = '';
+    _setOperationRunning(true);
+    document.getElementById('logCard').scrollIntoView({behavior: 'smooth'});
+    setTimeout(() => pollOperationStatus('/peertube/install/status', 'install'), 1500);
     return true;
 }
 
 // On page load: resume any in-progress operation
-fetch('/peertube/upgrade/status')
-    .then(r => r.json())
-    .then(data => {
-        if (data.running) {
+function _resumeIfRunning() {
+    Promise.all([
+        fetch('/peertube/upgrade/status').then(r => r.json()),
+        fetch('/peertube/install/status').then(r => r.json()),
+        fetch('/peertube/preflight/status').then(r => r.json()),
+    ]).then(([upgrade, install, preflight]) => {
+        if (upgrade.running) {
             _logLen = 0;
-            document.getElementById('liveUpgradeLog').textContent = '';
-            document.getElementById('upgradeStatusBadge').innerHTML = '';
-            _setUpgradeRunning(true);
-            pollUpgradeStatus();
-        } else if (data.log && data.log.length) {
-            document.getElementById('liveUpgradeLog').textContent = data.log.join('\n');
-            _logLen = data.log.length;
-            if (data.success !== null) _setUpgradeBadge(data.success);
+            document.getElementById('liveLog').textContent = '';
+            document.getElementById('operationStatusBadge').innerHTML = '';
+            _setOperationRunning(true);
+            pollOperationStatus('/peertube/upgrade/status', 'upgrade');
+        } else if (install.running) {
+            _logLen = 0;
+            document.getElementById('liveLog').textContent = '';
+            document.getElementById('operationStatusBadge').innerHTML = '';
+            _setOperationRunning(true);
+            pollOperationStatus('/peertube/install/status', 'install');
+        } else if (preflight.running) {
+            _preflightLogLen = 0;
+            document.getElementById('liveLog').textContent = '';
+            document.getElementById('operationStatusBadge').innerHTML = '';
+            _setOperationRunning(true);
+            const preflightBtn = document.getElementById('preflightBtn');
+            if (preflightBtn) preflightBtn.disabled = true;
+            pollPreflightStatus();
+        } else {
+            if (upgrade.log && upgrade.log.length) {
+                document.getElementById('liveLog').textContent = upgrade.log.join('\n');
+                _logLen = upgrade.log.length;
+                if (upgrade.success !== null) _setOperationBadge(upgrade.success, 'upgrade');
+            } else if (install.log && install.log.length) {
+                document.getElementById('liveLog').textContent = install.log.join('\n');
+                _logLen = install.log.length;
+                if (install.success !== null) _setOperationBadge(install.success, 'install');
+            }
         }
-    });
+    }).catch(() => {});
+}
+_resumeIfRunning();
 </script>
 {% endblock %}

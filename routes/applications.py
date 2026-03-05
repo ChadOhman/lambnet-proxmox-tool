@@ -33,6 +33,7 @@ def index():
             "update_available": Setting.get("peertube_update_available", "false") == "true",
             "current_version": Setting.get("peertube_current_version", ""),
             "latest_version": Setting.get("peertube_latest_version", ""),
+            "installed": Setting.get("peertube_installed", "false") == "true",
         },
         "elk": {
             "auto_upgrade": Setting.get("elk_auto_upgrade", "false") == "true",

@@ -21,6 +21,7 @@ def _parse_iso(value):
 # ---------------------------------------------------------------------------
 _upgrade_job = {"running": False, "success": None, "log": []}
 _preflight_job = {"running": False, "success": None, "log": []}
+_install_job = {"running": False, "success": None, "log": []}
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +45,20 @@ def _get_peertube_settings():
         "db_name": Setting.get("peertube_db_name", "peertube"),
         "peertube_dir": Setting.get("peertube_dir", "/var/www/peertube"),
         "url": Setting.get("peertube_url", ""),
+        "db_host": Setting.get("peertube_db_host", ""),
+        "db_password": Setting.get("peertube_db_password", ""),
         "auto_upgrade": Setting.get("peertube_auto_upgrade", "false"),
         "current_version": Setting.get("peertube_current_version", ""),
         "latest_version": Setting.get("peertube_latest_version", ""),
         "latest_release_url": Setting.get("peertube_latest_release_url", ""),
         "update_available": Setting.get("peertube_update_available", "") == "true",
+        "installed": Setting.get("peertube_installed", "") == "true",
         "last_upgrade_at": _parse_iso(Setting.get("peertube_last_upgrade_at", "")),
         "last_upgrade_status": Setting.get("peertube_last_upgrade_status", ""),
         "last_upgrade_log": Setting.get("peertube_last_upgrade_log", ""),
+        "last_install_at": _parse_iso(Setting.get("peertube_last_install_at", "")),
+        "last_install_status": Setting.get("peertube_last_install_status", ""),
+        "last_install_log": Setting.get("peertube_last_install_log", ""),
         "protection_type": Setting.get("peertube_protection_type", "snapshot"),
         "backup_storage": Setting.get("peertube_backup_storage", ""),
         "backup_mode": Setting.get("peertube_backup_mode", "snapshot"),
@@ -101,6 +108,14 @@ def save():
     Setting.set("peertube_db_name", request.form.get("peertube_db_name", "peertube").strip() or "peertube")
     Setting.set("peertube_dir", request.form.get("peertube_dir", "/var/www/peertube").strip() or "/var/www/peertube")
     Setting.set("peertube_url", request.form.get("peertube_url", "").strip())
+    Setting.set("peertube_db_host", request.form.get("peertube_db_host", "").strip())
+
+    # Encrypt DB password if provided; keep existing if blank
+    db_password_raw = request.form.get("peertube_db_password", "").strip()
+    if db_password_raw:
+        from credential_store import encrypt
+        Setting.set("peertube_db_password", encrypt(db_password_raw))
+
     Setting.set("peertube_current_version", request.form.get("peertube_current_version", "").strip())
     Setting.set("peertube_auto_upgrade", "true" if "peertube_auto_upgrade" in request.form else "false")
     protection_type = request.form.get("peertube_protection_type", "snapshot")
@@ -158,13 +173,22 @@ def preflight_status():
     })
 
 
+@bp.route("/install/status")
+def install_status():
+    return jsonify({
+        "running": _install_job["running"],
+        "success": _install_job["success"],
+        "log": _install_job["log"],
+    })
+
+
 @bp.route("/preflight", methods=["POST"])
 def preflight():
     from peertube import run_peertube_preflight
     from flask import current_app
 
-    if _upgrade_job["running"]:
-        return jsonify({"error": "An upgrade is already in progress"}), 409
+    if _upgrade_job["running"] or _install_job["running"]:
+        return jsonify({"error": "An operation is already in progress"}), 409
     if _preflight_job["running"]:
         return jsonify({"error": "A pre-flight check is already in progress"}), 409
 
@@ -201,8 +225,8 @@ def upgrade():
     from flask import current_app
     from flask_login import current_user
 
-    if _upgrade_job["running"]:
-        flash("An upgrade is already in progress.", "warning")
+    if _upgrade_job["running"] or _install_job["running"]:
+        flash("An operation is already in progress.", "warning")
         return redirect(url_for("peertube.upgrade_page"))
 
     skip_protection = (
@@ -251,6 +275,53 @@ def upgrade():
     return redirect(url_for("peertube.upgrade_page"))
 
 
+@bp.route("/install", methods=["POST"])
+def install():
+    from peertube import run_peertube_install
+    from flask import current_app
+
+    if _upgrade_job["running"] or _install_job["running"]:
+        flash("An operation is already in progress.", "warning")
+        return redirect(url_for("peertube.upgrade_page"))
+
+    _install_job.update({"running": True, "success": None, "log": []})
+
+    def _cb(msg):
+        _install_job["log"].append(msg)
+
+    _app = current_app._get_current_object()
+
+    def _bg():
+        ok = False
+        try:
+            with _app.app_context():
+                ok, _ = run_peertube_install(log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _install_job["running"] = False
+        _install_job["success"] = ok
+        from datetime import datetime, timezone
+        with _app.app_context():
+            now = datetime.now(timezone.utc).isoformat()
+            Setting.set("peertube_last_install_at", now)
+            Setting.set("peertube_last_install_status", "success" if ok else "error")
+            Setting.set("peertube_last_install_log", "\n".join(_install_job["log"]))
+            if ok:
+                Setting.set("peertube_installed", "true")
+            log_action("peertube_install", "settings", resource_name="peertube",
+                       details={"status": "success" if ok else "error"})
+            db.session.commit()
+
+    try:
+        import gevent as _gevent
+        _gevent.spawn(_bg)
+    except ImportError:
+        _threading.Thread(target=_bg, daemon=True).start()
+
+    return redirect(url_for("peertube.upgrade_page"))
+
+
 @bp.route("/detect-versions", methods=["POST"])
 def detect_versions():
     from peertube import detect_peertube_version
@@ -276,9 +347,17 @@ def detect_versions():
     version, error = detect_peertube_version(guest, peertube_dir, user=peertube_user)
     if version:
         Setting.set("peertube_current_version", version)
+        if Setting.get("peertube_installed") != "true":
+            Setting.set("peertube_installed", "true")
         db.session.commit()
         flash(f"Detected PeerTube version: {version}", "success")
     else:
-        flash(f"Could not detect PeerTube version: {error}", "warning")
+        if Setting.get("peertube_installed") == "true":
+            Setting.set("peertube_installed", "false")
+            Setting.set("peertube_current_version", "")
+            db.session.commit()
+            flash(f"PeerTube not found on guest: {error}. Marked as not installed.", "warning")
+        else:
+            flash(f"Could not detect PeerTube version: {error}", "warning")
 
     return redirect(url_for("peertube.upgrade_page"))

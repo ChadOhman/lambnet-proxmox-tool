@@ -24,6 +24,44 @@ logger = logging.getLogger(__name__)
 
 _PEERTUBE_GITHUB_API = "https://api.github.com/repos/chocobozzz/PeerTube/releases/latest"
 _PEERTUBE_RELEASE_BASE = "https://github.com/Chocobozzz/PeerTube/releases/tag/{tag}"
+_PEERTUBE_RELEASE_ZIP = "https://github.com/Chocobozzz/PeerTube/releases/download/{tag}/peertube-{tag}.zip"
+
+_PEERTUBE_PRODUCTION_YAML = """\
+listen:
+  hostname: '127.0.0.1'
+  port: 9000
+
+webserver:
+  https: true
+  hostname: '{hostname}'
+  port: 443
+
+database:
+  hostname: '{db_host}'
+  port: 5432
+  suffix: '_prod'
+  username: '{db_user}'
+  password: '{db_password}'
+
+redis:
+  hostname: '127.0.0.1'
+
+storage:
+  tmp: '{peertube_dir}/storage/tmp/'
+  bin: '{peertube_dir}/storage/bin/'
+  avatars: '{peertube_dir}/storage/avatars/'
+  videos: '{peertube_dir}/storage/videos/'
+  streaming_playlists: '{peertube_dir}/storage/streaming-playlists/'
+  redundancy: '{peertube_dir}/storage/redundancy/'
+  logs: '{peertube_dir}/storage/logs/'
+  previews: '{peertube_dir}/storage/previews/'
+  thumbnails: '{peertube_dir}/storage/thumbnails/'
+  torrents: '{peertube_dir}/storage/torrents/'
+  captions: '{peertube_dir}/storage/captions/'
+  cache: '{peertube_dir}/storage/cache/'
+  plugins: '{peertube_dir}/storage/plugins/'
+  client_overrides: '{peertube_dir}/storage/client-overrides/'
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +172,9 @@ def _get_peertube_config():
         "user": Setting.get("peertube_user", "peertube"),
         "db_name": Setting.get("peertube_db_name", "peertube"),
         "peertube_dir": Setting.get("peertube_dir", "/var/www/peertube"),
+        "peertube_url": Setting.get("peertube_url", ""),
+        "db_host": Setting.get("peertube_db_host", ""),
+        "db_password": Setting.get("peertube_db_password", ""),
         "current_version": Setting.get("peertube_current_version", ""),
         "latest_version": Setting.get("peertube_latest_version", ""),
         "protection_type": Setting.get("peertube_protection_type", "snapshot"),
@@ -230,6 +271,554 @@ def detect_peertube_version(guest, peertube_dir, user="peertube"):
     except Exception as e:
         logger.warning("Could not detect PeerTube version: %s", e)
         return None, str(e)
+
+
+# ---------------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------------
+
+def run_peertube_install(log_callback=None):
+    """Install PeerTube on the configured guest.
+
+    Steps:
+    1. Snapshot/backup app + DB guests.
+    2. Install prerequisites (curl, ffmpeg, python3, unzip, redis-server, Node.js, yarn).
+    3. Ensure Redis is running.
+    4. Set up PostgreSQL on DB guest (create user, database, extensions).
+    5. Create system user.
+    6. Create directory structure.
+    7. Download and extract latest PeerTube release.
+    8. Install Node.js dependencies.
+    9. Generate production.yaml configuration.
+    10. Apply TCP tuning.
+    11. Create and start systemd service.
+    12. Verify service is running.
+    13. Detect and persist version.
+
+    Returns (ok: bool, log_output: str).
+    """
+    from models import Credential
+    from urllib.parse import urlparse
+
+    config = _get_peertube_config()
+    log_lines = []
+
+    def log(msg):
+        logger.info(msg)
+        log_lines.append(msg)
+        if log_callback:
+            log_callback(msg)
+
+    # Validate config
+    if not config["guest_id"]:
+        return False, "PeerTube guest not configured"
+
+    app_guest = Guest.query.get(int(config["guest_id"]))
+    if not app_guest:
+        return False, "PeerTube guest not found"
+
+    user = config["user"]
+    peertube_dir = config["peertube_dir"]
+    db_name = config["db_name"]
+    peertube_url = config.get("peertube_url", "")
+    db_host = config.get("db_host", "")
+    db_password_encrypted = config.get("db_password", "")
+
+    if not peertube_url:
+        return False, "PeerTube Instance URL is required for installation (used for webserver hostname)"
+
+    # Parse hostname from URL
+    parsed = urlparse(peertube_url if "://" in peertube_url else f"https://{peertube_url}")
+    hostname = parsed.hostname
+    if not hostname:
+        return False, f"Could not parse hostname from Instance URL: {peertube_url}"
+
+    try:
+        _validate_shell_param(user, "PeerTube user")
+        _validate_shell_param(peertube_dir, "PeerTube dir")
+        _validate_shell_param(db_name, "Database name")
+        if db_host:
+            _validate_shell_param(db_host, "Database host")
+    except ValueError as e:
+        return False, str(e)
+
+    # Decrypt DB password
+    db_password = ""
+    if db_password_encrypted:
+        try:
+            from credential_store import decrypt
+            db_password = decrypt(db_password_encrypted) or ""
+        except Exception as e:
+            log(f"WARNING: Could not decrypt database password: {e}")
+
+    credential = app_guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        return False, "No SSH credential available for PeerTube guest"
+    if not app_guest.ip_address:
+        return False, "No IP address configured for PeerTube guest"
+
+    # Resolve DB guest if configured
+    db_guest = None
+    db_guest_id = config.get("db_guest_id", "")
+    if db_guest_id:
+        db_guest = Guest.query.get(int(db_guest_id))
+
+    # --- Step 1: Protection ---
+    step = 1
+    protection_type = config.get("protection_type", "snapshot")
+    backup_storage = config.get("backup_storage", "")
+
+    if protection_type == "backup" and not backup_storage:
+        return False, "Backup protection selected but no backup storage is configured"
+
+    guests_to_protect = [app_guest]
+    if db_guest:
+        guests_to_protect.append(db_guest)
+
+    if protection_type == "backup":
+        backup_mode = config.get("backup_mode", "snapshot")
+        log(f"=== Step {step}: Creating vzdump backup to storage '{backup_storage}' "
+            f"(mode: {backup_mode}) ===")
+        log("(This may take several minutes — please be patient)")
+        for g in guests_to_protect:
+            ok, msg = _backup_peertube_guest(g, backup_storage, mode=backup_mode)
+            log(f"Backup {g.name}: {msg}")
+            if not ok:
+                return False, "\n".join(log_lines)
+    else:
+        log(f"=== Step {step}: Creating Proxmox snapshots ===")
+        for g in guests_to_protect:
+            ok, msg = _snapshot_peertube_guest(g)
+            log(f"Snapshot {g.name}: {msg}")
+            if not ok:
+                return False, "\n".join(log_lines)
+    log("")
+
+    try:
+        with SSHClient.from_credential(app_guest.ip_address, credential) as ssh:
+            # --- Step 2: Install prerequisites ---
+            step = 2
+            log(f"=== Step {step}: Installing prerequisites ===")
+
+            # Check and install system packages
+            prereqs = "curl ffmpeg python3 unzip"
+            stdout, stderr, code = ssh.execute_sudo(
+                f"DEBIAN_FRONTEND=noninteractive apt-get update -qq"
+                f" && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq {prereqs}",
+                timeout=180,
+            )
+            _log_cmd_output(log, stdout, stderr, code, max_chars=2000)
+            if code != 0:
+                log(f"ERROR: Failed to install prerequisites (exit {code})")
+                return False, "\n".join(log_lines)
+            log("System packages installed")
+
+            # Install Redis
+            stdout, stderr, code = ssh.execute_sudo(
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq redis-server",
+                timeout=120,
+            )
+            _log_cmd_output(log, stdout, stderr, code, max_chars=1000)
+            if code != 0:
+                log(f"ERROR: Failed to install redis-server (exit {code})")
+                return False, "\n".join(log_lines)
+            log("redis-server installed")
+
+            # Install Node.js if missing
+            stdout, stderr, code = ssh.execute_sudo("node --version 2>/dev/null", timeout=10)
+            if code != 0:
+                log("Node.js not found — installing via NodeSource...")
+                node_setup_cmds = (
+                    "export DEBIAN_FRONTEND=noninteractive"
+                    " && apt-get install -y -qq ca-certificates curl gnupg"
+                    " && mkdir -p /etc/apt/keyrings"
+                    " && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
+                    " | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg --yes"
+                    " && echo 'deb [signed-by=/etc/apt/keyrings/nodesource.gpg]"
+                    " https://deb.nodesource.com/node_18.x nodistro main'"
+                    " > /etc/apt/sources.list.d/nodesource.list"
+                    " && apt-get update -qq && apt-get install -y -qq nodejs"
+                )
+                stdout, stderr, code = ssh.execute_sudo(node_setup_cmds, timeout=180)
+                _log_cmd_output(log, stdout, stderr, code, max_chars=2000)
+                if code != 0:
+                    log(f"ERROR: Failed to install Node.js (exit {code})")
+                    return False, "\n".join(log_lines)
+
+                stdout, stderr, code = ssh.execute_sudo("node --version", timeout=10)
+                if code == 0 and stdout.strip():
+                    log(f"Node.js {stdout.strip()} installed")
+                else:
+                    log("ERROR: Node.js installation verification failed")
+                    return False, "\n".join(log_lines)
+            else:
+                log(f"Node.js {(stdout or '').strip()} already installed")
+
+            # Enable corepack for yarn
+            stdout, stderr, code = ssh.execute_sudo("corepack enable", timeout=30)
+            if code != 0:
+                log(f"WARNING: corepack enable failed (exit {code}) — trying npm install")
+                _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                stdout, stderr, code = ssh.execute_sudo(
+                    "npm install -g corepack && corepack enable", timeout=60
+                )
+                if code != 0:
+                    log(f"ERROR: Failed to install corepack (exit {code})")
+                    _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                    return False, "\n".join(log_lines)
+            log("corepack enabled (yarn available)")
+            log("")
+
+            # --- Step 3: Ensure Redis is running ---
+            step = 3
+            log(f"=== Step {step}: Ensuring Redis is running ===")
+            stdout, stderr, code = ssh.execute_sudo(
+                "systemctl enable redis-server && systemctl start redis-server", timeout=30
+            )
+            if code != 0:
+                log(f"WARNING: Could not start redis-server (exit {code})")
+                _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+
+            stdout, stderr, code = ssh.execute_sudo(
+                "systemctl is-active redis-server 2>/dev/null || systemctl is-active redis 2>/dev/null",
+                timeout=10,
+            )
+            redis_status = (stdout or "").strip()
+            if "active" in redis_status:
+                log("Redis is running")
+            else:
+                log(f"WARNING: Redis status: {redis_status or 'unknown'}")
+            log("")
+
+    except Exception as e:
+        log(f"SSH ERROR on app guest: {e}")
+        return False, "\n".join(log_lines)
+
+    # --- Step 4: PostgreSQL setup on DB guest ---
+    step = 4
+    if db_guest and db_guest.ip_address:
+        log(f"=== Step {step}: Setting up PostgreSQL on {db_guest.name} ===")
+        db_credential = db_guest.credential
+        if not db_credential:
+            db_credential = Credential.query.filter_by(is_default=True).first()
+
+        if not db_credential:
+            log("ERROR: No SSH credential for DB guest")
+            return False, "\n".join(log_lines)
+
+        try:
+            with SSHClient.from_credential(db_guest.ip_address, db_credential) as db_ssh:
+                # Create PostgreSQL user
+                if db_password:
+                    create_user_cmd = (
+                        f"su - postgres -c \"psql -tAc \\\"SELECT 1 FROM pg_roles WHERE rolname='{user}'\\\"\" "  # noqa: S608
+                        f"| grep -q 1 && echo 'User exists' "
+                        f"|| su - postgres -c \"psql -c \\\"CREATE USER {user} WITH PASSWORD '{db_password}'\\\"\""
+                    )
+                else:
+                    create_user_cmd = (
+                        f"su - postgres -c \"psql -tAc \\\"SELECT 1 FROM pg_roles WHERE rolname='{user}'\\\"\" "  # noqa: S608
+                        f"| grep -q 1 && echo 'User exists' "
+                        f"|| su - postgres -c \"createuser {user}\""
+                    )
+                log(f"Creating PostgreSQL user '{user}'...")
+                stdout, stderr, code = db_ssh.execute_sudo(create_user_cmd, timeout=30)
+                _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                if code != 0:
+                    log(f"ERROR: Failed to create PostgreSQL user (exit {code})")
+                    return False, "\n".join(log_lines)
+                log(f"PostgreSQL user '{user}' ready")
+
+                # Create database
+                create_db_cmd = (
+                    f"su - postgres -c \"psql -tAc \\\"SELECT 1 FROM pg_database WHERE datname='{db_name}_prod'\\\"\" "  # noqa: S608
+                    f"| grep -q 1 && echo 'Database exists' "
+                    f"|| su - postgres -c \"createdb -O {user} -E UTF8 -T template0 {db_name}_prod\""
+                )
+                log(f"Creating database '{db_name}_prod'...")
+                stdout, stderr, code = db_ssh.execute_sudo(create_db_cmd, timeout=30)
+                _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                if code != 0:
+                    log(f"ERROR: Failed to create database (exit {code})")
+                    return False, "\n".join(log_lines)
+                log(f"Database '{db_name}_prod' ready")
+
+                # Create extensions
+                for ext in ("pg_trgm", "unaccent"):
+                    ext_cmd = f"su - postgres -c \"psql -c 'CREATE EXTENSION IF NOT EXISTS {ext};' {db_name}_prod\""
+                    stdout, stderr, code = db_ssh.execute_sudo(ext_cmd, timeout=15)
+                    if code != 0:
+                        log(f"WARNING: Could not create extension {ext} (exit {code})")
+                        _log_cmd_output(log, stdout, stderr, code, max_chars=300)
+                    else:
+                        log(f"Extension '{ext}' enabled")
+
+        except Exception as e:
+            log(f"SSH ERROR on DB guest: {e}")
+            return False, "\n".join(log_lines)
+    else:
+        log(f"=== Step {step}: Skipping PostgreSQL setup (no DB guest configured) ===")
+    log("")
+
+    try:
+        with SSHClient.from_credential(app_guest.ip_address, credential) as ssh:
+            # --- Step 5: Create system user ---
+            step = 5
+            log(f"=== Step {step}: Creating system user ===")
+            stdout, stderr, code = ssh.execute_sudo(f"id {user} 2>/dev/null", timeout=10)
+            if code != 0:
+                log(f"Creating system user '{user}'...")
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"useradd -m -d {peertube_dir} -s /usr/sbin/nologin {user}",
+                    timeout=10,
+                )
+                if code != 0:
+                    log(f"ERROR: Failed to create user '{user}' (exit {code})")
+                    _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                    return False, "\n".join(log_lines)
+                log(f"User '{user}' created with home directory {peertube_dir}")
+            else:
+                log(f"User '{user}' already exists")
+
+            # Ensure directory permissions
+            stdout, stderr, code = ssh.execute_sudo(f"chmod 755 {peertube_dir}", timeout=10)
+            log("")
+
+            # --- Step 6: Create directory structure ---
+            step = 6
+            log(f"=== Step {step}: Creating directory structure ===")
+            for subdir in ("config", "storage", "versions"):
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"su - {user} -s /bin/bash -c 'mkdir -p {peertube_dir}/{subdir}'",
+                    timeout=10,
+                )
+                if code != 0:
+                    log(f"ERROR: Failed to create {peertube_dir}/{subdir} (exit {code})")
+                    _log_cmd_output(log, stdout, stderr, code, max_chars=300)
+                    return False, "\n".join(log_lines)
+            # Restrict config directory permissions
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -s /bin/bash -c 'chmod 750 {peertube_dir}/config'",
+                timeout=10,
+            )
+            log(f"Created {peertube_dir}/{{config,storage,versions}}")
+            log("")
+
+            # --- Step 7: Download latest release ---
+            step = 7
+            log(f"=== Step {step}: Downloading latest PeerTube release ===")
+
+            # Check if peertube-latest already exists
+            stdout, stderr, code = ssh.execute_sudo(
+                f"test -e {peertube_dir}/peertube-latest && echo exists", timeout=10
+            )
+            if code == 0 and "exists" in (stdout or ""):
+                log(f"WARNING: {peertube_dir}/peertube-latest already exists — aborting to prevent overwrite")
+                return False, "\n".join(log_lines)
+
+            # Fetch latest version from GitHub
+            log("Fetching latest release version from GitHub...")
+            stdout, stderr, code = ssh.execute_sudo(
+                "curl -s https://api.github.com/repos/chocobozzz/peertube/releases/latest"
+                " | python3 -c \"import sys,json; print(json.load(sys.stdin).get('tag_name',''))\"",
+                timeout=30,
+            )
+            if code != 0 or not (stdout or "").strip():
+                log("ERROR: Could not determine latest PeerTube version from GitHub")
+                _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                return False, "\n".join(log_lines)
+            version_tag = (stdout or "").strip()
+            version_num = version_tag.lstrip("vV")
+            log(f"Latest release: {version_tag}")
+
+            # Download release zip
+            zip_url = _PEERTUBE_RELEASE_ZIP.format(tag=version_tag)
+            download_cmd = (
+                f"cd {peertube_dir}/versions"
+                f" && su - {user} -s /bin/bash -c '"
+                f"wget -q \"{zip_url}\" -O \"peertube-{version_tag}.zip\"'"
+            )
+            log(f"Downloading {zip_url}...")
+            stdout, stderr, code = ssh.execute_sudo(download_cmd, timeout=300)
+            _log_cmd_output(log, stdout, stderr, code, max_chars=1000)
+            if code != 0:
+                log(f"ERROR: Failed to download PeerTube release (exit {code})")
+                return False, "\n".join(log_lines)
+
+            # Extract zip
+            extract_cmd = (
+                f"cd {peertube_dir}/versions"
+                f" && su - {user} -s /bin/bash -c '"
+                f"unzip -q peertube-{version_tag}.zip"
+                f" && rm peertube-{version_tag}.zip'"
+            )
+            log("Extracting release...")
+            stdout, stderr, code = ssh.execute_sudo(extract_cmd, timeout=120)
+            _log_cmd_output(log, stdout, stderr, code, max_chars=1000)
+            if code != 0:
+                log(f"ERROR: Failed to extract release (exit {code})")
+                return False, "\n".join(log_lines)
+
+            # Create symlink
+            symlink_cmd = (
+                f"cd {peertube_dir}"
+                f" && su - {user} -s /bin/bash -c '"
+                f"ln -s versions/peertube-{version_tag} peertube-latest'"
+            )
+            stdout, stderr, code = ssh.execute_sudo(symlink_cmd, timeout=10)
+            if code != 0:
+                log(f"ERROR: Failed to create peertube-latest symlink (exit {code})")
+                _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                return False, "\n".join(log_lines)
+            log("Release extracted and symlinked to peertube-latest")
+            log("")
+
+            # --- Step 8: Install Node.js dependencies ---
+            step = 8
+            log(f"=== Step {step}: Installing Node.js dependencies ===")
+            install_cmd = (
+                f"cd {peertube_dir}/peertube-latest"
+                f" && sudo -H -u {user} npm run install-node-dependencies -- --production"
+            )
+            log("Running: npm run install-node-dependencies")
+            stdout, stderr, code = ssh.execute_sudo(install_cmd, timeout=600)
+            _log_cmd_output(log, stdout, stderr, code, max_chars=4000)
+            if code != 0:
+                log(f"ERROR: npm install failed (exit {code})")
+                return False, "\n".join(log_lines)
+            log("Node.js dependencies installed")
+            log("")
+
+            # --- Step 9: Generate production.yaml ---
+            step = 9
+            log(f"=== Step {step}: Creating production.yaml configuration ===")
+
+            # Determine DB host: use configured db_host, or DB guest IP, or localhost
+            effective_db_host = db_host
+            if not effective_db_host and db_guest and db_guest.ip_address:
+                effective_db_host = db_guest.ip_address
+            if not effective_db_host:
+                effective_db_host = "localhost"
+
+            yaml_content = _PEERTUBE_PRODUCTION_YAML.format(
+                hostname=hostname,
+                db_host=effective_db_host,
+                db_user=user,
+                db_password=db_password or "peertube",
+                peertube_dir=peertube_dir,
+            )
+
+            # Copy default.yaml first
+            stdout, stderr, code = ssh.execute_sudo(
+                f"su - {user} -s /bin/bash -c '"
+                f"cp {peertube_dir}/peertube-latest/config/default.yaml {peertube_dir}/config/default.yaml'",
+                timeout=10,
+            )
+            if code != 0:
+                log("WARNING: Could not copy default.yaml")
+
+            # Write production.yaml
+            escaped = yaml_content.replace("'", "'\\''")
+            write_cmd = (
+                f"printf '%s' '{escaped}' > {peertube_dir}/config/production.yaml"
+                f" && chown {user}:{user} {peertube_dir}/config/production.yaml"
+                f" && chmod 640 {peertube_dir}/config/production.yaml"
+            )
+            stdout, stderr, code = ssh.execute_sudo(write_cmd, timeout=10)
+            if code != 0:
+                log(f"ERROR: Could not create production.yaml (exit {code})")
+                _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                return False, "\n".join(log_lines)
+            log("production.yaml created")
+            log("")
+
+            # --- Step 10: TCP tuning ---
+            step = 10
+            log(f"=== Step {step}: Applying TCP tuning ===")
+            tcp_src = f"{peertube_dir}/peertube-latest/support/sysctl.d/30-peertube-tcp.conf"
+            stdout, stderr, code = ssh.execute_sudo(
+                f"test -f {tcp_src} && echo ok", timeout=10
+            )
+            if code == 0 and "ok" in (stdout or ""):
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"cp {tcp_src} /etc/sysctl.d/ && sysctl -p /etc/sysctl.d/30-peertube-tcp.conf",
+                    timeout=15,
+                )
+                if code == 0:
+                    log("TCP tuning applied")
+                else:
+                    log("WARNING: Could not apply TCP tuning (non-fatal)")
+            else:
+                log("TCP tuning config not found in release — skipping")
+            log("")
+
+            # --- Step 11: Create and start systemd service ---
+            step = 11
+            log(f"=== Step {step}: Creating systemd service ===")
+            service_src = f"{peertube_dir}/peertube-latest/support/systemd/peertube.service"
+            stdout, stderr, code = ssh.execute_sudo(
+                f"test -f {service_src} && echo ok", timeout=10
+            )
+            if code == 0 and "ok" in (stdout or ""):
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"cp {service_src} /etc/systemd/system/", timeout=10
+                )
+                if code != 0:
+                    log(f"ERROR: Could not copy systemd service file (exit {code})")
+                    _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                    return False, "\n".join(log_lines)
+            else:
+                log("WARNING: systemd service file not found in release")
+                return False, "\n".join(log_lines)
+
+            stdout, stderr, code = ssh.execute_sudo(
+                "systemctl daemon-reload && systemctl enable peertube && systemctl start peertube",
+                timeout=30,
+            )
+            if code != 0:
+                log(f"ERROR: Could not start PeerTube service (exit {code})")
+                _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                return False, "\n".join(log_lines)
+            log("PeerTube systemd service created and started")
+            log("")
+
+            # --- Step 12: Verify service ---
+            step = 12
+            log(f"=== Step {step}: Verifying PeerTube service ===")
+            time.sleep(3)
+            stdout, stderr, code = ssh.execute_sudo(
+                "systemctl is-active peertube 2>/dev/null", timeout=15
+            )
+            service_status = (stdout or "").strip()
+            if service_status == "active":
+                log("PeerTube service is active — install successful")
+            else:
+                log(f"WARNING: PeerTube service is {service_status or 'unknown'}")
+                stdout, _, _ = ssh.execute_sudo(
+                    "journalctl -u peertube -n 20 --no-pager 2>/dev/null", timeout=15
+                )
+                if (stdout or "").strip():
+                    log("--- Recent service journal ---")
+                    log((stdout or "").strip())
+            log("")
+
+            # --- Step 13: Detect and persist version ---
+            step = 13
+            log(f"=== Step {step}: Detecting installed version ===")
+            Setting.set("peertube_current_version", version_num)
+            log(f"Installed PeerTube version: {version_num}")
+
+            Setting.set("peertube_installed", "true")
+
+    except Exception as e:
+        log(f"SSH ERROR: {e}")
+        return False, "\n".join(log_lines)
+
+    log("")
+    log("=== PeerTube installation complete ===")
+    return True, "\n".join(log_lines)
 
 
 # ---------------------------------------------------------------------------
