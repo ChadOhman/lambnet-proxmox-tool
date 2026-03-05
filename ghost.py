@@ -431,7 +431,7 @@ def run_ghost_preflight(log_callback=None):
                     f"2>/dev/null | head -5",
                     timeout=20,
                 )
-                bad_files = [l.strip() for l in (stdout or "").splitlines() if l.strip()]
+                bad_files = [ln.strip() for ln in (stdout or "").splitlines() if ln.strip()]
                 if bad_files:
                     log(f"  [WARN] {len(bad_files)}+ file(s) with non-664 permissions "
                         f"(will be fixed during upgrade)")
@@ -610,7 +610,7 @@ def run_ghost_upgrade(log_callback=None, skip_protection=False):
             perms_cmds = (
                 f"find {ghost_dir} ! -path '*/versions/*' -type f -exec chmod 664 {{}} + "
                 f"&& find {ghost_dir} ! -path '*/versions/*' -type d -exec chmod 775 {{}} + "
-                f"&& chown -R {user}:{user} {ghost_dir}"
+                f"&& chown -R {user}: {ghost_dir}"
             )
             stdout, stderr, code = ssh.execute_sudo(perms_cmds, timeout=120)
             if code == 0:
