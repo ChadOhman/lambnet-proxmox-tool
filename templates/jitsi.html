@@ -218,6 +218,15 @@
                             {% endif %}
                         </td>
                     </tr>
+                    <tr>
+                        <td class="text-muted">Ports</td>
+                        <td>
+                            <code>443/tcp</code> <small class="text-muted">HTTPS</small>&ensp;
+                            <code>80/tcp</code> <small class="text-muted">HTTP</small>&ensp;
+                            <code>10000/udp</code> <small class="text-muted">Media (JVB)</small>&ensp;
+                            <code>5349/tcp</code> <small class="text-muted">TURN</small>
+                        </td>
+                    </tr>
                 </table>
 
                 {% if settings.installed and settings.current_version and settings.latest_version and settings.update_available %}
@@ -333,7 +342,7 @@
                         {% endif %}
                         guest
                     </li>
-                    <li>Add Prosody apt repository</li>
+                    <li>Ensure Lua 5.4 for Prosody 13.x</li>
                     <li>Add Jitsi apt repository</li>
                     <li>Update apt cache</li>
                     <li>Preseed debconf with hostname and certificate choice</li>
@@ -529,7 +538,7 @@ function startInstall(e) {
     const certType = document.querySelector('input[name="jitsi_cert_type"]:checked');
     const cert = certType ? certType.value : 'self-signed';
     const steps = '1. Snapshot/backup guest\n'
-        + '2. Add Prosody apt repository\n'
+        + '2. Ensure Lua 5.4 for Prosody\n'
         + '3. Add Jitsi apt repository\n'
         + '4. Update apt cache\n'
         + '5. Preseed debconf (hostname: ' + hostname + ', cert: ' + cert + ')\n'
