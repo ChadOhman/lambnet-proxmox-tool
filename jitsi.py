@@ -724,15 +724,15 @@ def run_jitsi_install(log_callback=None):
             # Step 5: Install jitsi-meet
             log("=== Step 5: Installing jitsi-meet package ===")
             log("(This may take several minutes...)")
-            # Purge incompatible Prosody 13.x from community repo if present,
-            # then fix any broken packages from a previous failed install
+            # Force-purge any broken/incompatible Prosody from a previous failed
+            # install (e.g. 13.x from the community repo with Lua 5.1 issues).
+            # --force-remove-reinstreq handles packages stuck in a broken dpkg state.
             ssh.execute_sudo(
-                "dpkg -l prosody 2>/dev/null | grep -q '^.i.*13\\.' && "
-                "DEBIAN_FRONTEND=noninteractive apt-get purge -y prosody 2>&1 || true",
+                "dpkg --force-remove-reinstreq --purge prosody 2>&1 || true",
                 timeout=60
             )
             ssh.execute_sudo(
-                "DEBIAN_FRONTEND=noninteractive dpkg --configure -a 2>&1",
+                "DEBIAN_FRONTEND=noninteractive apt-get -f install -y 2>&1 || true",
                 timeout=120
             )
             stdout, stderr, code = ssh.execute_sudo(
