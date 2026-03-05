@@ -340,9 +340,18 @@ def detect_versions():
     version, error = detect_elk_version(guest, elk_dir, deploy_method=deploy_method)
     if version:
         Setting.set("elk_current_version", version)
+        if Setting.get("elk_installed") != "true":
+            Setting.set("elk_installed", "true")
         db.session.commit()
         flash(f"Detected Elk version: {version}", "success")
     else:
-        flash(f"Could not detect Elk version: {error}", "warning")
+        # Elk not found on guest — reset installed state
+        if Setting.get("elk_installed") == "true":
+            Setting.set("elk_installed", "false")
+            Setting.set("elk_current_version", "")
+            db.session.commit()
+            flash(f"Elk not found on guest: {error}. Marked as not installed.", "warning")
+        else:
+            flash(f"Could not detect Elk version: {error}", "warning")
 
     return redirect(url_for("elk.upgrade_page"))
