@@ -424,6 +424,20 @@ def run_ghost_preflight(log_callback=None):
                     log(f"  [WARN] Could not read {ghost_dir}/.ghost-cli"
                         + (f" — {(stderr or '').strip()}" if stderr else ""))
 
+                # File permissions (informational) — ghost-cli rejects files
+                # outside versions/ that have wrong modes.
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"find {ghost_dir} ! -path '*/versions/*' -type f ! -perm 664 "
+                    f"2>/dev/null | head -5",
+                    timeout=20,
+                )
+                bad_files = [l.strip() for l in (stdout or "").splitlines() if l.strip()]
+                if bad_files:
+                    log(f"  [WARN] {len(bad_files)}+ file(s) with non-664 permissions "
+                        f"(will be fixed during upgrade)")
+                else:
+                    log("  [INFO] File permissions look correct")
+
                 # Service status (informational)
                 dir_basename = _osp.basename(ghost_dir.rstrip("/"))
                 service_name = f"ghost_{dir_basename}"
@@ -585,6 +599,25 @@ def run_ghost_upgrade(log_callback=None, skip_protection=False):
             _log_cmd_output(log, stdout, stderr, code, max_chars=2000)
             if code != 0:
                 log("WARNING: ghost-cli update failed — proceeding anyway")
+            log("")
+
+            # Fix file/directory permissions before update.  ghost-cli's
+            # check-permissions step rejects files with wrong modes (e.g. yarn
+            # cache files with executable bits).  Run the same remediation that
+            # ghost-cli suggests on failure — but proactively, so the update
+            # doesn't abort.
+            log("Fixing file permissions...")
+            perms_cmds = (
+                f"find {ghost_dir} ! -path '*/versions/*' -type f -exec chmod 664 {{}} + "
+                f"&& find {ghost_dir} ! -path '*/versions/*' -type d -exec chmod 775 {{}} + "
+                f"&& chown -R {user}:{user} {ghost_dir}"
+            )
+            stdout, stderr, code = ssh.execute_sudo(perms_cmds, timeout=120)
+            if code == 0:
+                log("File permissions fixed")
+            else:
+                log(f"WARNING: Permission fix returned exit {code}: "
+                    f"{(stderr or stdout or '').strip()[:200]}")
             log("")
 
             # Run ghost update as the Ghost system user.  su - creates a full login
