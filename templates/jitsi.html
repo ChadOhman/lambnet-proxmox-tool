@@ -229,6 +229,14 @@
                     </tr>
                 </table>
 
+                <div class="alert alert-info py-2 mb-3">
+                    <i class="bi bi-cloud"></i>
+                    <strong>Cloudflare Zero Trust:</strong> Route <code>443/tcp</code> through a tunnel to the guest's internal IP.
+                    <code>10000/udp</code> (WebRTC media) cannot traverse Cloudflare tunnels &mdash; clients will fall back to
+                    <code>5349/tcp</code> (TURN) which can be tunnelled, but with higher latency.
+                    For best call quality, allow direct UDP on <code>10000/udp</code> to the guest.
+                </div>
+
                 {% if settings.installed and settings.current_version and settings.latest_version and settings.update_available %}
                 <div class="alert alert-warning py-2 mb-3">
                     <i class="bi bi-exclamation-triangle"></i>
