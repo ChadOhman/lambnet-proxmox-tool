@@ -138,7 +138,8 @@ def check():
     current = Setting.get("jitsi_current_version", "")
 
     if not latest:
-        flash("Could not fetch latest Jitsi version from apt repository.", "error")
+        flash("Could not fetch latest Jitsi version. Check that the guest is reachable via SSH or guest agent "
+              "and that the Jitsi apt repository is configured.", "error")
     elif update_available:
         flash(f"Jitsi update available: v{current} \u2192 v{latest}", "warning")
     elif current:

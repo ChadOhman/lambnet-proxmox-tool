@@ -71,45 +71,68 @@ def check_jitsi_release():
     credential = guest.credential
     if not credential:
         credential = Credential.query.filter_by(is_default=True).first()
-    if not credential or not guest.ip_address:
+
+    stdout = None
+    has_usable_ip = guest.ip_address and guest.ip_address.lower() not in ("dhcp", "dhcp6", "auto")
+
+    # Try SSH first
+    if has_usable_ip and credential:
+        try:
+            with SSHClient.from_credential(guest.ip_address, credential) as ssh:
+                ssh.execute_sudo("apt-get update -qq 2>/dev/null", timeout=120)
+                stdout, stderr, code = ssh.execute_sudo(
+                    "apt-cache policy jitsi-meet 2>/dev/null", timeout=15
+                )
+                if code != 0:
+                    stdout = None
+        except Exception as e:
+            logger.debug("SSH failed for Jitsi release check: %s", e)
+
+    # Fall back to guest agent
+    if stdout is None and guest.proxmox_host and guest.guest_type == "vm":
+        try:
+            client = ProxmoxClient(guest.proxmox_host)
+            node = client.find_guest_node(guest.vmid)
+            if node:
+                client.exec_guest_agent(node, guest.vmid, "apt-get update -qq", timeout=120)
+                stdout, err = client.exec_guest_agent(
+                    node, guest.vmid, "apt-cache policy jitsi-meet", timeout=15
+                )
+                if err:
+                    logger.debug("Guest agent apt-cache failed: %s", err)
+                    stdout = None
+        except Exception as e:
+            logger.debug("Guest agent failed for Jitsi release check: %s", e)
+
+    if not stdout:
+        logger.error("Failed to check Jitsi releases: no reachable connection to guest %s", guest.name)
         return False, "", ""
 
     try:
-        with SSHClient.from_credential(guest.ip_address, credential) as ssh:
-            # Refresh apt cache quietly
-            ssh.execute_sudo("apt-get update -qq 2>/dev/null", timeout=120)
+        # Parse "Candidate: X.Y.Z-N" from output
+        candidate = ""
+        for line in stdout.splitlines():
+            line = line.strip()
+            if line.startswith("Candidate:"):
+                candidate = line.split(":", 1)[1].strip()
+                break
 
-            # Get candidate version from apt-cache
-            stdout, stderr, code = ssh.execute_sudo(
-                "apt-cache policy jitsi-meet 2>/dev/null", timeout=15
-            )
-            if code != 0 or not stdout:
-                return False, "", ""
+        if not candidate or candidate == "(none)":
+            return False, "", ""
 
-            # Parse "Candidate: X.Y.Z-N" from output
-            candidate = ""
-            for line in stdout.splitlines():
-                line = line.strip()
-                if line.startswith("Candidate:"):
-                    candidate = line.split(":", 1)[1].strip()
-                    break
+        # Strip Debian revision suffix (e.g., "2.0.9457-1" -> "2.0.9457")
+        latest = re.sub(r'-\d+$', '', candidate)
 
-            if not candidate or candidate == "(none)":
-                return False, "", ""
+        Setting.set("jitsi_latest_version", latest)
 
-            # Strip Debian revision suffix (e.g., "2.0.9457-1" -> "2.0.9457")
-            latest = re.sub(r'-\d+$', '', candidate)
+        current = Setting.get("jitsi_current_version", "")
+        update_available = bool(current and _version_gt(latest, current))
+        Setting.set("jitsi_update_available", "true" if update_available else "false")
 
-            Setting.set("jitsi_latest_version", latest)
-
-            current = Setting.get("jitsi_current_version", "")
-            update_available = bool(current and _version_gt(latest, current))
-            Setting.set("jitsi_update_available", "true" if update_available else "false")
-
-            return update_available, latest, ""
+        return update_available, latest, ""
 
     except Exception as e:
-        logger.error("Failed to check Jitsi releases: %s", e)
+        logger.error("Failed to parse Jitsi version: %s", e)
         return False, "", ""
 
 
