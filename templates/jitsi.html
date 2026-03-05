@@ -241,7 +241,7 @@
                 </div>
 
                 <div class="collapse mb-3" id="cfSetupGuide">
-                    <div class="card card-body bg-black border-secondary small" style="max-height: 500px; overflow-y: auto;">
+                    <div class="card card-body bg-dark border-secondary small" style="max-height: 500px; overflow-y: auto;">
 
 <h6 class="text-info mb-2">Cloudflare Zero Trust + Jitsi Meet Setup</h6>
 
@@ -257,7 +257,7 @@ Web UI through Cloudflare tunnel, media direct over UDP. Requires opening <code>
 
 <h6 class="text-warning mb-1">1. Cloudflare Tunnel Route</h6>
 <p>Create a public hostname in your Cloudflare tunnel pointing to the Jitsi guest:</p>
-<pre class="bg-dark rounded p-2 mb-2">Hostname: {{ settings.hostname or 'meet.example.com' }}
+<pre class="bg-black border border-secondary rounded p-2 mb-2">Hostname: {{ settings.hostname or 'meet.example.com' }}
 Service:  https://{{ '&lt;guest-internal-ip&gt;' }}:443
 TLS:      No TLS Verify (self-signed cert on guest)
 
@@ -268,7 +268,7 @@ HTTP Host Header: {{ settings.hostname or 'meet.example.com' }}</pre>
 
 <h6 class="text-warning mb-1">2. JVB NAT Harvester (Option B only)</h6>
 <p>Tell JVB its public IP so it can send correct ICE candidates. Edit on the Jitsi guest:</p>
-<pre class="bg-dark rounded p-2 mb-2"># /etc/jitsi/videobridge/sip-communicator.properties
+<pre class="bg-black border border-secondary rounded p-2 mb-2"># /etc/jitsi/videobridge/sip-communicator.properties
 org.ice4j.ice.harvest.NAT_HARVESTER_LOCAL_ADDRESS=&lt;guest-internal-ip&gt;
 org.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS=&lt;your-public-ip&gt;
 
@@ -280,7 +280,7 @@ sudo systemctl restart jitsi-videobridge2</pre>
 
 <h6 class="text-warning mb-1">3. Configure coturn (TURN relay)</h6>
 <p>coturn is installed by <code>jitsi-meet-turnserver</code>. Verify/edit its config:</p>
-<pre class="bg-dark rounded p-2 mb-2"># /etc/turnserver.conf
+<pre class="bg-black border border-secondary rounded p-2 mb-2"># /etc/turnserver.conf
 listening-port=3478
 tls-listening-port=5349
 fingerprint
@@ -302,7 +302,7 @@ sudo systemctl restart coturn</pre>
 
 <h6 class="text-warning mb-1">4. Advertise TURN to clients via Prosody</h6>
 <p>Prosody tells clients where the TURN server is. Verify the <code>external_services</code> block:</p>
-<pre class="bg-dark rounded p-2 mb-2"># /etc/prosody/conf.d/{{ settings.hostname or 'meet.example.com' }}.cfg.lua
+<pre class="bg-black border border-secondary rounded p-2 mb-2"># /etc/prosody/conf.d/{{ settings.hostname or 'meet.example.com' }}.cfg.lua
 -- Inside the VirtualHost section, look for or add:
 external_services = {
     { type = "stun", host = "{{ settings.hostname or 'meet.example.com' }}", port = 3478 },
@@ -321,7 +321,7 @@ sudo systemctl restart prosody</pre>
 
 <h6 class="text-warning mb-1">5. Nginx WebSocket proxy</h6>
 <p>Ensure the Jitsi nginx config proxies WebSocket paths (usually auto-configured):</p>
-<pre class="bg-dark rounded p-2 mb-2"># /etc/nginx/sites-available/{{ settings.hostname or 'meet.example.com' }}.conf
+<pre class="bg-black border border-secondary rounded p-2 mb-2"># /etc/nginx/sites-available/{{ settings.hostname or 'meet.example.com' }}.conf
 # These blocks should already exist after install:
 location /xmpp-websocket {
     proxy_pass http://127.0.0.1:5280/xmpp-websocket;
@@ -355,7 +355,7 @@ location /colibri-ws/ {
 
 <h6 class="text-warning mb-1">7. Force TCP-only (Option A)</h6>
 <p>To force all media through TURN/TCP (no direct UDP), disable UDP candidates in the JVB:</p>
-<pre class="bg-dark rounded p-2 mb-2"># /etc/jitsi/videobridge/jvb.conf
+<pre class="bg-black border border-secondary rounded p-2 mb-2"># /etc/jitsi/videobridge/jvb.conf
 # Add inside the videobridge { } block:
 ice {
     udp {
