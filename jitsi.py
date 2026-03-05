@@ -727,8 +727,8 @@ def run_jitsi_install(log_callback=None):
                 )
 
             stdout, stderr, code = ssh.execute_sudo(
-                "echo 'jitsi-meet-web-config jitsi-meet/cert-choice select "
-                f"{cert_preseed}' | debconf-set-selections",
+                'echo "jitsi-meet-web-config jitsi-meet/cert-choice select '
+                f'{cert_preseed}" | debconf-set-selections',
                 timeout=10
             )
 
