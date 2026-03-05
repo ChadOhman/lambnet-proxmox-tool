@@ -246,7 +246,13 @@ class ProxmoxClient:
             timeout: Max seconds to wait for command completion (default 120).
         """
         try:
-            result = self.api.nodes(node).qemu(vmid).agent.exec.post(command=command)
+            try:
+                result = self.api.nodes(node).qemu(vmid).agent.exec.post(command=command)
+            except Exception:
+                # Stale TLS connection (broken pipe) — reconnect and retry once
+                self._api = None
+                result = self.api.nodes(node).qemu(vmid).agent.exec.post(command=command)
+
             pid = result.get("pid")
             if not pid:
                 return None, "No PID returned"
