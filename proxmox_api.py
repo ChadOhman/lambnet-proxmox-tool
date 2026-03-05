@@ -37,6 +37,10 @@ class ProxmoxClient:
             self.connect()
         return self._api
 
+    def reconnect(self):
+        """Force a fresh API connection (drops any stale TLS session)."""
+        self._api = None
+
     def get_nodes(self):
         """Get all nodes from the Proxmox cluster. Raises on failure."""
         return self.api.nodes.get()
@@ -250,7 +254,9 @@ class ProxmoxClient:
                 result = self.api.nodes(node).qemu(vmid).agent.exec.post(command=command)
             except Exception:
                 # Stale TLS connection (broken pipe) — reconnect and retry once
+                logger.debug("Guest agent exec failed, reconnecting and retrying")
                 self._api = None
+                time.sleep(1)
                 result = self.api.nodes(node).qemu(vmid).agent.exec.post(command=command)
 
             pid = result.get("pid")

@@ -163,6 +163,8 @@ def _run_update_background(app, guest_id, dist_upgrade=False):
                             job.append(update_out)
                         if update_err:
                             job.append(f"\n{update_err}\n")
+                        # Force fresh TLS session before long-running upgrade
+                        client.reconnect()
                         job.append(f"\n$ {cmd}\n")
                         stdout, err = client.exec_guest_agent(node, guest.vmid, cmd, timeout=600)
                         if err is None:
