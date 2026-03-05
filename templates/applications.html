@@ -92,5 +92,36 @@
             </div>
         </div>
     </div>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card bg-dark h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title mb-0"><i class="bi bi-chat-square-heart"></i> Elk</h5>
+                    {% if not apps.elk.installed %}
+                    <span class="badge bg-secondary">Not installed</span>
+                    {% elif apps.elk.update_available %}
+                    <span class="badge bg-warning text-dark">Update available</span>
+                    {% elif apps.elk.current_version %}
+                    <span class="badge bg-success"><i class="bi bi-check-lg"></i> Up to date</span>
+                    {% endif %}
+                </div>
+                <div class="mb-3">
+                    {% if apps.elk.current_version %}
+                    <small class="text-muted">
+                        {{ apps.elk.current_version }}
+                        {% if apps.elk.latest_version and apps.elk.update_available %}
+                        &rarr; {{ apps.elk.latest_version }}
+                        {% endif %}
+                    </small><br>
+                    {% endif %}
+                    <small>
+                        <i class="bi bi-arrow-repeat {% if apps.elk.auto_upgrade %}text-success{% else %}text-muted{% endif %}"></i>
+                        Auto-upgrade: <span class="{% if apps.elk.auto_upgrade %}text-success{% else %}text-muted{% endif %}">{{ 'On' if apps.elk.auto_upgrade else 'Off' }}</span>
+                    </small>
+                </div>
+                <a href="/elk/upgrade" class="btn btn-outline-light mt-auto">Go to Elk</a>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

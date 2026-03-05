@@ -100,6 +100,7 @@ def create_app(test_config=None):
     from routes.mastodon import bp as mastodon_bp
     from routes.ghost import bp as ghost_bp
     from routes.peertube import bp as peertube_bp
+    from routes.elk import bp as elk_bp
     from routes.api import bp as api_bp
     from routes.services import bp as services_bp
     from routes.unifi import bp as unifi_bp
@@ -117,6 +118,7 @@ def create_app(test_config=None):
     app.register_blueprint(mastodon_bp, url_prefix="/mastodon")
     app.register_blueprint(ghost_bp, url_prefix="/ghost")
     app.register_blueprint(peertube_bp, url_prefix="/peertube")
+    app.register_blueprint(elk_bp, url_prefix="/elk")
     app.register_blueprint(services_bp, url_prefix="/services")
     app.register_blueprint(unifi_bp, url_prefix="/unifi")
     app.register_blueprint(api_bp, url_prefix="/api")

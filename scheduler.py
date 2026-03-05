@@ -201,6 +201,53 @@ def _check_peertube_release(app):
                 logger.error("PeerTube auto-upgrade failed")
 
 
+def _check_elk_release(app):
+    """Check for new Elk releases and optionally auto-upgrade."""
+    with app.app_context():
+        from models import Setting
+
+        # Only check if an Elk guest is configured and installed
+        if not Setting.get("elk_guest_id"):
+            return
+        if Setting.get("elk_installed", "false") != "true":
+            return
+
+        from elk import check_elk_release
+        update_available, latest, release_url = check_elk_release()
+
+        if not update_available:
+            return
+
+        current = Setting.get("elk_current_version", "")
+        logger.info(f"Elk update available: v{current} -> v{latest}")
+
+        # Send Discord notification (only if not already notified for this version)
+        last_notified = Setting.get("elk_last_notified_version", "")
+        if latest != last_notified:
+            from notifier import send_elk_update_notification
+            ok, _msg = send_elk_update_notification(current, latest, release_url)
+            if ok:
+                Setting.set("elk_last_notified_version", latest)
+
+        # Auto-upgrade if enabled
+        if Setting.get("elk_auto_upgrade", "false") == "true":
+            logger.info("Auto-upgrade enabled, starting Elk upgrade...")
+            from elk import run_elk_upgrade
+            from audit import log_action
+            from models import db
+            from notifier import send_upgrade_started_notification, send_upgrade_result_notification
+            send_upgrade_started_notification("elk", latest, "auto")
+            ok, log_output = run_elk_upgrade()
+            log_action("elk_upgrade", "settings", resource_name="elk",
+                       details={"status": "success" if ok else "error", "trigger": "auto"})
+            db.session.commit()
+            send_upgrade_result_notification("elk", latest, ok, "auto")
+            if ok:
+                logger.info("Elk auto-upgrade completed successfully")
+            else:
+                logger.error("Elk auto-upgrade failed")
+
+
 def _run_discovery(app):
     """Refresh guest discovery for all Proxmox hosts."""
     with app.app_context():
@@ -655,6 +702,17 @@ def init_scheduler(app):
         max_instances=1,
     )
 
+    # Elk release check - runs alongside the scan job
+    _scheduler.add_job(
+        _check_elk_release,
+        trigger=IntervalTrigger(hours=interval_hours),
+        args=[app],
+        id="elk_check",
+        name="Check for Elk releases",
+        replace_existing=True,
+        max_instances=1,
+    )
+
     # Host update check - runs alongside the guest scan
     _scheduler.add_job(
         _check_host_updates,
@@ -722,7 +780,7 @@ def init_scheduler(app):
     )
 
     _scheduler.start()
-    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, ghost check every {interval_hours}h, peertube check every {interval_hours}h, host update check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
+    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, ghost check every {interval_hours}h, peertube check every {interval_hours}h, elk check every {interval_hours}h, host update check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
 
     return _scheduler
 
@@ -735,6 +793,7 @@ def reschedule_jobs(interval_hours, discovery_hours, service_check_minutes):
     _scheduler.reschedule_job("mastodon_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("ghost_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("peertube_check", trigger=IntervalTrigger(hours=interval_hours))
+    _scheduler.reschedule_job("elk_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("host_update_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("discovery", trigger=IntervalTrigger(hours=discovery_hours))
     _scheduler.reschedule_job("service_health", trigger=IntervalTrigger(minutes=service_check_minutes))

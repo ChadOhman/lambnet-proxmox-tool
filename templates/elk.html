@@ -1,0 +1,607 @@
+{% extends "base.html" %}
+{% block title %}Elk - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/applications">Applications</a></li>
+        <li class="breadcrumb-item active">Elk Management</li>
+    </ol>
+</nav>
+
+<h2 class="mb-4"><i class="bi bi-chat-square-heart"></i> Elk</h2>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card bg-dark">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-gear"></i> Configuration</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/elk/save">
+                    <div class="mb-3">
+                        <label class="form-label">Elk Guest</label>
+                        <select class="form-select" name="elk_guest_id">
+                            <option value="">-- Select Guest --</option>
+                            {% for guest in guests %}
+                            <option value="{{ guest.id }}" {{ 'selected' if settings.guest_id == guest.id|string }}>
+                                {{ guest.name }}{% if not safety_mode %} ({{ guest.ip_address or 'no IP' }}){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">The VM/CT where Elk will be installed.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Deployment Method</label>
+                        <select class="form-select" name="elk_deploy_method" id="deployMethod"
+                                onchange="toggleDeployFields()">
+                            <option value="docker" {{ 'selected' if settings.deploy_method != 'bare-metal' }}>
+                                Docker Compose
+                            </option>
+                            <option value="bare-metal" {{ 'selected' if settings.deploy_method == 'bare-metal' }}>
+                                Bare-metal (Node.js / pnpm)
+                            </option>
+                        </select>
+                        <div class="form-text">How Elk is deployed on the guest.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Mastodon Instance URL</label>
+                        <input type="text" class="form-control font-monospace" name="elk_instance_url"
+                               value="{{ settings.instance_url }}" placeholder="https://mastodon.example.com">
+                        <div class="form-text">Default Mastodon server for Elk users. Set as <code>NUXT_PUBLIC_DEFAULT_SERVER</code>.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Pre-Upgrade Protection</label>
+                        {% if not snapshots_supported %}
+                        <div class="alert alert-warning py-2 mb-2">
+                            <small><i class="bi bi-exclamation-triangle"></i>
+                            Snapshots are not supported by: <strong>{{ snapshot_blockers | join(', ') }}</strong>
+                            (storage does not support snapshots — likely plain LVM).
+                            Use <strong>Backup</strong> instead.</small>
+                        </div>
+                        {% endif %}
+                        <div class="form-check">
+                            <input type="radio" class="form-check-input" name="elk_protection_type"
+                                   id="protSnap" value="snapshot" onchange="toggleBackupStorage()"
+                                   {{ 'disabled' if not snapshots_supported }}
+                                   {{ 'checked' if settings.protection_type != 'backup' and snapshots_supported }}>
+                            <label class="form-check-label {{ 'text-muted' if not snapshots_supported }}" for="protSnap">
+                                Snapshot <small class="text-muted">— fast, local, instant rollback</small>
+                                {% if not snapshots_supported %}<span class="badge bg-secondary ms-1">unavailable</span>{% endif %}
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input type="radio" class="form-check-input" name="elk_protection_type"
+                                   id="protBackup" value="backup" onchange="toggleBackupStorage()"
+                                   {{ 'checked' if settings.protection_type == 'backup' or not snapshots_supported }}>
+                            <label class="form-check-label" for="protBackup">
+                                Backup <small class="text-muted">— vzdump to storage (slower, off-site if using PBS)</small>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mb-3 {{ '' if settings.protection_type == 'backup' or not snapshots_supported else 'd-none' }}" id="backupStorageRow">
+                        <label class="form-label">Backup Storage</label>
+                        <select class="form-select font-monospace" name="elk_backup_storage">
+                            <option value="">-- Select Storage --</option>
+                            {% for st in backup_storages %}
+                            <option value="{{ st.storage }}" {{ 'selected' if settings.backup_storage == st.storage }}>
+                                {{ st.storage }} ({{ st.type }}){% if st.avail %} — {{ (st.avail / 1073741824) | round(1) }} GB free{% endif %}
+                            </option>
+                            {% endfor %}
+                            {% if settings.backup_storage and not (backup_storages | selectattr('storage', 'equalto', settings.backup_storage) | list) %}
+                            <option value="{{ settings.backup_storage }}" selected>{{ settings.backup_storage }} (saved)</option>
+                            {% endif %}
+                        </select>
+                        <div class="form-text">Storage to send vzdump backups to.
+                            {% if not backup_storages %}<span class="text-warning">No storages discovered — configure the Elk guest first.</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="mb-3 {{ '' if settings.protection_type == 'backup' or not snapshots_supported else 'd-none' }}" id="backupModeRow">
+                        <label class="form-label">Backup Mode</label>
+                        <select class="form-select" name="elk_backup_mode">
+                            <option value="snapshot" {{ 'selected' if settings.backup_mode != 'suspend' and settings.backup_mode != 'stop' }}>
+                                Snapshot — live backup, no downtime (requires QEMU guest agent for VMs)
+                            </option>
+                            <option value="suspend" {{ 'selected' if settings.backup_mode == 'suspend' }}>
+                                Suspend — brief pause during backup
+                            </option>
+                            <option value="stop" {{ 'selected' if settings.backup_mode == 'stop' }}>
+                                Stop — shut down for backup (safest, causes downtime)
+                            </option>
+                        </select>
+                    </div>
+
+                    <hr class="border-secondary">
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">System User <span id="userHint" class="{{ 'd-none' if settings.deploy_method != 'bare-metal' }}"><small class="text-muted">(bare-metal only)</small></span></label>
+                            <input type="text" class="form-control font-monospace" name="elk_user"
+                                   value="{{ settings.user or 'elk' }}" placeholder="elk">
+                            <div class="form-text">User that owns the Elk installation (used for bare-metal systemd service).</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Install Directory</label>
+                            <input type="text" class="form-control font-monospace" name="elk_dir"
+                                   value="{{ settings.elk_dir or '/opt/elk' }}" placeholder="/opt/elk">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Elk URL <small class="text-muted">(optional)</small></label>
+                        <input type="text" class="form-control font-monospace" name="elk_url"
+                               value="{{ settings.url }}" placeholder="https://elk.example.com">
+                        <div class="form-text">Your Elk instance URL — used for display purposes only.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Current Installed Version</label>
+                        <input type="text" class="form-control" name="elk_current_version"
+                               value="{{ settings.current_version }}" placeholder="e.g. 0.13.1">
+                        <div class="form-text">Set manually or use "Detect Version" to auto-fill.</div>
+                    </div>
+
+                    <hr class="border-secondary">
+
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" name="elk_auto_upgrade"
+                               id="autoUpgrade" {{ 'checked' if settings.auto_upgrade == 'true' }}>
+                        <label class="form-check-label" for="autoUpgrade"><strong>Enable automatic upgrades</strong></label>
+                        <div class="form-text text-warning">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            When enabled, upgrades will run automatically when a new release is detected.
+                            Snapshots are always taken before upgrading.
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Save Configuration</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <!-- Version Status -->
+        <div class="card bg-dark">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-arrow-repeat"></i> Version Status</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-dark table-sm mb-3">
+                    <tr>
+                        <td class="text-muted" style="width: 40%">Status</td>
+                        <td>
+                            {% if settings.installed %}
+                            <span class="badge bg-success">Installed</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Not installed</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Current Version</td>
+                        <td>
+                            {% if settings.current_version %}
+                            <span class="badge bg-primary">v{{ settings.current_version }}</span>
+                            {% else %}
+                            <span class="text-muted">Not set</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Latest Available</td>
+                        <td>
+                            {% if settings.latest_version %}
+                            <span class="badge bg-info">v{{ settings.latest_version }}</span>
+                            {% if settings.latest_release_url %}
+                            <a href="{{ settings.latest_release_url }}" target="_blank" class="ms-2 small">
+                                <i class="bi bi-box-arrow-up-right"></i> Release Notes
+                            </a>
+                            {% endif %}
+                            {% else %}
+                            <span class="text-muted">Not checked</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Auto-Upgrade</td>
+                        <td>
+                            {% if settings.auto_upgrade == 'true' %}
+                            <span class="badge bg-success">Enabled</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Disabled</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+
+                {% if settings.installed and settings.current_version and settings.latest_version and settings.update_available %}
+                <div class="alert alert-warning py-2 mb-3">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>Update available:</strong> v{{ settings.current_version }} &rarr; v{{ settings.latest_version }}
+                </div>
+                {% elif settings.installed and settings.current_version and settings.latest_version %}
+                <div class="alert alert-success py-2 mb-3">
+                    <i class="bi bi-check-circle"></i> Elk is up to date.
+                </div>
+                {% endif %}
+
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    {% if settings.installed %}
+                    <form method="post" action="/elk/detect-versions">
+                        <button type="submit" class="btn btn-outline-success"
+                                title="SSH into the Elk guest to detect the installed version">
+                            <i class="bi bi-search"></i> Detect Version
+                        </button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="/elk/check">
+                        <button type="submit" class="btn btn-outline-info">
+                            <i class="bi bi-arrow-repeat"></i> Check for Updates
+                        </button>
+                    </form>
+                    {% if settings.guest_id %}
+                    <button type="button" class="btn btn-outline-secondary" id="preflightBtn"
+                            onclick="startPreflight()">
+                        <i class="bi bi-clipboard2-check"></i> Pre-flight Check
+                    </button>
+                    {% if not settings.installed %}
+                    <form method="post" action="/elk/install" id="installForm"
+                          onsubmit="return startInstall(event)">
+                        <button type="submit" class="btn btn-success" id="installBtn">
+                            <i class="bi bi-download"></i> Install Elk
+                        </button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="/elk/upgrade" id="upgradeForm"
+                          onsubmit="return startUpgrade(event)">
+                        {% if current_user.is_super_admin %}
+                        <div class="form-check form-check-inline me-1 align-self-center">
+                            <input class="form-check-input" type="checkbox" id="skipProtection"
+                                   name="skip_protection" value="1">
+                            <label class="form-check-label text-warning small" for="skipProtection"
+                                   title="Skip the snapshot/backup step — only use if protection is already in place">
+                                <i class="bi bi-shield-slash"></i> Skip snapshot/backup
+                            </label>
+                        </div>
+                        {% endif %}
+                        <button type="submit" class="btn btn-warning" id="upgradeBtn">
+                            <i class="bi bi-arrow-up-circle"></i> Upgrade Now
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                <div class="mt-2" id="preflightStatusBadge"></div>
+            </div>
+        </div>
+
+        <!-- Operation Log -->
+        <div class="card bg-dark mt-4" id="logCard">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <h5 class="mb-0">
+                    <i class="bi bi-terminal"></i> Operation Log
+                    <span id="operationStatusBadge" class="ms-2">
+                        {% if settings.installed and settings.last_upgrade_status == 'success' %}
+                        <span class="badge bg-success">Upgrade Success</span>
+                        {% elif settings.installed and settings.last_upgrade_status == 'error' %}
+                        <span class="badge bg-danger">Upgrade Failed</span>
+                        {% elif settings.last_install_status == 'success' %}
+                        <span class="badge bg-success">Install Success</span>
+                        {% elif settings.last_install_status == 'error' %}
+                        <span class="badge bg-danger">Install Failed</span>
+                        {% endif %}
+                    </span>
+                </h5>
+                <span id="operationSpinner" class="d-none">
+                    <span class="spinner-border spinner-border-sm text-warning me-1"></span>
+                    <small class="text-warning">Operation in progress&hellip;</small>
+                </span>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-2" id="operationTimestamp">
+                    {% if settings.installed and settings.last_upgrade_at %}
+                    <small><i class="bi bi-clock"></i> Last upgrade: {{ settings.last_upgrade_at | local_dt('%Y-%m-%d %H:%M') }}</small>
+                    {% elif settings.last_install_at %}
+                    <small><i class="bi bi-clock"></i> Installed: {{ settings.last_install_at | local_dt('%Y-%m-%d %H:%M') }}</small>
+                    {% endif %}
+                </p>
+                <pre id="liveLog" class="bg-black border border-secondary rounded p-3 mb-0"
+                     style="max-height: 500px; overflow-y: auto; font-size: 0.85em; white-space: pre-wrap;">{% if settings.installed and settings.last_upgrade_log %}{{ settings.last_upgrade_log }}{% elif settings.last_install_log %}{{ settings.last_install_log }}{% else %}No operations have been run yet.{% endif %}</pre>
+            </div>
+        </div>
+
+        <!-- Steps Reference -->
+        <div class="card bg-dark mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-list-ol"></i> {% if settings.installed %}Upgrade{% else %}Install{% endif %} Steps</h5>
+            </div>
+            <div class="card-body">
+                {% if not settings.installed %}
+                <ol class="small mb-0">
+                    <li>
+                        {% if settings.protection_type == 'backup' %}
+                        Backup (vzdump) to <code>{{ settings.backup_storage or '(storage not set)' }}</code>
+                        {% else %}
+                        Snapshot
+                        {% endif %}
+                        guest
+                    </li>
+                    <li>Clone <code>elk-zone/elk</code> to <code>{{ settings.elk_dir or '/opt/elk' }}</code></li>
+                    <li>Create <code>.env</code> with Mastodon instance URL</li>
+                    {% if settings.deploy_method == 'bare-metal' %}
+                    <li>Enable corepack, run <code>pnpm install</code></li>
+                    <li>Build: <code>pnpm build</code></li>
+                    <li>Create and start <code>elk.service</code> systemd unit</li>
+                    {% else %}
+                    <li>Create data directory (UID 911)</li>
+                    <li>Run <code>docker compose up --build -d</code></li>
+                    {% endif %}
+                    <li>Verify deployment and detect version</li>
+                </ol>
+                {% else %}
+                <ol class="small mb-0">
+                    <li>
+                        {% if settings.protection_type == 'backup' %}
+                        Backup (vzdump) to <code>{{ settings.backup_storage or '(storage not set)' }}</code>
+                        {% else %}
+                        Snapshot
+                        {% endif %}
+                        guest
+                    </li>
+                    <li>Pull latest code: <code>git pull</code> in <code>{{ settings.elk_dir or '/opt/elk' }}</code></li>
+                    {% if settings.deploy_method == 'bare-metal' %}
+                    <li>Reinstall dependencies: <code>pnpm install</code></li>
+                    <li>Rebuild: <code>pnpm build</code></li>
+                    <li>Restart <code>elk</code> systemd service</li>
+                    {% else %}
+                    <li>Rebuild: <code>docker compose up --build -d</code></li>
+                    {% endif %}
+                    <li>Verify deployment and detect new version</li>
+                </ol>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const _snapshotsSupported = {{ 'true' if snapshots_supported else 'false' }};
+
+function toggleBackupStorage() {
+    const isBkp = !_snapshotsSupported || document.getElementById('protBackup').checked;
+    document.getElementById('backupStorageRow').classList.toggle('d-none', !isBkp);
+    document.getElementById('backupModeRow').classList.toggle('d-none', !isBkp);
+}
+
+function toggleDeployFields() {
+    const isBareMetal = document.getElementById('deployMethod').value === 'bare-metal';
+    const hint = document.getElementById('userHint');
+    if (hint) hint.classList.toggle('d-none', !isBareMetal);
+}
+
+// ── Pre-flight check ──────────────────────────────────────────────────────────
+let _preflightLogLen = 0;
+
+function _setPreflightBadge(success) {
+    const badge = document.getElementById('preflightStatusBadge');
+    if (!badge) return;
+    if (success === true) {
+        badge.innerHTML = '<span class="badge bg-info">Ready</span>';
+    } else if (success === false) {
+        badge.innerHTML = '<span class="badge bg-warning text-dark">Not ready</span>';
+    }
+}
+
+function pollPreflightStatus() {
+    fetch('/elk/preflight/status')
+        .then(r => r.json())
+        .then(data => {
+            const logEl = document.getElementById('liveLog');
+            const newLines = data.log.slice(_preflightLogLen);
+            if (newLines.length) {
+                if (_preflightLogLen === 0) logEl.textContent = '';
+                logEl.textContent += newLines.join('\n') + '\n';
+                _preflightLogLen = data.log.length;
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            if (data.running) {
+                setTimeout(pollPreflightStatus, 1500);
+            } else {
+                _setOperationRunning(false);
+                const preflightBtn = document.getElementById('preflightBtn');
+                if (preflightBtn) preflightBtn.disabled = false;
+                if (data.success !== null) _setPreflightBadge(data.success);
+            }
+        })
+        .catch(() => setTimeout(pollPreflightStatus, 3000));
+}
+
+function startPreflight() {
+    _preflightLogLen = 0;
+    const logEl = document.getElementById('liveLog');
+    logEl.textContent = 'Starting pre-flight check\u2026\n';
+    document.getElementById('operationStatusBadge').innerHTML = '';
+    const badgeEl = document.getElementById('preflightStatusBadge');
+    if (badgeEl) badgeEl.innerHTML = '';
+    _setOperationRunning(true);
+    const preflightBtn = document.getElementById('preflightBtn');
+    if (preflightBtn) preflightBtn.disabled = true;
+    document.getElementById('logCard').scrollIntoView({behavior: 'smooth'});
+
+    fetch('/elk/preflight', {method: 'POST'})
+        .then(r => {
+            if (r.status === 409) {
+                return r.json().then(d => {
+                    logEl.textContent = 'ERROR: ' + (d.error || 'Another operation is in progress') + '\n';
+                    _setOperationRunning(false);
+                    if (preflightBtn) preflightBtn.disabled = false;
+                });
+            }
+            setTimeout(pollPreflightStatus, 1500);
+        })
+        .catch(() => {
+            logEl.textContent = 'ERROR: Could not start pre-flight check\n';
+            _setOperationRunning(false);
+            if (preflightBtn) preflightBtn.disabled = false;
+        });
+}
+
+// ── Live operation log polling ────────────────────────────────────────────────
+let _logLen = 0;
+
+function _setOperationRunning(running) {
+    const spinner = document.getElementById('operationSpinner');
+    const upgradeBtn = document.getElementById('upgradeBtn');
+    const installBtn = document.getElementById('installBtn');
+    spinner.classList.toggle('d-none', !running);
+    if (upgradeBtn) upgradeBtn.disabled = running;
+    if (installBtn) installBtn.disabled = running;
+}
+
+function _setOperationBadge(success, type) {
+    const badge = document.getElementById('operationStatusBadge');
+    const label = type === 'install' ? 'Install' : 'Upgrade';
+    if (success === true) {
+        badge.innerHTML = '<span class="badge bg-success">' + label + ' Success</span>';
+    } else if (success === false) {
+        badge.innerHTML = '<span class="badge bg-danger">' + label + ' Failed</span>';
+    }
+}
+
+function pollOperationStatus(endpoint, type) {
+    fetch(endpoint)
+        .then(r => r.json())
+        .then(data => {
+            const logEl = document.getElementById('liveLog');
+            const newLines = data.log.slice(_logLen);
+            if (newLines.length) {
+                if (_logLen === 0) logEl.textContent = '';
+                logEl.textContent += newLines.join('\n') + '\n';
+                _logLen = data.log.length;
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            if (data.running) {
+                setTimeout(() => pollOperationStatus(endpoint, type), 1500);
+            } else {
+                _setOperationRunning(false);
+                if (data.success !== null) _setOperationBadge(data.success, type);
+            }
+        })
+        .catch(() => setTimeout(() => pollOperationStatus(endpoint, type), 3000));
+}
+
+function startUpgrade(e) {
+    const protType = document.querySelector('input[name="elk_protection_type"]:checked');
+    const ptype = protType ? protType.value : 'snapshot';
+    const skipEl = document.getElementById('skipProtection');
+    const skipProtection = skipEl && skipEl.checked;
+    const deployMethod = document.getElementById('deployMethod').value;
+    const protLine = skipProtection
+        ? '1. \u26a0\ufe0f  Snapshot/backup SKIPPED\n'
+        : '1. ' + (ptype === 'backup' ? 'Backup' : 'Snapshot') + ' Elk guest\n';
+    let steps;
+    if (deployMethod === 'bare-metal') {
+        steps = protLine
+            + '2. Pull latest code (git pull)\n'
+            + '3. Install dependencies (pnpm install)\n'
+            + '4. Rebuild (pnpm build)\n'
+            + '5. Restart Elk service\n';
+    } else {
+        steps = protLine
+            + '2. Pull latest code (git pull)\n'
+            + '3. Rebuild Docker containers\n';
+    }
+    const msg = 'This will:\n' + steps + '\n'
+        + (skipProtection ? '\u26a0\ufe0f  WARNING: No snapshot or backup will be taken. Continue?\n' : 'Continue?');
+    if (!confirm(msg)) return false;
+
+    _logLen = 0;
+    document.getElementById('liveLog').textContent = 'Starting upgrade\u2026\n';
+    document.getElementById('operationStatusBadge').innerHTML = '';
+    _setOperationRunning(true);
+    document.getElementById('logCard').scrollIntoView({behavior: 'smooth'});
+    setTimeout(() => pollOperationStatus('/elk/upgrade/status', 'upgrade'), 1500);
+    return true;
+}
+
+function startInstall(e) {
+    const deployMethod = document.getElementById('deployMethod').value;
+    let steps;
+    if (deployMethod === 'bare-metal') {
+        steps = '1. Snapshot/backup guest\n'
+            + '2. Clone Elk repository\n'
+            + '3. Create .env configuration\n'
+            + '4. Install dependencies (pnpm install)\n'
+            + '5. Build (pnpm build)\n'
+            + '6. Create systemd service\n'
+            + '7. Verify deployment\n';
+    } else {
+        steps = '1. Snapshot/backup guest\n'
+            + '2. Clone Elk repository\n'
+            + '3. Create .env configuration\n'
+            + '4. Build and start Docker containers\n'
+            + '5. Verify deployment\n';
+    }
+    const msg = 'This will install Elk:\n' + steps + '\nContinue?';
+    if (!confirm(msg)) return false;
+
+    _logLen = 0;
+    document.getElementById('liveLog').textContent = 'Starting installation\u2026\n';
+    document.getElementById('operationStatusBadge').innerHTML = '';
+    _setOperationRunning(true);
+    document.getElementById('logCard').scrollIntoView({behavior: 'smooth'});
+    setTimeout(() => pollOperationStatus('/elk/install/status', 'install'), 1500);
+    return true;
+}
+
+// On page load: resume any in-progress operation
+function _resumeIfRunning() {
+    // Check all three endpoints
+    Promise.all([
+        fetch('/elk/upgrade/status').then(r => r.json()),
+        fetch('/elk/install/status').then(r => r.json()),
+        fetch('/elk/preflight/status').then(r => r.json()),
+    ]).then(([upgrade, install, preflight]) => {
+        if (upgrade.running) {
+            _logLen = 0;
+            document.getElementById('liveLog').textContent = '';
+            document.getElementById('operationStatusBadge').innerHTML = '';
+            _setOperationRunning(true);
+            pollOperationStatus('/elk/upgrade/status', 'upgrade');
+        } else if (install.running) {
+            _logLen = 0;
+            document.getElementById('liveLog').textContent = '';
+            document.getElementById('operationStatusBadge').innerHTML = '';
+            _setOperationRunning(true);
+            pollOperationStatus('/elk/install/status', 'install');
+        } else if (preflight.running) {
+            _preflightLogLen = 0;
+            document.getElementById('liveLog').textContent = '';
+            document.getElementById('operationStatusBadge').innerHTML = '';
+            _setOperationRunning(true);
+            const preflightBtn = document.getElementById('preflightBtn');
+            if (preflightBtn) preflightBtn.disabled = true;
+            pollPreflightStatus();
+        } else {
+            // Show latest completed log if available
+            if (upgrade.log && upgrade.log.length) {
+                document.getElementById('liveLog').textContent = upgrade.log.join('\n');
+                _logLen = upgrade.log.length;
+                if (upgrade.success !== null) _setOperationBadge(upgrade.success, 'upgrade');
+            } else if (install.log && install.log.length) {
+                document.getElementById('liveLog').textContent = install.log.join('\n');
+                _logLen = install.log.length;
+                if (install.success !== null) _setOperationBadge(install.success, 'install');
+            }
+        }
+    }).catch(() => {});
+}
+_resumeIfRunning();
+</script>
+{% endblock %}
