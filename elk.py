@@ -825,7 +825,7 @@ def run_elk_install(log_callback=None):
                 # --- Step 6: Build ---
                 step = 6
                 log(f"=== Step {step}: Building Elk (pnpm build) ===")
-                build_cmd = f"cd {elk_dir} && pnpm build"
+                build_cmd = f"cd {elk_dir} && NODE_OPTIONS=--max-old-space-size=4096 pnpm build"
                 log(f"Running: {build_cmd}")
                 stdout, stderr, code = ssh.execute_sudo(build_cmd, timeout=600)
                 _log_cmd_output(log, stdout, stderr, code, max_chars=4000)
@@ -1034,7 +1034,7 @@ def run_elk_upgrade(log_callback=None, skip_protection=False):
                 # --- Step 4: Rebuild ---
                 step = 4
                 log(f"=== Step {step}: Building Elk (pnpm build) ===")
-                build_cmd = f"cd {elk_dir} && pnpm build"
+                build_cmd = f"cd {elk_dir} && NODE_OPTIONS=--max-old-space-size=4096 pnpm build"
                 log(f"Running: {build_cmd}")
                 stdout, stderr, code = ssh.execute_sudo(build_cmd, timeout=600)
                 _log_cmd_output(log, stdout, stderr, code, max_chars=4000)
