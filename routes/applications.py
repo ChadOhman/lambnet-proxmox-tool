@@ -34,5 +34,12 @@ def index():
             "current_version": Setting.get("peertube_current_version", ""),
             "latest_version": Setting.get("peertube_latest_version", ""),
         },
+        "elk": {
+            "auto_upgrade": Setting.get("elk_auto_upgrade", "false") == "true",
+            "update_available": Setting.get("elk_update_available", "false") == "true",
+            "current_version": Setting.get("elk_current_version", ""),
+            "latest_version": Setting.get("elk_latest_version", ""),
+            "installed": Setting.get("elk_installed", "false") == "true",
+        },
     }
     return render_template("applications.html", apps=apps)

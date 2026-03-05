@@ -10,6 +10,7 @@ omit = [
     "pbs_client.py",
     "mastodon.py",
     "ghost.py",
+    "elk.py",
     "unifi_client.py",
     "unifi_geoip.py",
 ]

@@ -201,6 +201,7 @@ class TestInitScheduler:
             "service_health",
             "app_update_check",
             "audit_log_purge",
+            "elk_check",
             "unifi_event_poll",
             "unifi_log_purge",
         }
@@ -411,7 +412,7 @@ class TestRescheduleJobs:
 
         sched_mod.reschedule_jobs(6, 4, 5)
 
-        assert mock_sched.reschedule_job.call_count == 7
+        assert mock_sched.reschedule_job.call_count == 8
 
     def test_reschedules_scan_all_with_new_interval(self):
         import scheduler as sched_mod
