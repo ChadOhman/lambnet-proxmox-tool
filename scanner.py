@@ -2,6 +2,7 @@ import re
 import base64
 import json
 import logging
+import shlex
 from datetime import datetime, timezone
 from models import db, Guest, UpdatePackage, ScanResult, GuestService
 from ssh_client import SSHClient
@@ -1111,11 +1112,12 @@ def _execute_on_guest(guest):
             if node:
                 # Update apt
                 client.exec_guest_agent(node, guest.vmid, "apt-get update -qq")
-                # Get upgradable
-                stdout, err = client.exec_guest_agent(node, guest.vmid, "apt list --upgradable 2>/dev/null")
+                # Get upgradable — no shell redirection needed; agent separates stdout/stderr
+                stdout, err = client.exec_guest_agent(node, guest.vmid, "apt list --upgradable")
                 if err is None:
-                    sec_out, _ = client.exec_guest_agent(node, guest.vmid,
-                                                         "apt-get -s upgrade 2>/dev/null | grep -i security")
+                    # Pipe requires a shell; wrap in sh -c
+                    sec_cmd = "apt-get -s upgrade 2>/dev/null | grep -i security"
+                    sec_out, _ = client.exec_guest_agent(node, guest.vmid, f"sh -c {shlex.quote(sec_cmd)}")
                     return stdout, sec_out, None
                 return None, None, f"Agent exec failed: {err}"
             return None, None, f"Could not find VM {guest.vmid} on any node"
@@ -1157,7 +1159,8 @@ def _execute_command(guest, command, timeout=60, sudo=False):
             client = ProxmoxClient(guest.proxmox_host)
             node = client.find_guest_node(guest.vmid)
             if node:
-                stdout, err = client.exec_guest_agent(node, guest.vmid, command)
+                # Wrap in sh -c so shell features (redirects, pipes, ||) work via guest agent
+                stdout, err = client.exec_guest_agent(node, guest.vmid, f"sh -c {shlex.quote(command)}")
                 return stdout, err
             return None, f"Could not find VM {guest.vmid} on any node"
         except Exception as e:
