@@ -156,6 +156,51 @@ def _check_ghost_release(app):
                 logger.error("Ghost auto-upgrade failed")
 
 
+def _check_peertube_release(app):
+    """Check for new PeerTube releases and optionally auto-upgrade."""
+    with app.app_context():
+        from models import Setting
+
+        # Only check if a PeerTube guest is configured
+        if not Setting.get("peertube_guest_id"):
+            return
+
+        from peertube import check_peertube_release
+        update_available, latest, release_url = check_peertube_release()
+
+        if not update_available:
+            return
+
+        current = Setting.get("peertube_current_version", "")
+        logger.info(f"PeerTube update available: v{current} -> v{latest}")
+
+        # Send Discord notification (only if not already notified for this version)
+        last_notified = Setting.get("peertube_last_notified_version", "")
+        if latest != last_notified:
+            from notifier import send_peertube_update_notification
+            ok, _msg = send_peertube_update_notification(current, latest, release_url)
+            if ok:
+                Setting.set("peertube_last_notified_version", latest)
+
+        # Auto-upgrade if enabled
+        if Setting.get("peertube_auto_upgrade", "false") == "true":
+            logger.info("Auto-upgrade enabled, starting PeerTube upgrade...")
+            from peertube import run_peertube_upgrade
+            from audit import log_action
+            from models import db
+            from notifier import send_upgrade_started_notification, send_upgrade_result_notification
+            send_upgrade_started_notification("peertube", latest, "auto")
+            ok, log_output = run_peertube_upgrade()
+            log_action("peertube_upgrade", "settings", resource_name="peertube",
+                       details={"status": "success" if ok else "error", "trigger": "auto"})
+            db.session.commit()
+            send_upgrade_result_notification("peertube", latest, ok, "auto")
+            if ok:
+                logger.info("PeerTube auto-upgrade completed successfully")
+            else:
+                logger.error("PeerTube auto-upgrade failed")
+
+
 def _run_discovery(app):
     """Refresh guest discovery for all Proxmox hosts."""
     with app.app_context():
@@ -599,6 +644,17 @@ def init_scheduler(app):
         max_instances=1,
     )
 
+    # PeerTube release check - runs alongside the scan job
+    _scheduler.add_job(
+        _check_peertube_release,
+        trigger=IntervalTrigger(hours=interval_hours),
+        args=[app],
+        id="peertube_check",
+        name="Check for PeerTube releases",
+        replace_existing=True,
+        max_instances=1,
+    )
+
     # Host update check - runs alongside the guest scan
     _scheduler.add_job(
         _check_host_updates,
@@ -666,7 +722,7 @@ def init_scheduler(app):
     )
 
     _scheduler.start()
-    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, ghost check every {interval_hours}h, host update check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
+    logger.info(f"Scheduler started: discovery every {discovery_hours}h, scan every {interval_hours}h, auto-update check every 15m, service check every {service_check_minutes}m, mastodon check every {interval_hours}h, ghost check every {interval_hours}h, peertube check every {interval_hours}h, host update check every {interval_hours}h, app update check every 6h, unifi event poll every {unifi_poll_minutes}m")
 
     return _scheduler
 
@@ -678,6 +734,7 @@ def reschedule_jobs(interval_hours, discovery_hours, service_check_minutes):
     _scheduler.reschedule_job("scan_all", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("mastodon_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("ghost_check", trigger=IntervalTrigger(hours=interval_hours))
+    _scheduler.reschedule_job("peertube_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("host_update_check", trigger=IntervalTrigger(hours=interval_hours))
     _scheduler.reschedule_job("discovery", trigger=IntervalTrigger(hours=discovery_hours))
     _scheduler.reschedule_job("service_health", trigger=IntervalTrigger(minutes=service_check_minutes))
