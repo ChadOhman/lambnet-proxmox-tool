@@ -2,9 +2,9 @@
 Mastodon (glitch-soc) upgrade automation.
 
 Checks the mastodon/mastodon GitHub repo for new releases, takes Proxmox
-snapshots of the app and database guests, then runs the full glitch-soc
-upgrade procedure via SSH including git stash/pop, PGBouncer-to-direct-DB
-swap for migrations, and service restarts.
+snapshots of the app and database guests, creates a pg_dump backup, then
+runs the full glitch-soc upgrade procedure via SSH including git stash/pop,
+PGBouncer-to-direct-DB swap for migrations, and service restarts.
 """
 
 import json
@@ -352,6 +352,7 @@ def _get_mastodon_config():
     return {
         "guest_id": Setting.get("mastodon_guest_id", ""),
         "db_guest_id": Setting.get("mastodon_db_guest_id", ""),
+        "db_name": Setting.get("mastodon_db_name", "mastodon_production"),
         "user": Setting.get("mastodon_user", "mastodon"),
         "app_dir": Setting.get("mastodon_app_dir", "/home/mastodon/live"),
         "branch": Setting.get("mastodon_branch", ""),
@@ -773,6 +774,39 @@ def run_mastodon_preflight(log_callback=None):
             except Exception as e:
                 check(f"[VM2] SSH connection to {mastodon_guest_2.name}", False, str(e))
 
+    # ── E. SSH checks on DB guest (pg_dump readiness) ────────────────────────
+    if db_guest and db_guest.ip_address:
+        log("")
+        log(f"--- E. SSH checks on {db_guest.name} (database) ---")
+        db_credential = db_guest.credential
+        if not db_credential:
+            db_credential = Credential.query.filter_by(is_default=True).first()
+
+        if not db_credential:
+            check("SSH credential for DB guest", False, "no credential configured")
+        else:
+            try:
+                with SSHClient.from_credential(db_guest.ip_address, db_credential) as ssh:
+                    check("SSH connection to DB guest", True)
+
+                    # PostgreSQL running check
+                    stdout, stderr, code = ssh.execute_sudo(
+                        "systemctl is-active postgresql 2>/dev/null", timeout=10
+                    )
+                    pg_status = (stdout or "").strip()
+                    check("PostgreSQL service active", pg_status == "active",
+                          f"status: {pg_status or 'unknown'}")
+
+                    # pg_dump available
+                    stdout, stderr, code = ssh.execute_sudo(
+                        "which pg_dump 2>/dev/null && echo ok", timeout=10
+                    )
+                    check("pg_dump available", code == 0 and "ok" in (stdout or ""),
+                          "pg_dump not found on PATH")
+
+            except Exception as e:
+                check("SSH connection to DB guest", False, str(e))
+
     # ── Final summary ─────────────────────────────────────────────────────────
     log("")
     status_word = "upgrade blocked" if checks_failed > 0 else "ready to upgrade"
@@ -832,11 +866,13 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
     user = config["user"]
     app_dir = config["app_dir"]
     branch = (config.get("branch") or "").strip()
+    db_name = config["db_name"]
 
     # Validate shell-interpolated values to prevent command injection
     try:
         _validate_shell_param(user, "Mastodon user")
         _validate_shell_param(app_dir, "Mastodon app_dir")
+        _validate_shell_param(db_name, "Database name")
         if branch:
             _validate_shell_param(branch, "Git branch")
     except ValueError as e:
@@ -919,8 +955,39 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
             if not ok:
                 return False, "\n".join(log_lines)
 
-    # --- Step 2: SSH upgrade sequence ---
-    log("=== Step 2: Connecting to Mastodon guest via SSH ===")
+    # --- Step 2: pg_dump backup ---
+    if db_guest and db_guest.ip_address:
+        log("=== Step 2: PostgreSQL backup (pg_dump) ===")
+        db_credential = db_guest.credential
+        if not db_credential:
+            db_credential = Credential.query.filter_by(is_default=True).first()
+
+        if db_credential:
+            try:
+                with SSHClient.from_credential(db_guest.ip_address, db_credential) as ssh:
+                    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    dump_file = f"/tmp/mastodon_backup_{timestamp}.sql"  # nosec B108 — remote SSH path, not a local temp file
+                    dump_cmd = f"su - postgres -c 'pg_dump {db_name} > {dump_file}'"
+                    log(f"Running: pg_dump {db_name} > {dump_file}")
+                    stdout, stderr, code = ssh.execute_sudo(dump_cmd, timeout=300)
+                    if code == 0:
+                        log(f"Database backup saved to {dump_file}")
+                    else:
+                        log(f"WARNING: pg_dump failed (exit {code})")
+                        _log_cmd_output(log, stdout, stderr, code, max_chars=1000)
+                        log("Continuing with upgrade despite pg_dump failure...")
+            except Exception as e:
+                log(f"WARNING: Could not connect to DB guest for pg_dump: {e}")
+                log("Continuing with upgrade...")
+        else:
+            log("WARNING: No SSH credential for DB guest — skipping pg_dump")
+        log("")
+    else:
+        log("=== Step 2: Skipping pg_dump (no DB guest IP configured) ===")
+        log("")
+
+    # --- Step 3: SSH upgrade sequence ---
+    log("=== Step 3: Connecting to Mastodon guest via SSH ===")
 
     env_swapped = False
 
@@ -1159,9 +1226,9 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
                 log("WARNING: Could not restore .env.production after failure")
         return False, "\n".join(log_lines)
 
-    # --- Step 3: Sync code to second Mastodon app guest (if configured) ---
+    # --- Step 4: Sync code to second Mastodon app guest (if configured) ---
     if mastodon_guest_2:
-        log(f"=== Step 3: Syncing code to second Mastodon guest '{mastodon_guest_2.name}' ===")
+        log(f"=== Step 4: Syncing code to second Mastodon guest '{mastodon_guest_2.name}' ===")
         ok = _run_second_guest_sync(mastodon_guest_2, user, app_dir, log, branch=branch)
         if not ok:
             log(f"WARNING: Code sync to '{mastodon_guest_2.name}' failed — primary upgrade was successful")

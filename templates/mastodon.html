@@ -54,7 +54,14 @@
                             </option>
                             {% endfor %}
                         </select>
-                        <div class="form-text">The VM/CT running PostgreSQL.</div>
+                        <div class="form-text">The VM/CT running PostgreSQL. A pg_dump backup will be created before upgrading.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Database Name</label>
+                        <input type="text" class="form-control font-monospace" name="mastodon_db_name"
+                               value="{{ settings.db_name or 'mastodon_production' }}" placeholder="mastodon_production">
+                        <div class="form-text">PostgreSQL database name for pg_dump backup.</div>
                     </div>
 
                     <div class="mb-3">

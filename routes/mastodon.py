@@ -122,6 +122,7 @@ def save():
     Setting.set("mastodon_guest_id", request.form.get("mastodon_guest_id", "").strip())
     Setting.set("mastodon_guest_id_2", request.form.get("mastodon_guest_id_2", "").strip())
     Setting.set("mastodon_db_guest_id", request.form.get("mastodon_db_guest_id", "").strip())
+    Setting.set("mastodon_db_name", request.form.get("mastodon_db_name", "mastodon_production").strip() or "mastodon_production")
     Setting.set("mastodon_user", request.form.get("mastodon_user", "mastodon").strip())
     Setting.set("mastodon_app_dir", request.form.get("mastodon_app_dir", "/home/mastodon/live").strip())
     Setting.set("mastodon_repo", request.form.get("mastodon_repo", "mastodon/mastodon").strip())
