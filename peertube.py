@@ -622,7 +622,7 @@ def run_peertube_upgrade(log_callback=None, skip_protection=False):
             try:
                 with SSHClient.from_credential(db_guest.ip_address, db_credential) as ssh:
                     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                    dump_file = f"/tmp/peertube_backup_{timestamp}.sql"
+                    dump_file = f"/tmp/peertube_backup_{timestamp}.sql"  # nosec B108 — remote SSH path, not a local temp file
                     dump_cmd = f"su - postgres -c 'pg_dump {db_name} > {dump_file}'"
                     log(f"Running: pg_dump {db_name} > {dump_file}")
                     stdout, stderr, code = ssh.execute_sudo(dump_cmd, timeout=300)
