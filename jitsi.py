@@ -143,6 +143,7 @@ def check_jitsi_release():
 def _snapshot_jitsi_guest(guest):
     """Create a Proxmox snapshot of a guest before Jitsi install/upgrade.
 
+    Polls until the snapshot task completes (up to 5 minutes).
     Returns (success, message).
     """
     if not guest.proxmox_host:
@@ -157,7 +158,25 @@ def _snapshot_jitsi_guest(guest):
     snapname = f"pre-jitsi-{timestamp}"
     description = f"Auto-snapshot before Jitsi install/upgrade at {timestamp}"
 
-    return client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+    ok, upid = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+    if not ok:
+        return False, f"Failed to start snapshot: {upid}"
+
+    # Poll until snapshot completes
+    deadline = time.time() + 300  # 5 minutes
+    while time.time() < deadline:
+        time.sleep(2)
+        try:
+            status = client.get_task_status(node, upid)
+            if status.get("status") == "stopped":
+                exit_status = status.get("exitstatus", "")
+                if exit_status == "OK":
+                    return True, f"Snapshot {snapname} of '{guest.name}' completed"
+                return False, f"Snapshot task failed: {exit_status}"
+        except Exception as e:
+            logger.debug("Error polling snapshot task for %s: %s", guest.name, e)
+
+    return False, "Snapshot timed out after 5 minutes"
 
 
 def _backup_jitsi_guest(guest, storage, mode="snapshot"):
