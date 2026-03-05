@@ -330,10 +330,15 @@
                         {% endif %}
                         guest
                     </li>
+                    {% if settings.deploy_method == 'bare-metal' %}
+                    <li>Install prerequisites: git, Node.js 20.x, corepack/pnpm, system user</li>
+                    {% else %}
+                    <li>Verify Docker and Docker Compose available</li>
+                    {% endif %}
                     <li>Clone <code>elk-zone/elk</code> to <code>{{ settings.elk_dir or '/opt/elk' }}</code></li>
                     <li>Create <code>.env</code> with Mastodon instance URL</li>
                     {% if settings.deploy_method == 'bare-metal' %}
-                    <li>Enable corepack, run <code>pnpm install</code></li>
+                    <li>Install dependencies: <code>pnpm install</code></li>
                     <li>Build: <code>pnpm build</code></li>
                     <li>Create and start <code>elk.service</code> systemd unit</li>
                     {% else %}

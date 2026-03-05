@@ -433,25 +433,42 @@ def run_elk_preflight(log_callback=None):
                         else:
                             log("  [WARN] Could not determine Docker container state")
                 else:
-                    # Node.js version
+                    # Node.js version — informational for fresh installs
+                    # (the install process will install Node.js if missing)
                     stdout, stderr, code = ssh.execute_sudo(
                         "node --version 2>/dev/null", timeout=10
                     )
                     if code == 0 and stdout.strip():
                         m = re.search(r'v?(\d+\.\d+\.\d+)', stdout.strip())
                         node_ver = m.group(1) if m else stdout.strip()
-                        check("Node.js installed", True)
                         log(f"  [INFO] Node.js {node_ver} installed")
-                    else:
+                    elif installed:
                         check("Node.js installed", False, "node command not found")
+                    else:
+                        log("  [INFO] Node.js not found — will be installed during install")
 
-                    # corepack
+                    # corepack — informational for fresh installs
                     stdout, stderr, code = ssh.execute_sudo(
                         "corepack --version 2>/dev/null", timeout=10
                     )
-                    check("corepack available",
-                          code == 0 and stdout and stdout.strip(),
-                          "corepack not found — run 'npm install -g corepack' or upgrade Node.js")
+                    if code == 0 and stdout and stdout.strip():
+                        log(f"  [INFO] corepack {stdout.strip()} available")
+                    elif installed:
+                        check("corepack available", False,
+                              "corepack not found — run 'npm install -g corepack' or upgrade Node.js")
+                    else:
+                        log("  [INFO] corepack not found — will be installed during install")
+
+                    # git — required for clone/pull
+                    stdout, stderr, code = ssh.execute_sudo(
+                        "git --version 2>/dev/null", timeout=10
+                    )
+                    if code == 0 and stdout and stdout.strip():
+                        log(f"  [INFO] {stdout.strip()}")
+                    elif installed:
+                        log("  [WARN] git not found")
+                    else:
+                        log("  [INFO] git not found — will be installed during install")
 
                     # If installed, check service status
                     if installed:
@@ -541,11 +558,12 @@ def run_elk_install(log_callback=None):
 
     Steps:
     1. Snapshot or backup the guest.
-    2. Clone the Elk repository.
-    3. Create .env with Mastodon instance configuration.
-    4. Deploy (Docker: docker compose up, Bare-metal: pnpm install + build + systemd).
-    5. Verify the deployment.
-    6. Detect and persist the installed version.
+    2. Install prerequisites (bare-metal: git, Node.js, corepack, system user;
+       Docker: verify Docker/Compose available).
+    3. Clone the Elk repository.
+    4. Create .env with Mastodon instance configuration.
+    5-8. Deploy (Docker: docker compose up, Bare-metal: pnpm install + build + systemd).
+    Final. Detect and persist the installed version.
 
     Returns (ok: bool, log_output: str).
     """
@@ -594,8 +612,116 @@ def run_elk_install(log_callback=None):
 
     try:
         with SSHClient.from_credential(app_guest.ip_address, credential) as ssh:
-            # --- Step 2: Clone repository ---
+            # --- Step 2: Install prerequisites ---
             step = 2
+            if deploy_method == "bare-metal":
+                log(f"=== Step {step}: Installing prerequisites ===")
+
+                # Check and install git if missing
+                stdout, stderr, code = ssh.execute_sudo(
+                    "which git 2>/dev/null", timeout=10
+                )
+                if code != 0:
+                    log("git not found — installing...")
+                    stdout, stderr, code = ssh.execute_sudo(
+                        "apt-get update -qq && apt-get install -y -qq git",
+                        timeout=120,
+                    )
+                    _log_cmd_output(log, stdout, stderr, code, max_chars=1000)
+                    if code != 0:
+                        log(f"ERROR: Failed to install git (exit {code})")
+                        return False, "\n".join(log_lines)
+                    log("git installed")
+                else:
+                    log("git already installed")
+
+                # Check and install Node.js if missing
+                stdout, stderr, code = ssh.execute_sudo(
+                    "node --version 2>/dev/null", timeout=10
+                )
+                if code != 0:
+                    log("Node.js not found — installing via NodeSource...")
+                    # Install Node.js 20.x LTS via NodeSource
+                    node_setup_cmds = (
+                        "apt-get update -qq && apt-get install -y -qq ca-certificates curl gnupg"
+                        " && mkdir -p /etc/apt/keyrings"
+                        " && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
+                        " | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg --yes"
+                        " && echo 'deb [signed-by=/etc/apt/keyrings/nodesource.gpg]"
+                        " https://deb.nodesource.com/node_20.x nodistro main'"
+                        " > /etc/apt/sources.list.d/nodesource.list"
+                        " && apt-get update -qq && apt-get install -y -qq nodejs"
+                    )
+                    stdout, stderr, code = ssh.execute_sudo(node_setup_cmds, timeout=180)
+                    _log_cmd_output(log, stdout, stderr, code, max_chars=2000)
+                    if code != 0:
+                        log(f"ERROR: Failed to install Node.js (exit {code})")
+                        return False, "\n".join(log_lines)
+
+                    # Verify Node.js installed
+                    stdout, stderr, code = ssh.execute_sudo("node --version", timeout=10)
+                    if code == 0 and stdout.strip():
+                        log(f"Node.js {stdout.strip()} installed")
+                    else:
+                        log("ERROR: Node.js installation verification failed")
+                        return False, "\n".join(log_lines)
+                else:
+                    log(f"Node.js {(stdout or '').strip()} already installed")
+
+                # Enable corepack (ships with Node.js 16.9+)
+                stdout, stderr, code = ssh.execute_sudo("corepack enable", timeout=30)
+                if code != 0:
+                    log(f"WARNING: corepack enable failed (exit {code}) — trying npm install")
+                    _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                    # Fallback: install corepack via npm
+                    stdout, stderr, code = ssh.execute_sudo(
+                        "npm install -g corepack && corepack enable", timeout=60
+                    )
+                    if code != 0:
+                        log(f"ERROR: Failed to install corepack (exit {code})")
+                        _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                        return False, "\n".join(log_lines)
+                log("corepack enabled (pnpm available)")
+
+                # Ensure the system user exists
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"id {user} 2>/dev/null", timeout=10
+                )
+                if code != 0:
+                    log(f"Creating system user '{user}'...")
+                    stdout, stderr, code = ssh.execute_sudo(
+                        f"useradd --system --create-home --shell /bin/bash {user}",
+                        timeout=10,
+                    )
+                    if code != 0:
+                        log(f"ERROR: Failed to create user '{user}' (exit {code})")
+                        _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+                        return False, "\n".join(log_lines)
+                    log(f"User '{user}' created")
+                else:
+                    log(f"User '{user}' already exists")
+
+                log("")
+            else:
+                log(f"=== Step {step}: Checking prerequisites ===")
+                # Docker path: verify Docker is available
+                stdout, stderr, code = ssh.execute_sudo(
+                    "docker --version 2>/dev/null", timeout=10
+                )
+                if code != 0:
+                    log("ERROR: Docker is not installed on the guest")
+                    return False, "\n".join(log_lines)
+                stdout, stderr, code = ssh.execute_sudo(
+                    "docker compose version 2>/dev/null", timeout=10
+                )
+                if code != 0:
+                    log("ERROR: Docker Compose is not available")
+                    return False, "\n".join(log_lines)
+                log("Docker and Docker Compose available")
+                log("")
+
+            # --- Step 3: Clone repository ---
+            step = 3
             log(f"=== Step {step}: Cloning Elk repository ===")
 
             # Check if directory already exists
@@ -616,8 +742,8 @@ def run_elk_install(log_callback=None):
             log("Repository cloned successfully")
             log("")
 
-            # --- Step 3: Create .env ---
-            step = 3
+            # --- Step 4: Create .env ---
+            step = 4
             log(f"=== Step {step}: Creating .env configuration ===")
             env_lines = []
             if instance_url:
@@ -639,8 +765,8 @@ def run_elk_install(log_callback=None):
             log("")
 
             if deploy_method == "docker":
-                # --- Step 4: Docker Compose build and start ---
-                step = 4
+                # --- Step 5: Docker Compose build and start ---
+                step = 5
                 log(f"=== Step {step}: Building and starting Docker containers ===")
 
                 # Create local storage directory with correct permissions
@@ -661,8 +787,8 @@ def run_elk_install(log_callback=None):
                 log("Docker containers started")
                 log("")
 
-                # --- Step 5: Verify container ---
-                step = 5
+                # --- Step 6: Verify container ---
+                step = 6
                 log(f"=== Step {step}: Verifying Docker container ===")
                 time.sleep(5)
                 stdout, stderr, code = ssh.execute_sudo(
@@ -678,15 +804,9 @@ def run_elk_install(log_callback=None):
                 log("")
 
             else:
-                # --- Step 4: Bare-metal install ---
-                step = 4
+                # --- Step 5: Bare-metal install ---
+                step = 5
                 log(f"=== Step {step}: Installing dependencies (pnpm install) ===")
-
-                # Ensure corepack is enabled
-                stdout, stderr, code = ssh.execute_sudo("corepack enable", timeout=30)
-                if code != 0:
-                    log(f"WARNING: corepack enable failed (exit {code})")
-                    _log_cmd_output(log, stdout, stderr, code, max_chars=500)
 
                 install_cmd = f"cd {elk_dir} && pnpm install"
                 log(f"Running: {install_cmd}")
@@ -698,8 +818,8 @@ def run_elk_install(log_callback=None):
                 log("Dependencies installed")
                 log("")
 
-                # --- Step 5: Build ---
-                step = 5
+                # --- Step 6: Build ---
+                step = 6
                 log(f"=== Step {step}: Building Elk (pnpm build) ===")
                 build_cmd = f"cd {elk_dir} && pnpm build"
                 log(f"Running: {build_cmd}")
@@ -711,8 +831,8 @@ def run_elk_install(log_callback=None):
                 log("Build completed")
                 log("")
 
-                # --- Step 6: Create systemd service ---
-                step = 6
+                # --- Step 7: Create systemd service ---
+                step = 7
                 log(f"=== Step {step}: Creating systemd service ===")
                 unit_content = _ELK_SYSTEMD_UNIT.format(user=user, elk_dir=elk_dir)
                 # Escape for shell
@@ -743,8 +863,8 @@ def run_elk_install(log_callback=None):
                 log("Elk systemd service created and started")
                 log("")
 
-                # --- Step 7: Verify service ---
-                step = 7
+                # --- Step 8: Verify service ---
+                step = 8
                 log(f"=== Step {step}: Verifying Elk service ===")
                 time.sleep(3)
                 stdout, stderr, code = ssh.execute_sudo(
