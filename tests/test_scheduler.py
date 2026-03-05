@@ -196,6 +196,7 @@ class TestInitScheduler:
             "auto_update",
             "mastodon_check",
             "ghost_check",
+            "peertube_check",
             "host_update_check",
             "service_health",
             "app_update_check",
@@ -410,7 +411,7 @@ class TestRescheduleJobs:
 
         sched_mod.reschedule_jobs(6, 4, 5)
 
-        assert mock_sched.reschedule_job.call_count == 6
+        assert mock_sched.reschedule_job.call_count == 7
 
     def test_reschedules_scan_all_with_new_interval(self):
         import scheduler as sched_mod

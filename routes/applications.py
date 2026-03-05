@@ -28,5 +28,11 @@ def index():
             "current_version": Setting.get("ghost_current_version", ""),
             "latest_version": Setting.get("ghost_latest_version", ""),
         },
+        "peertube": {
+            "auto_upgrade": Setting.get("peertube_auto_upgrade", "false") == "true",
+            "update_available": Setting.get("peertube_update_available", "false") == "true",
+            "current_version": Setting.get("peertube_current_version", ""),
+            "latest_version": Setting.get("peertube_latest_version", ""),
+        },
     }
     return render_template("applications.html", apps=apps)
