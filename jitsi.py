@@ -652,19 +652,46 @@ def run_jitsi_install(log_callback=None):
 
     try:
         with SSHClient.from_credential(app_guest.ip_address, credential) as ssh:
-            # Note: We do NOT add the Prosody community repo (packages.prosody.im).
-            # Ubuntu Noble ships Prosody 0.12.x which satisfies Jitsi's dependency
-            # and works with Lua 5.1.  The community repo's Prosody 13.x is built
-            # against Lua 5.1 but no longer supports it, causing startup failures.
-            # Remove it if a previous attempt added it.
+            # Remove the Prosody community repo if a previous attempt added it.
             ssh.execute_sudo(
                 "rm -f /etc/apt/sources.list.d/prosody.list "
                 "/etc/apt/keyrings/prosody-keyring.gpg 2>/dev/null",
                 timeout=10
             )
 
-            # Step 2: Add Jitsi apt repository
-            log("=== Step 2: Adding Jitsi apt repository ===")
+            # Prosody 13.x (shipped by the Jitsi stable repo) requires Lua 5.2+.
+            # The luarocks dependency can pull in Lua 5.1 and set it as the system
+            # default via update-alternatives, which causes Prosody to fail with
+            # "Prosody is no longer compatible with Lua 5.1".  Fix: install lua5.4,
+            # set it as the default, and remove lua5.1 if present.
+            log("=== Step 2: Ensuring Lua 5.4 for Prosody 13.x ===")
+            ssh.execute_sudo("apt-get install -y lua5.4 2>&1", timeout=60)
+            ssh.execute_sudo(
+                "update-alternatives --set lua-interpreter /usr/bin/lua5.4 2>/dev/null || "
+                "update-alternatives --install /usr/bin/lua lua-interpreter /usr/bin/lua5.4 400 2>/dev/null",
+                timeout=10
+            )
+            # Remove lua5.1 if installed — it conflicts with Prosody 13.x
+            ssh.execute_sudo(
+                "apt-get remove -y lua5.1 liblua5.1-0 2>&1 || true",
+                timeout=30
+            )
+            log("Lua 5.4 installed and set as default")
+            log("")
+
+            # Force-purge any broken Prosody from a previous failed install
+            # (e.g. 13.x that failed to start due to Lua 5.1)
+            ssh.execute_sudo(
+                "dpkg --force-remove-reinstreq --purge prosody 2>&1 || true",
+                timeout=60
+            )
+            ssh.execute_sudo(
+                "DEBIAN_FRONTEND=noninteractive apt-get -f install -y 2>&1 || true",
+                timeout=120
+            )
+
+            # Step 3: Add Jitsi apt repository
+            log("=== Step 3: Adding Jitsi apt repository ===")
 
             stdout, stderr, code = ssh.execute_sudo(
                 "curl -fsSL https://download.jitsi.org/jitsi-key.gpg.key "
@@ -690,8 +717,8 @@ def run_jitsi_install(log_callback=None):
                 log("Jitsi repository added")
             log("")
 
-            # Step 3: Update apt cache
-            log("=== Step 3: Updating apt cache ===")
+            # Step 4: Update apt cache
+            log("=== Step 4: Updating apt cache ===")
             stdout, stderr, code = ssh.execute_sudo(
                 "apt-get update -qq 2>&1", timeout=120
             )
@@ -702,8 +729,8 @@ def run_jitsi_install(log_callback=None):
             log("apt cache updated")
             log("")
 
-            # Step 4: Preseed debconf
-            log("=== Step 4: Preseeding debconf ===")
+            # Step 5: Preseed debconf
+            log("=== Step 5: Preseeding debconf ===")
 
             # Preseed hostname
             stdout, stderr, code = ssh.execute_sudo(
@@ -740,20 +767,9 @@ def run_jitsi_install(log_callback=None):
                 log(f"debconf preseeded: hostname={hostname}, cert={cert_type}")
             log("")
 
-            # Step 5: Install jitsi-meet
-            log("=== Step 5: Installing jitsi-meet package ===")
+            # Step 6: Install jitsi-meet
+            log("=== Step 6: Installing jitsi-meet package ===")
             log("(This may take several minutes...)")
-            # Force-purge any broken/incompatible Prosody from a previous failed
-            # install (e.g. 13.x from the community repo with Lua 5.1 issues).
-            # --force-remove-reinstreq handles packages stuck in a broken dpkg state.
-            ssh.execute_sudo(
-                "dpkg --force-remove-reinstreq --purge prosody 2>&1 || true",
-                timeout=60
-            )
-            ssh.execute_sudo(
-                "DEBIAN_FRONTEND=noninteractive apt-get -f install -y 2>&1 || true",
-                timeout=120
-            )
             stdout, stderr, code = ssh.execute_sudo(
                 "DEBIAN_FRONTEND=noninteractive apt-get install -y jitsi-meet 2>&1",
                 timeout=600
@@ -765,9 +781,9 @@ def run_jitsi_install(log_callback=None):
             log("jitsi-meet package installed successfully")
             log("")
 
-            # Step 6: Let's Encrypt certificate (if requested)
+            # Step 7: Let's Encrypt certificate (if requested)
             if cert_type == "letsencrypt":
-                log("=== Step 6: Setting up Let's Encrypt certificate ===")
+                log("=== Step 7: Setting up Let's Encrypt certificate ===")
                 if letsencrypt_email:
                     le_cmd = (
                         f"echo '{letsencrypt_email}' | "
@@ -785,11 +801,11 @@ def run_jitsi_install(log_callback=None):
                     log("Let's Encrypt certificate installed successfully")
                 log("")
             else:
-                log("=== Step 6: Skipping Let's Encrypt (not selected) ===")
+                log("=== Step 7: Skipping Let's Encrypt (not selected) ===")
                 log("")
 
-            # Step 7: Configure UFW firewall
-            log("=== Step 7: Configuring firewall ===")
+            # Step 8: Configure UFW firewall
+            log("=== Step 8: Configuring firewall ===")
             stdout, stderr, code = ssh.execute_sudo(
                 "ufw status 2>/dev/null | head -1", timeout=10
             )
@@ -809,8 +825,8 @@ def run_jitsi_install(log_callback=None):
                 log("  Ensure ports 80/tcp, 443/tcp, 10000/udp, 5349/tcp are open")
             log("")
 
-            # Step 8: Verify services
-            log("=== Step 8: Verifying Jitsi services ===")
+            # Step 9: Verify services
+            log("=== Step 9: Verifying Jitsi services ===")
             all_active = True
             for svc in _JITSI_SERVICES:
                 stdout, stderr, code = ssh.execute_sudo(
@@ -836,8 +852,8 @@ def run_jitsi_install(log_callback=None):
                 log("WARNING: Not all services are active — Jitsi may not be fully functional")
             log("")
 
-            # Step 9: Detect and persist version
-            log("=== Step 9: Detecting installed version ===")
+            # Step 10: Detect and persist version
+            log("=== Step 10: Detecting installed version ===")
             stdout, stderr, code = ssh.execute_sudo(
                 "dpkg -s jitsi-meet 2>/dev/null | grep '^Version:'", timeout=10
             )
