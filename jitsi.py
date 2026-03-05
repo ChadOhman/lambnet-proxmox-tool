@@ -739,9 +739,27 @@ def run_jitsi_install(log_callback=None):
                 log(f"debconf preseeded: hostname={hostname}, cert={cert_type}")
             log("")
 
-            # Step 6: Install jitsi-meet
-            log("=== Step 6: Installing jitsi-meet package ===")
+            # Step 6: Install Lua 5.4 (Prosody 13.x requires Lua >= 5.2)
+            log("=== Step 6: Installing Lua 5.4 for Prosody ===")
+            stdout, stderr, code = ssh.execute_sudo(
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y lua5.4 2>&1",
+                timeout=120
+            )
+            _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+            if code != 0:
+                log(f"WARNING: lua5.4 install returned exit {code}")
+            else:
+                log("lua5.4 installed")
+            log("")
+
+            # Step 7: Install jitsi-meet
+            log("=== Step 7: Installing jitsi-meet package ===")
             log("(This may take several minutes...)")
+            # Fix any broken packages from a previous failed install
+            ssh.execute_sudo(
+                "DEBIAN_FRONTEND=noninteractive dpkg --configure -a 2>&1",
+                timeout=120
+            )
             stdout, stderr, code = ssh.execute_sudo(
                 "DEBIAN_FRONTEND=noninteractive apt-get install -y jitsi-meet 2>&1",
                 timeout=600
@@ -753,9 +771,9 @@ def run_jitsi_install(log_callback=None):
             log("jitsi-meet package installed successfully")
             log("")
 
-            # Step 7: Let's Encrypt certificate (if requested)
+            # Step 8: Let's Encrypt certificate (if requested)
             if cert_type == "letsencrypt":
-                log("=== Step 7: Setting up Let's Encrypt certificate ===")
+                log("=== Step 8: Setting up Let's Encrypt certificate ===")
                 if letsencrypt_email:
                     le_cmd = (
                         f"echo '{letsencrypt_email}' | "
@@ -773,11 +791,11 @@ def run_jitsi_install(log_callback=None):
                     log("Let's Encrypt certificate installed successfully")
                 log("")
             else:
-                log("=== Step 7: Skipping Let's Encrypt (not selected) ===")
+                log("=== Step 8: Skipping Let's Encrypt (not selected) ===")
                 log("")
 
-            # Step 8: Configure UFW firewall
-            log("=== Step 8: Configuring firewall ===")
+            # Step 9: Configure UFW firewall
+            log("=== Step 9: Configuring firewall ===")
             stdout, stderr, code = ssh.execute_sudo(
                 "ufw status 2>/dev/null | head -1", timeout=10
             )
@@ -797,8 +815,8 @@ def run_jitsi_install(log_callback=None):
                 log("  Ensure ports 80/tcp, 443/tcp, 10000/udp, 5349/tcp are open")
             log("")
 
-            # Step 9: Verify services
-            log("=== Step 9: Verifying Jitsi services ===")
+            # Step 10: Verify services
+            log("=== Step 10: Verifying Jitsi services ===")
             all_active = True
             for svc in _JITSI_SERVICES:
                 stdout, stderr, code = ssh.execute_sudo(
@@ -824,8 +842,8 @@ def run_jitsi_install(log_callback=None):
                 log("WARNING: Not all services are active — Jitsi may not be fully functional")
             log("")
 
-            # Step 10: Detect and persist version
-            log("=== Step 10: Detecting installed version ===")
+            # Step 11: Detect and persist version
+            log("=== Step 11: Detecting installed version ===")
             stdout, stderr, code = ssh.execute_sudo(
                 "dpkg -s jitsi-meet 2>/dev/null | grep '^Version:'", timeout=10
             )
