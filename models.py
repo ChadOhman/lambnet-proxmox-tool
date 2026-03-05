@@ -425,6 +425,21 @@ class Guest(db.Model):
         """Return pending updates whose package names suggest a reboot will be needed."""
         return [u for u in self.pending_updates() if u.package_name.startswith(_REBOOT_PKG_PREFIXES)]
 
+    def clear_stale_data(self):
+        """Remove scan results, update packages, and services. Reset scan state.
+
+        Used when VMID reuse is detected or when an admin manually resets a guest.
+        """
+        for sr in list(self.scan_results):
+            db.session.delete(sr)
+        for up in list(self.updates):
+            db.session.delete(up)
+        for svc in list(self.services):
+            db.session.delete(svc)
+        self.last_scan = None
+        self.status = "unknown"
+        self.reboot_required = False
+
     def __repr__(self):
         return f"<Guest {self.name} ({self.guest_type})>"
 

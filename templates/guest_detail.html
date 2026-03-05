@@ -39,6 +39,14 @@
             <button type="submit" class="btn btn-warning"><i class="bi bi-download"></i> Apply All Updates</button>
         </form>
         {% endif %}
+        {% if current_user.can_manage_guests %}
+        <form method="post" action="/guests/{{ guest.id }}/reset" class="d-inline"
+              data-confirm="Reset this guest? This will clear all scan results, update packages, and tracked services.">
+            <button type="submit" class="btn btn-outline-warning" aria-label="Reset guest data">
+                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Reset
+            </button>
+        </form>
+        {% endif %}
         <form method="post" action="/guests/{{ guest.id }}/delete" class="d-inline" data-confirm="Delete this guest?">
             <button type="submit" class="btn btn-outline-danger" aria-label="Delete guest"><i class="bi bi-trash" aria-hidden="true"></i></button>
         </form>
@@ -122,6 +130,16 @@
             <div class="card-header"><h5 class="mb-0">Edit Guest</h5></div>
             <div class="card-body">
                 <form method="post" action="/guests/{{ guest.id }}/edit">
+                    {% if current_user.can_manage_guests %}
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">Guest Type</label>
+                        <select class="form-select form-select-sm" name="guest_type">
+                            <option value="vm" {{ 'selected' if guest.guest_type == 'vm' }}>VM</option>
+                            <option value="ct" {{ 'selected' if guest.guest_type == 'ct' }}>CT</option>
+                        </select>
+                        <div class="form-text">Changing type will clear scan results, packages, and services.</div>
+                    </div>
+                    {% endif %}
                     <div class="mb-2">
                         <label class="form-label form-label-sm">Connection Method</label>
                         <select class="form-select form-select-sm" name="connection_method">

@@ -254,6 +254,7 @@ def discover(host_id):
         added = 0
         updated = 0
         skipped = 0
+        reused = 0
         for g in node_guests:
             vmid = g.get("vmid")
             status = g.get("status", "")
@@ -309,6 +310,25 @@ def discover(host_id):
                 for tag_name in tag_names:
                     guest.tags.append(_resolve_tag(tag_name))
             else:
+                # Detect VMID reuse: type changed means old guest was destroyed
+                # and a new one created with the same VMID
+                if existing.guest_type != g["type"]:
+                    old_type = existing.guest_type
+                    existing.guest_type = g["type"]
+                    existing.clear_stale_data()
+                    reused += 1
+                    logger.warning(
+                        "VMID %s on '%s': type changed %s -> %s (reuse detected, stale data cleared)",
+                        vmid, host.name, old_type, g["type"],
+                    )
+                    log_action("guest_vmid_reuse", "guest", resource_id=existing.id, resource_name=existing.name,
+                               details={"vmid": vmid, "old_type": old_type, "new_type": g["type"], "host": host.name})
+                    flash(
+                        f"VMID {vmid} on '{host.name}' changed from {old_type.upper()} to {g['type'].upper()}. "
+                        "Stale scan results, packages, and services have been cleared.",
+                        "warning",
+                    )
+
                 # Update IP, name, replication, MAC, power state, and tags
                 if ip:
                     existing.ip_address = ip
@@ -323,7 +343,7 @@ def discover(host_id):
                 updated += 1
 
         log_action("host_discover", "host", resource_id=host.id, resource_name=host.name,
-                   details={"added": added, "updated": updated, "removed": removed})
+                   details={"added": added, "updated": updated, "removed": removed, "reused": reused})
         db.session.commit()
         if len(node_guests) == 0:
             flash(
@@ -333,6 +353,8 @@ def discover(host_id):
             )
         else:
             msg = f"Discovered {len(node_guests)} guests on '{host.name}' node '{node_name}' ({added} new, {updated} updated)"
+            if reused:
+                msg += f", {reused} VMID reuse(s) detected"
             if skipped:
                 msg += f", {skipped} replicas skipped"
             if removed:
@@ -391,6 +413,7 @@ def discover_all():
 
             added = 0
             updated = 0
+            reused = 0
             for g in node_guests:
                 vmid = g.get("vmid")
                 status = g.get("status", "")
@@ -436,6 +459,24 @@ def discover_all():
                     for tag_name in tag_names:
                         guest.tags.append(_resolve_tag(tag_name))
                 else:
+                    # Detect VMID reuse: type changed means old guest was destroyed
+                    if existing.guest_type != g["type"]:
+                        old_type = existing.guest_type
+                        existing.guest_type = g["type"]
+                        existing.clear_stale_data()
+                        reused += 1
+                        logger.warning(
+                            "VMID %s on '%s': type changed %s -> %s (reuse detected, stale data cleared)",
+                            vmid, host.name, old_type, g["type"],
+                        )
+                        log_action("guest_vmid_reuse", "guest", resource_id=existing.id, resource_name=existing.name,
+                                   details={"vmid": vmid, "old_type": old_type, "new_type": g["type"], "host": host.name})
+                        flash(
+                            f"VMID {vmid} on '{host.name}' changed from {old_type.upper()} to {g['type'].upper()}. "
+                            "Stale scan results, packages, and services have been cleared.",
+                            "warning",
+                        )
+
                     if ip:
                         existing.ip_address = ip
                     existing.name = g.get("name", existing.name)
@@ -449,9 +490,12 @@ def discover_all():
                     updated += 1
 
             log_action("host_discover", "host", resource_id=host.id, resource_name=host.name,
-                       details={"added": added, "updated": updated})
+                       details={"added": added, "updated": updated, "reused": reused})
             db.session.commit()
-            flash(f"'{host.name}': {len(node_guests)} guests ({added} new, {updated} updated).", "success")
+            msg = f"'{host.name}': {len(node_guests)} guests ({added} new, {updated} updated)"
+            if reused:
+                msg += f", {reused} VMID reuse(s) detected"
+            flash(msg + ".", "success")
         except Exception as e:
             flash(f"Discovery failed for '{host.name}': {e}", "error")
 

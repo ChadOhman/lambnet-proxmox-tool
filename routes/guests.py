@@ -297,6 +297,12 @@ def edit(guest_id):
         flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
+    # Allow admin to override guest_type (for VMID reuse correction)
+    new_type = request.form.get("guest_type")
+    if new_type in ("vm", "ct") and new_type != guest.guest_type:
+        guest.guest_type = new_type
+        guest.clear_stale_data()
+
     guest.connection_method = request.form.get("connection_method", "ssh")
     guest.auto_update = "auto_update" in request.form
     guest.require_snapshot = request.form.get("require_snapshot", "inherit")
@@ -324,6 +330,23 @@ def edit(guest_id):
     log_action("guest_edit", "guest", resource_id=guest.id, resource_name=guest.name)
     db.session.commit()
     flash(f"Guest '{guest.name}' updated.", "success")
+    return redirect(url_for("guests.detail", guest_id=guest.id))
+
+
+@bp.route("/<int:guest_id>/reset", methods=["POST"])
+@login_required
+def reset(guest_id):
+    """Clear stale scan results, packages, and services for a guest."""
+    guest = Guest.query.get_or_404(guest_id)
+
+    if not current_user.can_manage_guests:
+        flash("Permission denied.", "error")
+        return redirect(url_for("guests.detail", guest_id=guest.id))
+
+    guest.clear_stale_data()
+    log_action("guest_reset", "guest", resource_id=guest.id, resource_name=guest.name)
+    db.session.commit()
+    flash(f"Guest '{guest.name}' has been reset. Scan results, packages, and services cleared.", "success")
     return redirect(url_for("guests.detail", guest_id=guest.id))
 
 

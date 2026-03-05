@@ -349,6 +349,7 @@ def _run_discovery(app):
 
                 added = 0
                 updated = 0
+                reused = 0
                 for g in node_guests:
                     vmid = g.get("vmid")
                     status = g.get("status", "")
@@ -392,6 +393,17 @@ def _run_discovery(app):
                         for tag_name in tag_names:
                             guest.tags.append(_resolve_tag(tag_name))
                     else:
+                        # Detect VMID reuse: type changed means old guest was destroyed
+                        if existing.guest_type != g["type"]:
+                            old_type = existing.guest_type
+                            existing.guest_type = g["type"]
+                            existing.clear_stale_data()
+                            reused += 1
+                            logger.warning(
+                                "VMID %s on '%s': type changed %s -> %s (reuse detected, stale data cleared)",
+                                vmid, host.name, old_type, g["type"],
+                            )
+
                         if ip:
                             existing.ip_address = ip
                         existing.name = g.get("name", existing.name)
@@ -405,7 +417,10 @@ def _run_discovery(app):
                         updated += 1
 
                 db.session.commit()
-                logger.info(f"Discovery for '{host.name}' node '{node_name}': {added} new, {updated} updated, {len(stale)} stale removed")
+                msg = f"Discovery for '{host.name}' node '{node_name}': {added} new, {updated} updated, {len(stale)} stale removed"
+                if reused:
+                    msg += f", {reused} VMID reuse(s) detected"
+                logger.info(msg)
             except Exception as e:
                 logger.error(f"Scheduled discovery failed for '{host.name}': {e}")
 
