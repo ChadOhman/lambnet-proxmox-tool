@@ -42,5 +42,12 @@ def index():
             "latest_version": Setting.get("elk_latest_version", ""),
             "installed": Setting.get("elk_installed", "false") == "true",
         },
+        "jitsi": {
+            "auto_upgrade": Setting.get("jitsi_auto_upgrade", "false") == "true",
+            "update_available": Setting.get("jitsi_update_available", "false") == "true",
+            "current_version": Setting.get("jitsi_current_version", ""),
+            "latest_version": Setting.get("jitsi_latest_version", ""),
+            "installed": Setting.get("jitsi_installed", "false") == "true",
+        },
     }
     return render_template("applications.html", apps=apps)
