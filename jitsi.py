@@ -900,6 +900,10 @@ def run_jitsi_install(log_callback=None):
             else:
                 log("WARNING: Could not detect installed version")
 
+            # Step 11: Enable JVB REST API for service monitoring
+            log("")
+            _enable_jvb_rest_api(ssh, log)
+
             log("")
             log("=== Jitsi Meet installation complete ===")
             return True, "\n".join(log_lines)
@@ -1189,6 +1193,55 @@ def run_cloudflare_configure(log_callback=None):
     except Exception as e:
         log(f"FATAL ERROR: {e}")
         return False, "\n".join(log_lines)
+
+
+def _enable_jvb_rest_api(ssh, log):
+    """Enable the JVB colibri REST API for service monitoring."""
+    log("=== Step 11: Enabling JVB REST API for monitoring ===")
+    path = "/etc/jitsi/videobridge/jvb.conf"
+
+    stdout, stderr, code = ssh.execute_sudo(f"cat {path} 2>/dev/null", timeout=10)
+    if code != 0 or not stdout:
+        log(f"  WARNING: Could not read {path} — skipping REST API enablement")
+        return
+
+    content = stdout
+
+    # Idempotency: check if REST API is already enabled
+    if "rest {" in content and "enabled = true" in content:
+        log("  [SKIP] REST API already enabled in jvb.conf")
+        return
+
+    # Insert apis { rest { enabled = true } } block before last closing brace
+    # of the videobridge { } block
+    lines = content.split("\n")
+    # Find the last } which closes the videobridge block
+    insert_idx = None
+    for i in range(len(lines) - 1, -1, -1):
+        if "}" in lines[i]:
+            insert_idx = i
+            break
+
+    if insert_idx is None:
+        log("  WARNING: Could not find videobridge block boundary — skipping")
+        return
+
+    apis_block = (
+        "  apis {\n"
+        "    rest {\n"
+        "      enabled = true\n"
+        "    }\n"
+        "  }"
+    )
+    lines.insert(insert_idx, apis_block)
+    new_content = "\n".join(lines)
+
+    if _ssh_write_file(ssh, path, new_content, log):
+        log("  REST API enabled — restarting jitsi-videobridge2")
+        ssh.execute_sudo("systemctl restart jitsi-videobridge2", timeout=30)
+        log("  Done")
+    else:
+        log("  WARNING: Failed to write updated jvb.conf")
 
 
 def _cf_patch_jvb_conf_tcp(ssh, log):

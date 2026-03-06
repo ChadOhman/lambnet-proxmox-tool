@@ -492,6 +492,9 @@ class GuestService(db.Model):
         "libretranslate": ("LibreTranslate", "libretranslate.service", 5000),
         "puma": ("Puma", "mastodon-web.service", 3000),
         "sidekiq": ("Sidekiq", "mastodon-sidekiq*.service", None),
+        "jitsi-videobridge2": ("Jitsi Videobridge", "jitsi-videobridge2.service", 8080),
+        "jicofo": ("Jicofo", "jicofo.service", None),
+        "prosody": ("Prosody", "prosody.service", None),
     }
 
     id = db.Column(db.Integer, primary_key=True)

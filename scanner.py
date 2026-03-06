@@ -1439,6 +1439,8 @@ def get_service_stats(guest, service):
             stats.update(_stats_sidekiq(guest, service))
         elif stype == "libretranslate":
             stats.update(_stats_libretranslate(guest, service))
+        elif stype == "jitsi-videobridge2":
+            stats.update(_stats_jitsi_videobridge(guest, service))
     except Exception as e:
         logger.error(f"Error collecting {stype} stats for {guest.name}: {e}")
         stats["error"] = str(e)
@@ -2296,6 +2298,74 @@ def _stats_libretranslate(guest, service):
     )
     if ver_out and ver_out.strip():
         stats["lt_version"] = ver_out.strip()
+
+    return stats
+
+
+def _stats_jitsi_videobridge(guest, service):
+    """Collect Jitsi Videobridge stats from the colibri REST API."""
+    import json as _json
+    stats = {}
+    port = service.port or 8080
+
+    # Health check — also detects whether the REST API is enabled
+    hc_out, _ = _execute_command(
+        guest,
+        f"curl -sf -o /dev/null -w '%{{http_code}}' http://localhost:{port}/colibri/rest/healthcheck 2>/dev/null || echo 000",
+        timeout=10,
+    )
+    http_code = (hc_out or "").strip()
+    if http_code == "000":
+        stats["rest_api_disabled"] = True
+        return stats
+
+    stats["jvb_healthy"] = http_code == "200"
+
+    # Colibri stats endpoint
+    out, _ = _execute_command(
+        guest,
+        f"curl -sf http://localhost:{port}/colibri/stats 2>/dev/null",
+        timeout=15,
+    )
+    if not out:
+        return stats
+
+    try:
+        data = _json.loads(out)
+    except _json.JSONDecodeError:
+        return stats
+
+    # Activity
+    for key in (
+        "conferences", "participants", "largest_conference",
+        "endpoints_sending_audio", "endpoints_sending_video",
+        "p2p_conferences", "inactive_conferences",
+    ):
+        if key in data:
+            stats[key] = data[key]
+
+    # Load
+    for key in (
+        "stress_level", "bit_rate_download", "bit_rate_upload",
+        "packet_rate_download", "packet_rate_upload",
+        "rtt_aggregate", "threads",
+    ):
+        if key in data:
+            stats[key] = data[key]
+
+    # Cumulative
+    for key in (
+        "total_conferences_created", "total_conferences_completed",
+        "total_participants", "total_conference_seconds",
+        "total_bytes_received", "total_bytes_sent",
+        "total_ice_succeeded", "total_ice_failed", "total_ice_succeeded_relayed",
+    ):
+        if key in data:
+            stats[key] = data[key]
+
+    # Version
+    if "version" in data:
+        stats["jvb_version"] = data["version"]
 
     return stats
 

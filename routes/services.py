@@ -578,7 +578,62 @@ def stats(service_id):
             db.session.rollback()
             logger.exception("Failed to save PostgreSQL metric snapshot for service %s", svc.id)
 
+    # Persist a metric snapshot for JVB services
+    if svc.service_name == "jitsi-videobridge2" and not data.get("rest_api_disabled"):
+        try:
+            snapshot_data = {
+                "conferences": data.get("conferences", 0),
+                "participants": data.get("participants", 0),
+                "stress_level": data.get("stress_level", 0),
+                "bit_rate_download": data.get("bit_rate_download", 0),
+            }
+            snap = ServiceMetricSnapshot(
+                service_id=svc.id,
+                captured_at=datetime.now(timezone.utc),
+                data=json.dumps(snapshot_data),
+            )
+            db.session.add(snap)
+            old_ids = (
+                db.session.query(ServiceMetricSnapshot.id)
+                .filter_by(service_id=svc.id)
+                .order_by(ServiceMetricSnapshot.captured_at.desc())
+                .offset(288)
+                .all()
+            )
+            if old_ids:
+                ServiceMetricSnapshot.query.filter(
+                    ServiceMetricSnapshot.id.in_([r[0] for r in old_ids])
+                ).delete(synchronize_session=False)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception("Failed to save JVB metric snapshot for service %s", svc.id)
+
     return jsonify(data)
+
+
+@bp.route("/<int:service_id>/jvb/metrics-history")
+def jvb_metrics_history(service_id):
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "jitsi-videobridge2":
+        return jsonify({"error": "Not a Jitsi Videobridge service"}), 400
+    limit = min(int(request.args.get("limit", 144)), 288)
+    rows = (
+        ServiceMetricSnapshot.query
+        .filter_by(service_id=svc.id)
+        .order_by(ServiceMetricSnapshot.captured_at.asc())
+        .limit(limit)
+        .all()
+    )
+    result = []
+    for row in rows:
+        try:
+            d = json.loads(row.data or "{}")
+        except (json.JSONDecodeError, TypeError):
+            d = {}
+        d["captured_at"] = row.captured_at.isoformat()
+        result.append(d)
+    return jsonify({"snapshots": result})
 
 
 @bp.route("/<int:service_id>/libretranslate/packages")

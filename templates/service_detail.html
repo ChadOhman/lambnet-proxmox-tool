@@ -32,6 +32,7 @@
         {% if stats.es_version %}<span class="ms-2 badge bg-secondary">Elasticsearch {{ stats.es_version }}</span>{% endif %}
         {% if stats.puma_version %}<span class="ms-2 badge bg-secondary">Puma {{ stats.puma_version }}</span>{% endif %}
         {% if stats.sidekiq_version %}<span class="ms-2 badge bg-secondary">Sidekiq {{ stats.sidekiq_version }}</span>{% endif %}
+        {% if stats.jvb_version %}<span class="ms-2 badge bg-secondary">JVB {{ stats.jvb_version }}</span>{% endif %}
     </div>
     <div class="d-flex gap-2 flex-shrink-0">
         <button class="btn btn-outline-primary btn-sm" id="refreshBtn" onclick="refreshStats()">
@@ -1244,6 +1245,138 @@
         </div>
     </div>
 </div>
+{% elif stats.type == 'jitsi-videobridge2' %}
+
+{% if stats.rest_api_disabled %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i> <strong>REST API not reachable.</strong>
+    The Jitsi Videobridge colibri REST API is not responding. To enable monitoring, ensure
+    <code>videobridge.apis.rest.enabled = true</code> is set in <code>/etc/jitsi/videobridge/jvb.conf</code>
+    and restart <code>jitsi-videobridge2</code>.
+</div>
+{% else %}
+
+<!-- Active Conferences -->
+<div class="card bg-dark mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-camera-video"></i> Active Conferences
+            {% if stats.jvb_healthy %}
+            <span class="badge bg-success ms-2">Healthy</span>
+            {% elif stats.jvb_healthy is defined and not stats.jvb_healthy %}
+            <span class="badge bg-danger ms-2">Unhealthy</span>
+            {% endif %}
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Conferences</div>
+                <div class="fs-4 fw-bold" id="stat-jvb-conferences">{{ stats.conferences|default(0) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Participants</div>
+                <div class="fs-4 fw-bold" id="stat-jvb-participants">{{ stats.participants|default(0) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Largest Conference</div>
+                <div class="fs-5" id="stat-jvb-largest">{{ stats.largest_conference|default(0) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Sending Audio</div>
+                <div class="fs-5" id="stat-jvb-audio">{{ stats.endpoints_sending_audio|default(0) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Sending Video</div>
+                <div class="fs-5" id="stat-jvb-video">{{ stats.endpoints_sending_video|default(0) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">P2P / Inactive</div>
+                <div class="fs-5" id="stat-jvb-p2p">{{ stats.p2p_conferences|default(0) }} / {{ stats.inactive_conferences|default(0) }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load & Health -->
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-speedometer2"></i> Load &amp; Health</h5></div>
+    <div class="card-body">
+        {% set stress_pct = ((stats.stress_level|default(0)) * 100)|round(1) %}
+        <div class="mb-3">
+            <div class="text-muted small mb-1">Stress Level: <span id="stat-jvb-stress-text">{{ stress_pct }}%</span></div>
+            <div class="progress" style="height: 10px;">
+                <div class="progress-bar {% if stress_pct >= 80 %}bg-danger{% elif stress_pct >= 50 %}bg-warning{% else %}bg-success{% endif %}"
+                     id="stat-jvb-stress-bar" style="width: {{ stress_pct }}%"></div>
+            </div>
+        </div>
+        <div class="row g-3">
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Bitrate Down</div>
+                <div class="fs-5" id="stat-jvb-bps-down">{{ '{:,.0f}'.format(stats.bit_rate_download|default(0)) }} <span class="text-muted small">kbps</span></div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Bitrate Up</div>
+                <div class="fs-5" id="stat-jvb-bps-up">{{ '{:,.0f}'.format(stats.bit_rate_upload|default(0)) }} <span class="text-muted small">kbps</span></div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">RTT (avg)</div>
+                <div class="fs-5" id="stat-jvb-rtt">{{ stats.rtt_aggregate|default('N/A') }} <span class="text-muted small">ms</span></div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Threads</div>
+                <div class="fs-5" id="stat-jvb-threads">{{ stats.threads|default('N/A') }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cumulative Totals -->
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-graph-up"></i> Cumulative Totals</h5></div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Conferences Created</div>
+                <div class="fs-5" id="stat-jvb-total-conf">{{ '{:,}'.format(stats.total_conferences_created|default(0)) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Total Participants</div>
+                <div class="fs-5" id="stat-jvb-total-part">{{ '{:,}'.format(stats.total_participants|default(0)) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Conference Hours</div>
+                <div class="fs-5" id="stat-jvb-total-hours">{{ '{:,.1f}'.format((stats.total_conference_seconds|default(0)) / 3600) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">ICE Succeeded</div>
+                <div class="fs-5 text-success" id="stat-jvb-ice-ok">{{ '{:,}'.format(stats.total_ice_succeeded|default(0)) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">ICE Failed</div>
+                <div class="fs-5 {% if stats.total_ice_failed|default(0) > 0 %}text-danger{% endif %}" id="stat-jvb-ice-fail">{{ '{:,}'.format(stats.total_ice_failed|default(0)) }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Bytes Sent / Recv</div>
+                <div class="small" id="stat-jvb-bytes">
+                    &#8593;{{ '{:,.0f}'.format((stats.total_bytes_sent|default(0)) / 1048576) }} MB /
+                    &#8595;{{ '{:,.0f}'.format((stats.total_bytes_received|default(0)) / 1048576) }} MB
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Activity History (24h) -->
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-clock-history"></i> Activity History (24h)</h5></div>
+    <div class="card-body">
+        <canvas id="jvb-chart-activity" height="120" role="img" aria-label="Jitsi Videobridge conference and participant counts over the last 24 hours"></canvas>
+        <div class="visually-hidden" id="jvb-chart-summary" aria-live="polite">Chart showing conferences and participants over time.</div>
+    </div>
+</div>
+{% endif %}{# rest_api_disabled #}
+
 {% endif %}
 
 </div>
@@ -1576,6 +1709,37 @@ function refreshStats() {
                 setEl('stat-redis-clients',  data.connected_clients || '0');
                 setEl('stat-redis-ops',      data.ops_per_sec       || '0');
                 setEl('stat-redis-hitratio', data.hit_ratio         || 'N/A');
+            }
+
+            // JVB
+            if (data.type === 'jitsi-videobridge2' && !data.rest_api_disabled) {
+                setEl('stat-jvb-conferences', data.conferences || 0);
+                setEl('stat-jvb-participants', data.participants || 0);
+                setEl('stat-jvb-largest', data.largest_conference || 0);
+                setEl('stat-jvb-audio', data.endpoints_sending_audio || 0);
+                setEl('stat-jvb-video', data.endpoints_sending_video || 0);
+                setEl('stat-jvb-p2p', `${data.p2p_conferences || 0} / ${data.inactive_conferences || 0}`);
+                const stressPct = ((data.stress_level || 0) * 100).toFixed(1);
+                setEl('stat-jvb-stress-text', stressPct + '%');
+                const stressBar = document.getElementById('stat-jvb-stress-bar');
+                if (stressBar) {
+                    stressBar.style.width = stressPct + '%';
+                    stressBar.className = 'progress-bar ' + (stressPct >= 80 ? 'bg-danger' : stressPct >= 50 ? 'bg-warning' : 'bg-success');
+                }
+                setEl('stat-jvb-bps-down', (data.bit_rate_download || 0).toLocaleString() + ' kbps');
+                setEl('stat-jvb-bps-up', (data.bit_rate_upload || 0).toLocaleString() + ' kbps');
+                setEl('stat-jvb-rtt', (data.rtt_aggregate || 'N/A') + ' ms');
+                setEl('stat-jvb-threads', data.threads || 'N/A');
+                setEl('stat-jvb-total-conf', (data.total_conferences_created || 0).toLocaleString());
+                setEl('stat-jvb-total-part', (data.total_participants || 0).toLocaleString());
+                setEl('stat-jvb-total-hours', ((data.total_conference_seconds || 0) / 3600).toFixed(1));
+                setEl('stat-jvb-ice-ok', (data.total_ice_succeeded || 0).toLocaleString());
+                setEl('stat-jvb-ice-fail', (data.total_ice_failed || 0).toLocaleString());
+                const sentMB = ((data.total_bytes_sent || 0) / 1048576).toFixed(0);
+                const recvMB = ((data.total_bytes_received || 0) / 1048576).toFixed(0);
+                const bytesEl = document.getElementById('stat-jvb-bytes');
+                if (bytesEl) bytesEl.innerHTML = `&#8593;${Number(sentMB).toLocaleString()} MB / &#8595;${Number(recvMB).toLocaleString()} MB`;
+                jvbLoadChart();
             }
 
             btn.disabled = false;
@@ -2398,5 +2562,54 @@ function pgLoadCharts() {
 document.addEventListener('DOMContentLoaded', pgLoadCharts);
 
 {% endif %}{# stats.type == 'postgresql' #}
+
+{% if stats.type == 'jitsi-videobridge2' and not stats.rest_api_disabled %}
+let _jvbActivityChart = null;
+
+function jvbLoadChart() {
+    if (typeof Chart === 'undefined') return;
+    fetch('/services/{{ service.id }}/jvb/metrics-history?limit=144', {cache: 'no-store'})
+    .then(r => r.json())
+    .then(data => {
+        const snaps = data.snapshots || [];
+        if (!snaps.length) return;
+        const labels = snaps.map(s => {
+            const d = new Date(s.captured_at);
+            return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        });
+        const confs = snaps.map(s => s.conferences ?? 0);
+        const parts = snaps.map(s => s.participants ?? 0);
+
+        const canvas = document.getElementById('jvb-chart-activity');
+        if (!canvas) return;
+        if (_jvbActivityChart) _jvbActivityChart.destroy();
+        _jvbActivityChart = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    {label: 'Conferences', data: confs, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.1)', fill: true, tension: 0.3, pointRadius: 2, yAxisID: 'y'},
+                    {label: 'Participants', data: parts, borderColor: '#ffc107', backgroundColor: 'rgba(255,193,7,0.1)', fill: true, tension: 0.3, pointRadius: 2, yAxisID: 'y1'},
+                ],
+            },
+            options: {
+                responsive: true,
+                animation: false,
+                interaction: {mode: 'index', intersect: false},
+                plugins: {legend: {labels: {color: '#adb5bd'}}},
+                scales: {
+                    x: {ticks: {color: '#6c757d', maxTicksLimit: 8}, grid: {color: '#2d2d2d'}},
+                    y: {type: 'linear', position: 'left', title: {display: true, text: 'Conferences', color: '#6c757d'}, ticks: {color: '#6c757d'}, grid: {color: '#2d2d2d'}, beginAtZero: true},
+                    y1: {type: 'linear', position: 'right', title: {display: true, text: 'Participants', color: '#6c757d'}, ticks: {color: '#6c757d'}, grid: {drawOnChartArea: false}, beginAtZero: true},
+                },
+            },
+        });
+    })
+    .catch(() => {/* charts are optional */});
+}
+
+document.addEventListener('DOMContentLoaded', jvbLoadChart);
+{% endif %}{# stats.type == 'jitsi-videobridge2' #}
+
 </script>
 {% endblock %}

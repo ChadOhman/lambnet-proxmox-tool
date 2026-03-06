@@ -562,3 +562,159 @@ class TestJitsiCloudflareLogic:
             ok, log = run_cloudflare_configure()
             assert ok is False
             assert "hostname" in log.lower()
+
+
+# ---------------------------------------------------------------------------
+# Service monitoring tests
+# ---------------------------------------------------------------------------
+
+
+class TestJitsiServiceMonitoring:
+    """Tests for Jitsi service monitoring integration."""
+
+    def test_known_services_includes_jitsi(self):
+        from models import GuestService
+        assert "jitsi-videobridge2" in GuestService.KNOWN_SERVICES
+        assert "jicofo" in GuestService.KNOWN_SERVICES
+        assert "prosody" in GuestService.KNOWN_SERVICES
+        # JVB should have port 8080
+        assert GuestService.KNOWN_SERVICES["jitsi-videobridge2"][2] == 8080
+
+    def test_jvb_metrics_history_unauthenticated(self, app, client):
+        """Metrics history endpoint should redirect unauthenticated users."""
+        from models import db, Guest, GuestService
+        with app.app_context():
+            guest = Guest.query.first()
+            if not guest:
+                guest = Guest(name="jvb-test", vmid=9999, guest_type="ct")
+                db.session.add(guest)
+                db.session.flush()
+            svc = GuestService(
+                guest_id=guest.id,
+                service_name="jitsi-videobridge2",
+                unit_name="jitsi-videobridge2.service",
+                port=8080,
+            )
+            db.session.add(svc)
+            db.session.commit()
+            svc_id = svc.id
+
+        resp = client.get(f"/services/{svc_id}/jvb/metrics-history")
+        assert resp.status_code == 302
+
+    def test_jvb_metrics_history_wrong_service_type(self, app, auth_client):
+        """Metrics history returns 400 for non-JVB services."""
+        from models import db, Guest, GuestService
+        with app.app_context():
+            guest = Guest.query.first()
+            if not guest:
+                guest = Guest(name="pg-test", vmid=9998, guest_type="ct")
+                db.session.add(guest)
+                db.session.flush()
+            svc = GuestService(
+                guest_id=guest.id,
+                service_name="postgresql",
+                unit_name="postgresql.service",
+                port=5432,
+            )
+            db.session.add(svc)
+            db.session.commit()
+            svc_id = svc.id
+
+        resp = auth_client.get(f"/services/{svc_id}/jvb/metrics-history")
+        assert resp.status_code == 400
+
+    def test_jvb_metrics_history_empty(self, app, auth_client):
+        """Metrics history returns empty snapshots for a JVB service with no data."""
+        from models import db, Guest, GuestService
+        with app.app_context():
+            guest = Guest.query.first()
+            if not guest:
+                guest = Guest(name="jvb-empty", vmid=9997, guest_type="ct")
+                db.session.add(guest)
+                db.session.flush()
+            svc = GuestService(
+                guest_id=guest.id,
+                service_name="jitsi-videobridge2",
+                unit_name="jitsi-videobridge2.service",
+                port=8080,
+            )
+            db.session.add(svc)
+            db.session.commit()
+            svc_id = svc.id
+
+        resp = auth_client.get(f"/services/{svc_id}/jvb/metrics-history")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["snapshots"] == []
+
+    def test_stats_route_saves_jvb_snapshot(self, app, auth_client):
+        """Stats route should persist a JVB metric snapshot."""
+        from unittest.mock import patch
+        from models import db, Guest, GuestService, ServiceMetricSnapshot
+        with app.app_context():
+            guest = Guest.query.first()
+            if not guest:
+                guest = Guest(name="jvb-snap", vmid=9996, guest_type="ct")
+                db.session.add(guest)
+                db.session.flush()
+            svc = GuestService(
+                guest_id=guest.id,
+                service_name="jitsi-videobridge2",
+                unit_name="jitsi-videobridge2.service",
+                port=8080,
+            )
+            db.session.add(svc)
+            db.session.commit()
+            svc_id = svc.id
+
+        mock_stats = {
+            "type": "jitsi-videobridge2",
+            "conferences": 3,
+            "participants": 12,
+            "stress_level": 0.25,
+            "bit_rate_download": 5000,
+        }
+        with patch("routes.services.get_service_stats", return_value=mock_stats):
+            resp = auth_client.get(f"/services/{svc_id}/stats")
+            assert resp.status_code == 200
+
+        with app.app_context():
+            snap = ServiceMetricSnapshot.query.filter_by(service_id=svc_id).first()
+            assert snap is not None
+            import json
+            d = json.loads(snap.data)
+            assert d["conferences"] == 3
+            assert d["participants"] == 12
+
+    def test_enable_jvb_rest_api_idempotent(self):
+        """_enable_jvb_rest_api should skip if REST API already enabled."""
+        from jitsi import _enable_jvb_rest_api
+        ssh = MagicMock()
+        ssh.execute_sudo.return_value = (
+            'videobridge {\n  apis {\n    rest {\n      enabled = true\n    }\n  }\n}',
+            "",
+            0,
+        )
+        logs = []
+        _enable_jvb_rest_api(ssh, logs.append)
+        assert any("SKIP" in msg for msg in logs)
+        # Should not have written the file back
+        assert ssh.execute_sudo.call_count == 1
+
+    def test_enable_jvb_rest_api_patches_conf(self):
+        """_enable_jvb_rest_api should patch jvb.conf when REST not enabled."""
+        from jitsi import _enable_jvb_rest_api
+        ssh = MagicMock()
+        original_conf = 'videobridge {\n  ice {\n    udp {\n      port = 10000\n    }\n  }\n}'
+        # First call reads the file, subsequent calls are write + restart
+        ssh.execute_sudo.side_effect = [
+            (original_conf, "", 0),  # cat
+            ("", "", 0),  # tee (write)
+            ("", "", 0),  # restart
+        ]
+        logs = []
+        _enable_jvb_rest_api(ssh, logs.append)
+        assert any("REST API enabled" in msg for msg in logs)
+        # Should have called write (tee) and restart
+        assert ssh.execute_sudo.call_count == 3
