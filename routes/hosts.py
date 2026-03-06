@@ -4,9 +4,9 @@ import threading as _threading
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from models import db, ProxmoxHost, Guest, Tag, AuditLog, Credential
-from credential_store import encrypt
-from proxmox_api import ProxmoxClient
-from audit import log_action
+from auth.credential_store import encrypt
+from clients.proxmox_api import ProxmoxClient
+from auth.audit import log_action
 
 # In-memory state for SSH-based apt apply jobs
 _apply_jobs = {}   # host_id -> {"log": [], "running": bool, "success": bool|None, "cancelled": bool}
@@ -59,7 +59,7 @@ def detail(host_id):
     error = None
 
     if host.is_pbs:
-        from pbs_client import PBSClient
+        from clients.pbs_client import PBSClient
         datastores = []
         try:
             client = PBSClient(host)
@@ -185,7 +185,7 @@ def test_connection(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
 
     if host.is_pbs:
-        from pbs_client import PBSClient
+        from clients.pbs_client import PBSClient
         client = PBSClient(host)
     else:
         client = ProxmoxClient(host)
@@ -522,7 +522,7 @@ def delete(host_id):
 def _get_client_and_node(host):
     """Return (client, node_name) for PVE or PBS host."""
     if host.is_pbs:
-        from pbs_client import PBSClient
+        from clients.pbs_client import PBSClient
         client = PBSClient(host)
         return client, client.get_node_name()
     else:
@@ -606,7 +606,7 @@ def task_log(host_id, upid):
 
 def _run_apply(host_id, hostname, credential_model, app_ctx):
     """Background thread: SSH to host and run apt-get dist-upgrade."""
-    from ssh_client import SSHClient
+    from clients.ssh_client import SSHClient
 
     def _append(chunk):
         with _apply_lock:

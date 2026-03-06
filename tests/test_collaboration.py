@@ -10,7 +10,7 @@ import queue
 import time
 import threading
 
-from collaboration import (
+from core.collaboration import (
     CollaborationHub,
     CursorHub,
     TerminalSession,

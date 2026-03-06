@@ -5,9 +5,9 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
 from models import db, Setting
-from credential_store import encrypt
+from auth.credential_store import encrypt
 from config import BASE_DIR, DATA_DIR
-from audit import log_action
+from auth.audit import log_action
 
 
 def _parse_iso(value):
@@ -171,7 +171,7 @@ def test_discord():
     # Save settings first
     save_discord()
 
-    from notifier import send_test_notification
+    from core.notifier import send_test_notification
     ok, message = send_test_notification()
     if ok:
         flash(f"Test notification sent: {message}", "success")
@@ -202,7 +202,7 @@ def save_scan():
     db.session.commit()
 
     try:
-        from scheduler import reschedule_jobs
+        from core.scheduler import reschedule_jobs
         reschedule_jobs(int(interval), int(discovery_interval), int(service_check_interval))
     except Exception:
         pass  # Scheduler not running (e.g. tests or CLI context)
@@ -219,7 +219,7 @@ def refresh_backup_storages():
     seen = set()
     try:
         from models import ProxmoxHost
-        from proxmox_api import ProxmoxClient
+        from clients.proxmox_api import ProxmoxClient
         for host in ProxmoxHost.query.filter(ProxmoxHost.host_type != "pbs").all():
             try:
                 client = ProxmoxClient(host)
@@ -304,8 +304,8 @@ def save_unifi():
 def test_unifi():
     save_unifi()
 
-    from credential_store import decrypt
-    from unifi_client import UniFiClient
+    from auth.credential_store import decrypt
+    from clients.unifi_client import UniFiClient
 
     base_url = Setting.get("unifi_base_url", "")
     username = Setting.get("unifi_username", "")
@@ -426,7 +426,7 @@ def upload_geoip_db():
     os.replace(tmp_path, dest_path)
 
     # Reset the cached reader so the new file is used immediately
-    import unifi_geoip
+    from clients import unifi_geoip
     unifi_geoip.close()
 
     size_mb = round(bytes_written / 1024 / 1024, 1)

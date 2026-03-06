@@ -9,8 +9,8 @@ import paramiko
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from flask_sock import Sock
-from audit import log_action
-from credential_store import decrypt
+from auth.audit import log_action
+from auth.credential_store import decrypt
 from models import db, Guest, Credential, Tag
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ def _resolve_guest_ip(guest):
     # Try Proxmox API to get the actual IP
     if guest.proxmox_host and guest.vmid:
         try:
-            from proxmox_api import ProxmoxClient
+            from clients.proxmox_api import ProxmoxClient
             client = ProxmoxClient(guest.proxmox_host)
             node = client.find_guest_node(guest.vmid)
             if node:
@@ -174,7 +174,7 @@ def follow(guest_id, session_id):
         flash("You don't have permission to access this guest.", "error")
         return redirect(url_for("terminal.index"))
 
-    from collaboration import terminal_registry
+    from core.collaboration import terminal_registry
     term_session = terminal_registry.get(session_id)
     if not term_session or term_session.guest_id != guest_id:
         flash("Session not found or has ended.", "warning")
@@ -243,7 +243,7 @@ def connect_adhoc(guest_id):
         flash("Username is required.", "error")
         return redirect(url_for("terminal.connect", guest_id=guest_id))
 
-    from credential_store import encrypt as _encrypt
+    from auth.credential_store import encrypt as _encrypt
     session[f"terminal_cred_{guest_id}"] = {"username": username, "password": _encrypt(password) if password else ""}
     return redirect(url_for("terminal.connect", guest_id=guest_id))
 
@@ -274,7 +274,7 @@ def terminal_ws(ws, guest_id):
 def _ws_primary(ws, guest_id):
     """Handle the primary (owner) WebSocket connection."""
     from flask_login import current_user as ws_user
-    from collaboration import terminal_registry
+    from core.collaboration import terminal_registry
 
     ssh_client = None
     channel = None
@@ -509,7 +509,7 @@ def _ws_primary(ws, guest_id):
 def _ws_follow(ws, guest_id, session_id):
     """Handle a read-only follower WebSocket connection."""
     from flask_login import current_user as ws_user
-    from collaboration import terminal_registry
+    from core.collaboration import terminal_registry
 
     term_session = None
     send_q = None

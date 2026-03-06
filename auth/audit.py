@@ -23,7 +23,7 @@ def log_action(action, resource_type, resource_id=None, resource_name=None, deta
     # Broadcast to collaboration hub (best-effort — never breaks the audit write)
     try:
         import datetime as _dt
-        from collaboration import collab_hub
+        from core.collaboration import collab_hub
         collab_hub.broadcast({
             "type": "activity",
             "action": action,

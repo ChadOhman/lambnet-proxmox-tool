@@ -5,8 +5,8 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from sqlalchemy import or_
 from models import db, Setting, UnifiLogEntry
-from credential_store import decrypt
-from audit import log_action
+from auth.credential_store import decrypt
+from auth.audit import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def _require_login():
 
 def _get_unifi_client():
     """Create a UniFi client from saved settings."""
-    from unifi_client import UniFiClient
+    from clients.unifi_client import UniFiClient
 
     base_url = Setting.get("unifi_base_url", "")
     username = Setting.get("unifi_username", "")

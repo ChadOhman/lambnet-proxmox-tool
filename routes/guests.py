@@ -4,8 +4,8 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from models import db, Guest, GuestService, ProxmoxHost, Credential, Tag, Setting, UpdatePackage, AuditLog
-from proxmox_api import ProxmoxClient
-from audit import log_action
+from clients.proxmox_api import ProxmoxClient
+from auth.audit import log_action
 
 logger = logging.getLogger(__name__)
 

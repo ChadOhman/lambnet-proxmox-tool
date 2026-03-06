@@ -3,7 +3,7 @@ import re
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from models import db, User, Role, Tag, TagUnifiNetwork, Setting, AuditLog, Credential, ScanResult
-from audit import log_action
+from auth.audit import log_action
 
 # Strict hex-color validation: #RRGGBB only
 _HEX_COLOR_RE = re.compile(r'^#[0-9a-fA-F]{6}$')

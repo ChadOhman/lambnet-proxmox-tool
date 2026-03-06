@@ -4,7 +4,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required
 from models import db, Setting, Guest
-from audit import log_action
+from auth.audit import log_action
 
 # ---------------------------------------------------------------------------
 # In-memory upgrade job state — tracks the currently-running upgrade so the
@@ -90,7 +90,7 @@ def upgrade_page():
         primary = guests_to_check[0]
         if primary.proxmox_host and not primary.proxmox_host.is_pbs:
             try:
-                from proxmox_api import ProxmoxClient
+                from clients.proxmox_api import ProxmoxClient
                 client = ProxmoxClient(primary.proxmox_host)
 
                 # Backup storages (from primary app guest's host)
@@ -147,7 +147,7 @@ def save():
 
 @bp.route("/check", methods=["POST"])
 def check():
-    from mastodon import check_mastodon_release
+    from apps.mastodon import check_mastodon_release
 
     update_available, latest, release_url = check_mastodon_release()
     current = Setting.get("mastodon_current_version", "")
@@ -184,7 +184,7 @@ def preflight_status():
 
 @bp.route("/preflight", methods=["POST"])
 def preflight():
-    from mastodon import run_mastodon_preflight
+    from apps.mastodon import run_mastodon_preflight
     from flask import current_app
 
     if _upgrade_job["running"]:
@@ -221,7 +221,7 @@ def preflight():
 
 @bp.route("/upgrade", methods=["POST"])
 def upgrade():
-    from mastodon import run_mastodon_upgrade
+    from apps.mastodon import run_mastodon_upgrade
     from flask import current_app
     from flask_login import current_user
 
@@ -247,7 +247,7 @@ def upgrade():
         ok = False
         try:
             with _app.app_context():
-                from notifier import send_upgrade_started_notification
+                from core.notifier import send_upgrade_started_notification
                 send_upgrade_started_notification("mastodon", target_version, "manual")
                 ok, _ = run_mastodon_upgrade(log_callback=_cb, skip_protection=skip_protection)
         except Exception as e:
@@ -264,7 +264,7 @@ def upgrade():
             log_action("mastodon_upgrade", "settings", resource_name="mastodon",
                        details={"status": "success" if ok else "error"})
             db.session.commit()
-            from notifier import send_upgrade_result_notification
+            from core.notifier import send_upgrade_result_notification
             send_upgrade_result_notification("mastodon", target_version, ok, "manual")
 
     try:
@@ -278,8 +278,8 @@ def upgrade():
 
 @bp.route("/detect-versions", methods=["POST"])
 def detect_versions():
-    from scanner import _execute_command
-    from mastodon import _validate_shell_param
+    from core.scanner import _execute_command
+    from apps.mastodon import _validate_shell_param
 
     guest_id = Setting.get("mastodon_guest_id", "")
     db_guest_id = Setting.get("mastodon_db_guest_id", "")

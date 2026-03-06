@@ -4,7 +4,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required
 from models import db, Setting, Guest
-from audit import log_action
+from auth.audit import log_action
 
 
 def _parse_iso(value):
@@ -78,7 +78,7 @@ def upgrade_page():
         try:
             g = Guest.query.get(int(guest_id))
             if g and g.proxmox_host and not g.proxmox_host.is_pbs:
-                from proxmox_api import ProxmoxClient
+                from clients.proxmox_api import ProxmoxClient
                 client = ProxmoxClient(g.proxmox_host)
                 node = client.find_guest_node(g.vmid)
                 if node:
@@ -127,7 +127,7 @@ def save():
 
 @bp.route("/check", methods=["POST"])
 def check():
-    from elk import check_elk_release
+    from apps.elk import check_elk_release
 
     update_available, latest, release_url = check_elk_release()
     current = Setting.get("elk_current_version", "")
@@ -177,7 +177,7 @@ def install_status():
 
 @bp.route("/preflight", methods=["POST"])
 def preflight():
-    from elk import run_elk_preflight
+    from apps.elk import run_elk_preflight
     from flask import current_app
 
     if _upgrade_job["running"] or _install_job["running"]:
@@ -214,7 +214,7 @@ def preflight():
 
 @bp.route("/upgrade", methods=["POST"])
 def upgrade():
-    from elk import run_elk_upgrade
+    from apps.elk import run_elk_upgrade
     from flask import current_app
     from flask_login import current_user
 
@@ -239,7 +239,7 @@ def upgrade():
         ok = False
         try:
             with _app.app_context():
-                from notifier import send_upgrade_started_notification
+                from core.notifier import send_upgrade_started_notification
                 send_upgrade_started_notification("elk", target_version, "manual")
                 ok, _ = run_elk_upgrade(log_callback=_cb, skip_protection=skip_protection)
         except Exception as e:
@@ -256,7 +256,7 @@ def upgrade():
             log_action("elk_upgrade", "settings", resource_name="elk",
                        details={"status": "success" if ok else "error"})
             db.session.commit()
-            from notifier import send_upgrade_result_notification
+            from core.notifier import send_upgrade_result_notification
             send_upgrade_result_notification("elk", target_version, ok, "manual")
 
     try:
@@ -270,7 +270,7 @@ def upgrade():
 
 @bp.route("/install", methods=["POST"])
 def install():
-    from elk import run_elk_install
+    from apps.elk import run_elk_install
     from flask import current_app
 
     if _upgrade_job["running"] or _install_job["running"]:
@@ -317,7 +317,7 @@ def install():
 
 @bp.route("/detect-versions", methods=["POST"])
 def detect_versions():
-    from elk import detect_elk_version
+    from apps.elk import detect_elk_version
 
     guest_id = Setting.get("elk_guest_id", "")
     elk_dir = Setting.get("elk_dir", "/opt/elk")

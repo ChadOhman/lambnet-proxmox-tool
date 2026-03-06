@@ -5,8 +5,8 @@ import logging
 import shlex
 from datetime import datetime, timezone
 from models import db, Guest, UpdatePackage, ScanResult, GuestService
-from ssh_client import SSHClient
-from proxmox_api import ProxmoxClient
+from clients.ssh_client import SSHClient
+from clients.proxmox_api import ProxmoxClient
 
 logger = logging.getLogger(__name__)
 

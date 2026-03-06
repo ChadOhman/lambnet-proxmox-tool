@@ -10,7 +10,7 @@ class PBSClient:
     """Client for the Proxmox Backup Server API (port 8007)."""
 
     def __init__(self, host_model):
-        from credential_store import decrypt
+        from auth.credential_store import decrypt
 
         self.base_url = f"https://{host_model.hostname}:{host_model.port}/api2/json"
         self.session = requests.Session()

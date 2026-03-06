@@ -19,7 +19,7 @@ _TEST_CONFIG = {
 def _isolate_credential_store():
     """Redirect credential_store key to a temp file so tests never touch /etc/lambnet."""
     import config as cfg
-    import credential_store
+    import auth.credential_store as credential_store
 
     tmp_dir = tempfile.mkdtemp(prefix="lambnet-test-")
     key_path = os.path.join(tmp_dir, "secret.key")

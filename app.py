@@ -133,7 +133,7 @@ def create_app(test_config=None):
     # Start background scheduler (discovery, scans, UniFi event polling, etc.).
     # Must run in create_app() so gunicorn picks it up; skip in test mode.
     if not test_config:
-        from scheduler import init_scheduler
+        from core.scheduler import init_scheduler
         init_scheduler(app)
 
     # Warn if running with multiple workers, which breaks in-process collaboration
@@ -147,11 +147,11 @@ def create_app(test_config=None):
         )
 
     # Local network bypass (must run before CF Access so local IPs are already authed)
-    from local_network import init_local_bypass
+    from auth.local_network import init_local_bypass
     init_local_bypass(app)
 
     # Initialize Cloudflare Zero Trust integration
-    from cloudflare_access import init_cf_access
+    from auth.cloudflare_access import init_cf_access
     init_cf_access(app)
 
     # Custom Jinja filters

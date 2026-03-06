@@ -275,13 +275,13 @@ class TestPeerTubeRouteAuthed:
             assert stored != ""
             assert stored != "mysecretpass"
             # Verify it can be decrypted back
-            from credential_store import decrypt
+            from auth.credential_store import decrypt
             assert decrypt(stored) == "mysecretpass"
 
     def test_save_keeps_existing_password_when_blank(self, app, auth_client):
         """Submitting blank password preserves existing encrypted value."""
         from models import Setting
-        from credential_store import encrypt
+        from auth.credential_store import encrypt
 
         with app.app_context():
             Setting.set("peertube_db_password", encrypt("existing"))
@@ -298,7 +298,7 @@ class TestPeerTubeRouteAuthed:
         )
         with app.app_context():
             stored = Setting.get("peertube_db_password", "")
-            from credential_store import decrypt
+            from auth.credential_store import decrypt
             assert decrypt(stored) == "existing"
 
     def test_check_no_guest_configured(self, app, auth_client):
@@ -338,7 +338,7 @@ class TestApplicationsIndex:
 
 class TestCheckPeerTubeRelease:
     def test_returns_early_when_no_peertube_guest_configured(self):
-        from scheduler import _check_peertube_release
+        from core.scheduler import _check_peertube_release
 
         app = _make_app()
 
@@ -348,7 +348,7 @@ class TestCheckPeerTubeRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "peertube": mock_peertube,
+            "apps.peertube": mock_peertube,
         }
         with _SysModulesPatch(mocks):
             _check_peertube_release(app)
@@ -356,7 +356,7 @@ class TestCheckPeerTubeRelease:
         mock_peertube.check_peertube_release.assert_not_called()
 
     def test_sends_notification_when_update_available(self):
-        from scheduler import _check_peertube_release
+        from core.scheduler import _check_peertube_release
 
         app = _make_app()
 
@@ -375,8 +375,8 @@ class TestCheckPeerTubeRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "peertube": mock_peertube,
-            "notifier": mock_notifier,
+            "apps.peertube": mock_peertube,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_peertube_release(app)
@@ -386,7 +386,7 @@ class TestCheckPeerTubeRelease:
         )
 
     def test_skips_notification_when_already_notified_for_version(self):
-        from scheduler import _check_peertube_release
+        from core.scheduler import _check_peertube_release
 
         app = _make_app()
 
@@ -404,8 +404,8 @@ class TestCheckPeerTubeRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "peertube": mock_peertube,
-            "notifier": mock_notifier,
+            "apps.peertube": mock_peertube,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_peertube_release(app)
@@ -413,7 +413,7 @@ class TestCheckPeerTubeRelease:
         mock_notifier.send_peertube_update_notification.assert_not_called()
 
     def test_no_notification_when_no_update_available(self):
-        from scheduler import _check_peertube_release
+        from core.scheduler import _check_peertube_release
 
         app = _make_app()
 
@@ -425,8 +425,8 @@ class TestCheckPeerTubeRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "peertube": mock_peertube,
-            "notifier": mock_notifier,
+            "apps.peertube": mock_peertube,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_peertube_release(app)
@@ -434,7 +434,7 @@ class TestCheckPeerTubeRelease:
         mock_notifier.send_peertube_update_notification.assert_not_called()
 
     def test_auto_upgrade_triggered_when_enabled(self):
-        from scheduler import _check_peertube_release
+        from core.scheduler import _check_peertube_release
 
         app = _make_app()
 
@@ -456,9 +456,9 @@ class TestCheckPeerTubeRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, db=mock_db),
-            "peertube": mock_peertube,
-            "notifier": mock_notifier,
-            "audit": mock_audit,
+            "apps.peertube": mock_peertube,
+            "core.notifier": mock_notifier,
+            "auth.audit": mock_audit,
         }
         with _SysModulesPatch(mocks):
             _check_peertube_release(app)
@@ -475,13 +475,13 @@ class TestPeerTubeNotifier:
     """PeerTube notification functions exist and follow patterns."""
 
     def test_send_peertube_update_notification_exists(self):
-        from notifier import send_peertube_update_notification
+        from core.notifier import send_peertube_update_notification
         assert callable(send_peertube_update_notification)
 
     def test_upgrade_started_supports_peertube(self, app):
         """send_upgrade_started_notification accepts 'peertube' service."""
         with app.app_context():
-            from notifier import send_upgrade_started_notification
+            from core.notifier import send_upgrade_started_notification
             # Should not raise — returns (False, ...) since Discord is disabled
             ok, msg = send_upgrade_started_notification("peertube", "6.3.0", "manual")
             assert isinstance(ok, bool)
@@ -489,7 +489,7 @@ class TestPeerTubeNotifier:
     def test_upgrade_result_supports_peertube(self, app):
         """send_upgrade_result_notification accepts 'peertube' service."""
         with app.app_context():
-            from notifier import send_upgrade_result_notification
+            from core.notifier import send_upgrade_result_notification
             ok, msg = send_upgrade_result_notification("peertube", "6.3.0", True, "manual")
             assert isinstance(ok, bool)
 
@@ -504,9 +504,9 @@ class TestCheckPeerTubeReleaseUnit:
 
     def test_returns_false_on_network_error(self, app):
         with app.app_context():
-            with patch("peertube.urlopen", side_effect=Exception("timeout")):
+            with patch("apps.peertube.urlopen", side_effect=Exception("timeout")):
                 update, version, url = None, None, None
-                from peertube import check_peertube_release
+                from apps.peertube import check_peertube_release
                 update, version, url = check_peertube_release()
                 assert update is False
                 assert version == ""
@@ -530,8 +530,8 @@ class TestCheckPeerTubeReleaseUnit:
             from models import db
             db.session.commit()
 
-            with patch("peertube.urlopen", return_value=fake_resp):
-                from peertube import check_peertube_release
+            with patch("apps.peertube.urlopen", return_value=fake_resp):
+                from apps.peertube import check_peertube_release
                 update, version, url = check_peertube_release()
                 assert update is True
                 assert version == "6.3.1"

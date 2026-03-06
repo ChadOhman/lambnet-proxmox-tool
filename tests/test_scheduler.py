@@ -78,21 +78,21 @@ class _SysModulesPatch:
 
 class TestModuleImport:
     def test_scheduler_module_imports_without_error(self):
-        import scheduler  # noqa: F401
+        import core.scheduler  # noqa: F401
 
     def test_module_exposes_init_scheduler(self):
-        import scheduler
+        import core.scheduler as scheduler
 
         assert callable(scheduler.init_scheduler)
 
     def test_module_exposes_reschedule_jobs(self):
-        import scheduler
+        import core.scheduler as scheduler
 
         assert callable(scheduler.reschedule_jobs)
 
     def test_module_level_scheduler_starts_as_none(self):
         """_scheduler global is None before init_scheduler is called."""
-        import scheduler as sched_mod
+        import core.scheduler as sched_mod
 
         original = sched_mod._scheduler
         sched_mod._scheduler = None
@@ -102,12 +102,12 @@ class TestModuleImport:
             sched_mod._scheduler = original
 
     def test_module_has_logger(self):
-        import scheduler
+        import core.scheduler as scheduler
 
         assert isinstance(scheduler.logger, logging.Logger)
 
     def test_private_job_functions_are_callable(self):
-        import scheduler
+        import core.scheduler as scheduler
 
         for fn_name in (
             "_run_scan",
@@ -132,7 +132,7 @@ class TestModuleImport:
 class TestInitScheduler:
     @pytest.fixture(autouse=True)
     def _reset_global(self):
-        import scheduler as sched_mod
+        import core.scheduler as sched_mod
 
         sched_mod._scheduler = None
         yield
@@ -148,40 +148,40 @@ class TestInitScheduler:
         s.get.side_effect = _default_setting_get
         return s
 
-    @patch("scheduler.BackgroundScheduler")
+    @patch("core.scheduler.BackgroundScheduler")
     def test_returns_scheduler_instance(self, MockBGS, app, mock_setting):
         mock_sched = MagicMock()
         MockBGS.return_value = mock_sched
 
         mocks = {"models": MagicMock(Setting=mock_setting)}
         with _SysModulesPatch(mocks):
-            import scheduler as sched_mod
+            import core.scheduler as sched_mod
 
             result = sched_mod.init_scheduler(app)
 
         assert result is mock_sched
 
-    @patch("scheduler.BackgroundScheduler")
+    @patch("core.scheduler.BackgroundScheduler")
     def test_starts_scheduler(self, MockBGS, app, mock_setting):
         mock_sched = MagicMock()
         MockBGS.return_value = mock_sched
 
         mocks = {"models": MagicMock(Setting=mock_setting)}
         with _SysModulesPatch(mocks):
-            import scheduler as sched_mod
+            import core.scheduler as sched_mod
 
             sched_mod.init_scheduler(app)
 
         mock_sched.start.assert_called_once()
 
-    @patch("scheduler.BackgroundScheduler")
+    @patch("core.scheduler.BackgroundScheduler")
     def test_registers_all_expected_job_ids(self, MockBGS, app, mock_setting):
         mock_sched = MagicMock()
         MockBGS.return_value = mock_sched
 
         mocks = {"models": MagicMock(Setting=mock_setting)}
         with _SysModulesPatch(mocks):
-            import scheduler as sched_mod
+            import core.scheduler as sched_mod
 
             sched_mod.init_scheduler(app)
 
@@ -208,14 +208,14 @@ class TestInitScheduler:
         }
         assert expected_ids == registered_ids
 
-    @patch("scheduler.BackgroundScheduler")
+    @patch("core.scheduler.BackgroundScheduler")
     def test_is_idempotent_on_double_call(self, MockBGS, app, mock_setting):
         mock_sched = MagicMock()
         MockBGS.return_value = mock_sched
 
         mocks = {"models": MagicMock(Setting=mock_setting)}
         with _SysModulesPatch(mocks):
-            import scheduler as sched_mod
+            import core.scheduler as sched_mod
 
             first = sched_mod.init_scheduler(app)
             second = sched_mod.init_scheduler(app)
@@ -223,14 +223,14 @@ class TestInitScheduler:
         assert first is second
         MockBGS.assert_called_once()
 
-    @patch("scheduler.BackgroundScheduler")
+    @patch("core.scheduler.BackgroundScheduler")
     def test_all_jobs_pass_app_as_arg(self, MockBGS, app, mock_setting):
         mock_sched = MagicMock()
         MockBGS.return_value = mock_sched
 
         mocks = {"models": MagicMock(Setting=mock_setting)}
         with _SysModulesPatch(mocks):
-            import scheduler as sched_mod
+            import core.scheduler as sched_mod
 
             sched_mod.init_scheduler(app)
 
@@ -238,14 +238,14 @@ class TestInitScheduler:
             args_list = c.kwargs.get("args") or c[1].get("args") or []
             assert app in args_list, f"Job missing app in args: {c}"
 
-    @patch("scheduler.BackgroundScheduler")
+    @patch("core.scheduler.BackgroundScheduler")
     def test_all_jobs_have_replace_existing_true(self, MockBGS, app, mock_setting):
         mock_sched = MagicMock()
         MockBGS.return_value = mock_sched
 
         mocks = {"models": MagicMock(Setting=mock_setting)}
         with _SysModulesPatch(mocks):
-            import scheduler as sched_mod
+            import core.scheduler as sched_mod
 
             sched_mod.init_scheduler(app)
 
@@ -253,7 +253,7 @@ class TestInitScheduler:
             replace = c.kwargs.get("replace_existing") or c[1].get("replace_existing")
             assert replace is True, f"Job missing replace_existing=True: {c}"
 
-    @patch("scheduler.BackgroundScheduler")
+    @patch("core.scheduler.BackgroundScheduler")
     def test_scan_interval_drives_scan_and_mastodon_ghost_jobs(self, MockBGS, app):
         mock_sched = MagicMock()
         MockBGS.return_value = mock_sched
@@ -268,7 +268,7 @@ class TestInitScheduler:
 
         mocks = {"models": MagicMock(Setting=setting)}
         with _SysModulesPatch(mocks):
-            import scheduler as sched_mod
+            import core.scheduler as sched_mod
 
             sched_mod.init_scheduler(app)
 
@@ -283,7 +283,7 @@ class TestInitScheduler:
         assert trigger_hours.get("mastodon_check") == pytest.approx(12.0)
         assert trigger_hours.get("ghost_check") == pytest.approx(12.0)
 
-    @patch("scheduler.BackgroundScheduler")
+    @patch("core.scheduler.BackgroundScheduler")
     def test_discovery_interval_setting_is_respected(self, MockBGS, app):
         mock_sched = MagicMock()
         MockBGS.return_value = mock_sched
@@ -298,7 +298,7 @@ class TestInitScheduler:
 
         mocks = {"models": MagicMock(Setting=setting)}
         with _SysModulesPatch(mocks):
-            import scheduler as sched_mod
+            import core.scheduler as sched_mod
 
             sched_mod.init_scheduler(app)
 
@@ -311,14 +311,14 @@ class TestInitScheduler:
 
         assert trigger_hours.get("discovery") == pytest.approx(8.0)
 
-    @patch("scheduler.BackgroundScheduler")
+    @patch("core.scheduler.BackgroundScheduler")
     def test_auto_update_job_fixed_at_15_minutes(self, MockBGS, app, mock_setting):
         mock_sched = MagicMock()
         MockBGS.return_value = mock_sched
 
         mocks = {"models": MagicMock(Setting=mock_setting)}
         with _SysModulesPatch(mocks):
-            import scheduler as sched_mod
+            import core.scheduler as sched_mod
 
             sched_mod.init_scheduler(app)
 
@@ -331,14 +331,14 @@ class TestInitScheduler:
 
         assert trigger_minutes.get("auto_update") == pytest.approx(15.0)
 
-    @patch("scheduler.BackgroundScheduler")
+    @patch("core.scheduler.BackgroundScheduler")
     def test_purge_jobs_run_every_24_hours(self, MockBGS, app, mock_setting):
         mock_sched = MagicMock()
         MockBGS.return_value = mock_sched
 
         mocks = {"models": MagicMock(Setting=mock_setting)}
         with _SysModulesPatch(mocks):
-            import scheduler as sched_mod
+            import core.scheduler as sched_mod
 
             sched_mod.init_scheduler(app)
 
@@ -352,14 +352,14 @@ class TestInitScheduler:
         assert trigger_hours.get("audit_log_purge") == pytest.approx(24.0)
         assert trigger_hours.get("unifi_log_purge") == pytest.approx(24.0)
 
-    @patch("scheduler.BackgroundScheduler")
+    @patch("core.scheduler.BackgroundScheduler")
     def test_app_update_check_fixed_at_6_hours(self, MockBGS, app, mock_setting):
         mock_sched = MagicMock()
         MockBGS.return_value = mock_sched
 
         mocks = {"models": MagicMock(Setting=mock_setting)}
         with _SysModulesPatch(mocks):
-            import scheduler as sched_mod
+            import core.scheduler as sched_mod
 
             sched_mod.init_scheduler(app)
 
@@ -381,20 +381,20 @@ class TestInitScheduler:
 class TestRescheduleJobs:
     @pytest.fixture(autouse=True)
     def _reset_global(self):
-        import scheduler as sched_mod
+        import core.scheduler as sched_mod
 
         sched_mod._scheduler = None
         yield
         sched_mod._scheduler = None
 
     def test_noop_when_scheduler_is_none(self):
-        import scheduler as sched_mod
+        import core.scheduler as sched_mod
 
         sched_mod._scheduler = None
         sched_mod.reschedule_jobs(6, 4, 5)  # must not raise
 
     def test_noop_when_scheduler_not_running(self):
-        import scheduler as sched_mod
+        import core.scheduler as sched_mod
 
         mock_sched = MagicMock()
         mock_sched.running = False
@@ -405,7 +405,7 @@ class TestRescheduleJobs:
         mock_sched.reschedule_job.assert_not_called()
 
     def test_reschedules_all_configurable_jobs(self):
-        import scheduler as sched_mod
+        import core.scheduler as sched_mod
 
         mock_sched = MagicMock()
         mock_sched.running = True
@@ -416,7 +416,7 @@ class TestRescheduleJobs:
         assert mock_sched.reschedule_job.call_count == 9
 
     def test_reschedules_scan_all_with_new_interval(self):
-        import scheduler as sched_mod
+        import core.scheduler as sched_mod
 
         mock_sched = MagicMock()
         mock_sched.running = True
@@ -430,7 +430,7 @@ class TestRescheduleJobs:
         assert trigger.interval.total_seconds() / 3600 == pytest.approx(12.0)
 
     def test_reschedules_discovery_with_new_interval(self):
-        import scheduler as sched_mod
+        import core.scheduler as sched_mod
 
         mock_sched = MagicMock()
         mock_sched.running = True
@@ -444,7 +444,7 @@ class TestRescheduleJobs:
         assert trigger.interval.total_seconds() / 3600 == pytest.approx(8.0)
 
     def test_reschedules_service_health_with_new_minutes(self):
-        import scheduler as sched_mod
+        import core.scheduler as sched_mod
 
         mock_sched = MagicMock()
         mock_sched.running = True
@@ -458,7 +458,7 @@ class TestRescheduleJobs:
         assert trigger.interval.total_seconds() / 60 == pytest.approx(10.0)
 
     def test_reschedules_mastodon_and_ghost_jobs(self):
-        import scheduler as sched_mod
+        import core.scheduler as sched_mod
 
         mock_sched = MagicMock()
         mock_sched.running = True
@@ -471,7 +471,7 @@ class TestRescheduleJobs:
         assert "ghost_check" in calls
 
     def test_mastodon_and_ghost_share_scan_interval(self):
-        import scheduler as sched_mod
+        import core.scheduler as sched_mod
 
         mock_sched = MagicMock()
         mock_sched.running = True
@@ -508,13 +508,13 @@ class TestRunScan:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "scanner": mock_scanner,
-            "notifier": mock_notifier,
+            "core.scanner": mock_scanner,
+            "core.notifier": mock_notifier,
         }
         return app, mocks, mock_scanner, mock_notifier
 
     def test_scan_skipped_when_disabled(self):
-        from scheduler import _run_scan
+        from core.scheduler import _run_scan
 
         app, mocks, mock_scanner, _ = self._build_mocks(scan_enabled="false")
         with _SysModulesPatch(mocks):
@@ -523,7 +523,7 @@ class TestRunScan:
         mock_scanner.scan_all_guests.assert_not_called()
 
     def test_scan_runs_when_enabled(self):
-        from scheduler import _run_scan
+        from core.scheduler import _run_scan
 
         results = [MagicMock(), MagicMock()]
         app, mocks, mock_scanner, mock_notifier = self._build_mocks(
@@ -535,7 +535,7 @@ class TestRunScan:
         mock_scanner.scan_all_guests.assert_called_once()
 
     def test_scan_passes_results_to_notifier(self):
-        from scheduler import _run_scan
+        from core.scheduler import _run_scan
 
         results = [MagicMock(), MagicMock(), MagicMock()]
         app, mocks, _, mock_notifier = self._build_mocks(
@@ -576,7 +576,7 @@ def _make_model_with_comparable_timestamp(delete_return=0):
 
 class TestPurgeOldAuditLogs:
     def test_delete_is_called_and_session_committed(self):
-        from scheduler import _purge_old_audit_logs
+        from core.scheduler import _purge_old_audit_logs
 
         app = _make_app()
         mock_audit_log = _make_model_with_comparable_timestamp(delete_return=5)
@@ -591,7 +591,7 @@ class TestPurgeOldAuditLogs:
         mock_db.session.commit.assert_called_once()
 
     def test_commit_happens_even_when_nothing_to_delete(self):
-        from scheduler import _purge_old_audit_logs
+        from core.scheduler import _purge_old_audit_logs
 
         app = _make_app()
         mock_audit_log = _make_model_with_comparable_timestamp(delete_return=0)
@@ -613,7 +613,7 @@ class TestPurgeOldAuditLogs:
 
 class TestPurgeOldUnifiLogs:
     def test_uses_configured_retention_days_and_commits(self):
-        from scheduler import _purge_old_unifi_logs
+        from core.scheduler import _purge_old_unifi_logs
 
         app = _make_app()
         mock_setting = MagicMock()
@@ -631,7 +631,7 @@ class TestPurgeOldUnifiLogs:
 
     def test_falls_back_to_60_days_on_non_numeric_value(self):
         """ValueError from int() conversion must be caught; function must not raise."""
-        from scheduler import _purge_old_unifi_logs
+        from core.scheduler import _purge_old_unifi_logs
 
         app = _make_app()
         mock_setting = MagicMock()
@@ -649,7 +649,7 @@ class TestPurgeOldUnifiLogs:
 
     def test_falls_back_to_60_on_none_value(self):
         """Setting returning None must also not raise."""
-        from scheduler import _purge_old_unifi_logs
+        from core.scheduler import _purge_old_unifi_logs
 
         app = _make_app()
         mock_setting = MagicMock()
@@ -673,7 +673,7 @@ class TestPurgeOldUnifiLogs:
 
 class TestRunServiceHealthChecks:
     def test_skipped_when_disabled(self):
-        from scheduler import _run_service_health_checks
+        from core.scheduler import _run_service_health_checks
 
         app = _make_app()
 
@@ -684,7 +684,7 @@ class TestRunServiceHealthChecks:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, Guest=mock_guest),
-            "scanner": mock_scanner,
+            "core.scanner": mock_scanner,
         }
         with _SysModulesPatch(mocks):
             _run_service_health_checks(app)
@@ -692,7 +692,7 @@ class TestRunServiceHealthChecks:
         mock_scanner.check_service_statuses.assert_not_called()
 
     def test_skipped_when_no_guests_with_services(self):
-        from scheduler import _run_service_health_checks
+        from core.scheduler import _run_service_health_checks
 
         app = _make_app()
 
@@ -704,7 +704,7 @@ class TestRunServiceHealthChecks:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, Guest=mock_guest),
-            "scanner": mock_scanner,
+            "core.scanner": mock_scanner,
         }
         with _SysModulesPatch(mocks):
             _run_service_health_checks(app)
@@ -712,7 +712,7 @@ class TestRunServiceHealthChecks:
         mock_scanner.check_service_statuses.assert_not_called()
 
     def test_runs_for_each_eligible_guest(self):
-        from scheduler import _run_service_health_checks
+        from core.scheduler import _run_service_health_checks
 
         app = _make_app()
         guests = [MagicMock(name=f"g{i}") for i in range(3)]
@@ -725,7 +725,7 @@ class TestRunServiceHealthChecks:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, Guest=mock_guest),
-            "scanner": mock_scanner,
+            "core.scanner": mock_scanner,
         }
         with _SysModulesPatch(mocks):
             _run_service_health_checks(app)
@@ -733,7 +733,7 @@ class TestRunServiceHealthChecks:
         assert mock_scanner.check_service_statuses.call_count == 3
 
     def test_exception_in_one_guest_does_not_abort_others(self):
-        from scheduler import _run_service_health_checks
+        from core.scheduler import _run_service_health_checks
 
         app = _make_app()
         g1, g2 = MagicMock(), MagicMock()
@@ -747,7 +747,7 @@ class TestRunServiceHealthChecks:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, Guest=mock_guest),
-            "scanner": mock_scanner,
+            "core.scanner": mock_scanner,
         }
         with _SysModulesPatch(mocks):
             _run_service_health_checks(app)
@@ -762,7 +762,7 @@ class TestRunServiceHealthChecks:
 
 class TestCheckAppUpdate:
     def test_returns_early_when_no_repo_configured(self):
-        from scheduler import _check_app_update
+        from core.scheduler import _check_app_update
 
         app = _make_app(config={"GITHUB_REPO": "", "APP_VERSION": "1.0.0"})
 
@@ -777,7 +777,7 @@ class TestCheckAppUpdate:
         mock_urlopen.assert_not_called()
 
     def test_network_failure_does_not_raise(self):
-        from scheduler import _check_app_update
+        from core.scheduler import _check_app_update
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
 
@@ -790,7 +790,7 @@ class TestCheckAppUpdate:
             _check_app_update(app)  # must not raise
 
     def test_invalid_branch_name_rejects_popen(self):
-        from scheduler import _check_app_update
+        from core.scheduler import _check_app_update
         import json
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
@@ -811,7 +811,7 @@ class TestCheckAppUpdate:
 
         mock_notifier = MagicMock()
         mock_notifier.send_app_update_notification.return_value = (True, "ok")
-        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
+        mocks = {"models": MagicMock(Setting=mock_setting), "core.notifier": mock_notifier}
         with _SysModulesPatch(mocks), \
              patch("urllib.request.urlopen", return_value=fake_resp), \
              patch("subprocess.Popen") as mock_popen:
@@ -820,7 +820,7 @@ class TestCheckAppUpdate:
         mock_popen.assert_not_called()
 
     def test_branch_starting_with_dash_is_rejected(self):
-        from scheduler import _check_app_update
+        from core.scheduler import _check_app_update
         import json
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
@@ -839,7 +839,7 @@ class TestCheckAppUpdate:
 
         mock_notifier = MagicMock()
         mock_notifier.send_app_update_notification.return_value = (True, "ok")
-        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
+        mocks = {"models": MagicMock(Setting=mock_setting), "core.notifier": mock_notifier}
         with _SysModulesPatch(mocks), \
              patch("urllib.request.urlopen", return_value=fake_resp), \
              patch("subprocess.Popen") as mock_popen:
@@ -848,7 +848,7 @@ class TestCheckAppUpdate:
         mock_popen.assert_not_called()
 
     def test_valid_branch_triggers_popen_when_script_exists(self):
-        from scheduler import _check_app_update
+        from core.scheduler import _check_app_update
         import json
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
@@ -869,7 +869,7 @@ class TestCheckAppUpdate:
 
         mock_notifier = MagicMock()
         mock_notifier.send_app_update_notification.return_value = (True, "ok")
-        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
+        mocks = {"models": MagicMock(Setting=mock_setting), "core.notifier": mock_notifier}
         with _SysModulesPatch(mocks), \
              patch("urllib.request.urlopen", return_value=fake_resp), \
              patch("subprocess.Popen") as mock_popen, \
@@ -882,7 +882,7 @@ class TestCheckAppUpdate:
         assert "main" in call_args
 
     def test_no_auto_update_skips_popen(self):
-        from scheduler import _check_app_update
+        from core.scheduler import _check_app_update
         import json
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
@@ -903,7 +903,7 @@ class TestCheckAppUpdate:
 
         mock_notifier = MagicMock()
         mock_notifier.send_app_update_notification.return_value = (True, "ok")
-        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
+        mocks = {"models": MagicMock(Setting=mock_setting), "core.notifier": mock_notifier}
         with _SysModulesPatch(mocks), \
              patch("urllib.request.urlopen", return_value=fake_resp), \
              patch("subprocess.Popen") as mock_popen:
@@ -913,7 +913,7 @@ class TestCheckAppUpdate:
 
     def test_notification_sent_even_without_auto_update(self):
         """Notification fires for new versions regardless of auto_update setting."""
-        from scheduler import _check_app_update
+        from core.scheduler import _check_app_update
         import json
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
@@ -932,7 +932,7 @@ class TestCheckAppUpdate:
 
         mock_notifier = MagicMock()
         mock_notifier.send_app_update_notification.return_value = (True, "ok")
-        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
+        mocks = {"models": MagicMock(Setting=mock_setting), "core.notifier": mock_notifier}
         with _SysModulesPatch(mocks), \
              patch("urllib.request.urlopen", return_value=fake_resp):
             _check_app_update(app)
@@ -940,7 +940,7 @@ class TestCheckAppUpdate:
         mock_notifier.send_app_update_notification.assert_called_once_with("1.0.0", "2.0.0")
 
     def test_app_notification_dedup_skips_already_notified(self):
-        from scheduler import _check_app_update
+        from core.scheduler import _check_app_update
         import json
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
@@ -958,7 +958,7 @@ class TestCheckAppUpdate:
         fake_resp.read.return_value = json.dumps({"tag_name": "v2.0.0"}).encode()
 
         mock_notifier = MagicMock()
-        mocks = {"models": MagicMock(Setting=mock_setting), "notifier": mock_notifier}
+        mocks = {"models": MagicMock(Setting=mock_setting), "core.notifier": mock_notifier}
         with _SysModulesPatch(mocks), \
              patch("urllib.request.urlopen", return_value=fake_resp):
             _check_app_update(app)
@@ -973,7 +973,7 @@ class TestCheckAppUpdate:
 
 class TestCheckMastodonRelease:
     def test_returns_early_when_no_mastodon_guest_configured(self):
-        from scheduler import _check_mastodon_release
+        from core.scheduler import _check_mastodon_release
 
         app = _make_app()
 
@@ -983,7 +983,7 @@ class TestCheckMastodonRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "mastodon": mock_mastodon,
+            "apps.mastodon": mock_mastodon,
         }
         with _SysModulesPatch(mocks):
             _check_mastodon_release(app)
@@ -991,7 +991,7 @@ class TestCheckMastodonRelease:
         mock_mastodon.check_mastodon_release.assert_not_called()
 
     def test_sends_notification_when_update_available(self):
-        from scheduler import _check_mastodon_release
+        from core.scheduler import _check_mastodon_release
 
         app = _make_app()
 
@@ -1010,8 +1010,8 @@ class TestCheckMastodonRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "mastodon": mock_mastodon,
-            "notifier": mock_notifier,
+            "apps.mastodon": mock_mastodon,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_mastodon_release(app)
@@ -1021,7 +1021,7 @@ class TestCheckMastodonRelease:
         )
 
     def test_skips_notification_when_already_notified_for_version(self):
-        from scheduler import _check_mastodon_release
+        from core.scheduler import _check_mastodon_release
 
         app = _make_app()
 
@@ -1039,8 +1039,8 @@ class TestCheckMastodonRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "mastodon": mock_mastodon,
-            "notifier": mock_notifier,
+            "apps.mastodon": mock_mastodon,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_mastodon_release(app)
@@ -1048,7 +1048,7 @@ class TestCheckMastodonRelease:
         mock_notifier.send_mastodon_update_notification.assert_not_called()
 
     def test_no_notification_when_no_update_available(self):
-        from scheduler import _check_mastodon_release
+        from core.scheduler import _check_mastodon_release
 
         app = _make_app()
 
@@ -1060,8 +1060,8 @@ class TestCheckMastodonRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "mastodon": mock_mastodon,
-            "notifier": mock_notifier,
+            "apps.mastodon": mock_mastodon,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_mastodon_release(app)
@@ -1069,7 +1069,7 @@ class TestCheckMastodonRelease:
         mock_notifier.send_mastodon_update_notification.assert_not_called()
 
     def test_auto_upgrade_triggered_when_enabled(self):
-        from scheduler import _check_mastodon_release
+        from core.scheduler import _check_mastodon_release
 
         app = _make_app()
 
@@ -1091,9 +1091,9 @@ class TestCheckMastodonRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, db=mock_db),
-            "mastodon": mock_mastodon,
-            "notifier": mock_notifier,
-            "audit": mock_audit,
+            "apps.mastodon": mock_mastodon,
+            "core.notifier": mock_notifier,
+            "auth.audit": mock_audit,
         }
         with _SysModulesPatch(mocks):
             _check_mastodon_release(app)
@@ -1108,7 +1108,7 @@ class TestCheckMastodonRelease:
 
 class TestCheckGhostRelease:
     def test_returns_early_when_no_ghost_guest_configured(self):
-        from scheduler import _check_ghost_release
+        from core.scheduler import _check_ghost_release
 
         app = _make_app()
 
@@ -1118,7 +1118,7 @@ class TestCheckGhostRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "ghost": mock_ghost,
+            "apps.ghost": mock_ghost,
         }
         with _SysModulesPatch(mocks):
             _check_ghost_release(app)
@@ -1126,7 +1126,7 @@ class TestCheckGhostRelease:
         mock_ghost.check_ghost_release.assert_not_called()
 
     def test_sends_notification_when_update_available(self):
-        from scheduler import _check_ghost_release
+        from core.scheduler import _check_ghost_release
 
         app = _make_app()
 
@@ -1145,8 +1145,8 @@ class TestCheckGhostRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "ghost": mock_ghost,
-            "notifier": mock_notifier,
+            "apps.ghost": mock_ghost,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_ghost_release(app)
@@ -1156,7 +1156,7 @@ class TestCheckGhostRelease:
         )
 
     def test_skips_notification_when_already_notified_for_version(self):
-        from scheduler import _check_ghost_release
+        from core.scheduler import _check_ghost_release
 
         app = _make_app()
 
@@ -1174,8 +1174,8 @@ class TestCheckGhostRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "ghost": mock_ghost,
-            "notifier": mock_notifier,
+            "apps.ghost": mock_ghost,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_ghost_release(app)
@@ -1183,7 +1183,7 @@ class TestCheckGhostRelease:
         mock_notifier.send_ghost_update_notification.assert_not_called()
 
     def test_no_notification_when_no_update_available(self):
-        from scheduler import _check_ghost_release
+        from core.scheduler import _check_ghost_release
 
         app = _make_app()
 
@@ -1195,8 +1195,8 @@ class TestCheckGhostRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "ghost": mock_ghost,
-            "notifier": mock_notifier,
+            "apps.ghost": mock_ghost,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_ghost_release(app)
@@ -1204,7 +1204,7 @@ class TestCheckGhostRelease:
         mock_notifier.send_ghost_update_notification.assert_not_called()
 
     def test_auto_upgrade_triggered_when_enabled(self):
-        from scheduler import _check_ghost_release
+        from core.scheduler import _check_ghost_release
 
         app = _make_app()
 
@@ -1226,9 +1226,9 @@ class TestCheckGhostRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, db=mock_db),
-            "ghost": mock_ghost,
-            "notifier": mock_notifier,
-            "audit": mock_audit,
+            "apps.ghost": mock_ghost,
+            "core.notifier": mock_notifier,
+            "auth.audit": mock_audit,
         }
         with _SysModulesPatch(mocks):
             _check_ghost_release(app)
@@ -1236,7 +1236,7 @@ class TestCheckGhostRelease:
         mock_ghost.run_ghost_upgrade.assert_called_once()
 
     def test_auto_upgrade_not_triggered_when_disabled(self):
-        from scheduler import _check_ghost_release
+        from core.scheduler import _check_ghost_release
 
         app = _make_app()
 
@@ -1255,8 +1255,8 @@ class TestCheckGhostRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "ghost": mock_ghost,
-            "notifier": mock_notifier,
+            "apps.ghost": mock_ghost,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_ghost_release(app)
@@ -1271,7 +1271,7 @@ class TestCheckGhostRelease:
 
 class TestCheckHostUpdates:
     def test_returns_early_when_scan_disabled(self):
-        from scheduler import _check_host_updates
+        from core.scheduler import _check_host_updates
 
         app = _make_app()
 
@@ -1284,7 +1284,7 @@ class TestCheckHostUpdates:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
-            "notifier": mock_notifier,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_host_updates(app)
@@ -1292,7 +1292,7 @@ class TestCheckHostUpdates:
         mock_host_model.query.all.assert_not_called()
 
     def test_returns_early_when_no_hosts(self):
-        from scheduler import _check_host_updates
+        from core.scheduler import _check_host_updates
 
         app = _make_app()
 
@@ -1304,7 +1304,7 @@ class TestCheckHostUpdates:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
-            "notifier": mock_notifier,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_host_updates(app)
@@ -1312,7 +1312,7 @@ class TestCheckHostUpdates:
         mock_notifier.send_host_update_notification.assert_not_called()
 
     def test_sends_notification_for_pve_host_with_updates(self):
-        from scheduler import _check_host_updates
+        from core.scheduler import _check_host_updates
 
         app = _make_app()
 
@@ -1337,8 +1337,8 @@ class TestCheckHostUpdates:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
-            "proxmox_api": mock_proxmox_api,
-            "notifier": mock_notifier,
+            "clients.proxmox_api": mock_proxmox_api,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_host_updates(app)
@@ -1350,7 +1350,7 @@ class TestCheckHostUpdates:
         assert results[0]["update_count"] == 1
 
     def test_sends_notification_for_pbs_host(self):
-        from scheduler import _check_host_updates
+        from core.scheduler import _check_host_updates
 
         app = _make_app()
 
@@ -1375,8 +1375,8 @@ class TestCheckHostUpdates:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
-            "pbs_client": mock_pbs,
-            "notifier": mock_notifier,
+            "clients.pbs_client": mock_pbs,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_host_updates(app)
@@ -1386,7 +1386,7 @@ class TestCheckHostUpdates:
         assert results[0]["host_type"] == "pbs"
 
     def test_skips_host_on_api_error(self):
-        from scheduler import _check_host_updates
+        from core.scheduler import _check_host_updates
 
         app = _make_app()
 
@@ -1424,8 +1424,8 @@ class TestCheckHostUpdates:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
-            "proxmox_api": mock_proxmox_api,
-            "notifier": mock_notifier,
+            "clients.proxmox_api": mock_proxmox_api,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_host_updates(app)
@@ -1443,7 +1443,7 @@ class TestCheckHostUpdates:
 
 class TestRunDiscovery:
     def test_returns_early_when_discovery_disabled(self):
-        from scheduler import _run_discovery
+        from core.scheduler import _run_discovery
 
         app = _make_app()
 
@@ -1454,7 +1454,7 @@ class TestRunDiscovery:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
-            "proxmox_api": mock_proxmox_api,
+            "clients.proxmox_api": mock_proxmox_api,
         }
         with _SysModulesPatch(mocks):
             _run_discovery(app)
@@ -1462,7 +1462,7 @@ class TestRunDiscovery:
         mock_proxmox_api.ProxmoxClient.assert_not_called()
 
     def test_returns_early_when_no_hosts(self):
-        from scheduler import _run_discovery
+        from core.scheduler import _run_discovery
 
         app = _make_app()
 
@@ -1474,7 +1474,7 @@ class TestRunDiscovery:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model),
-            "proxmox_api": mock_proxmox_api,
+            "clients.proxmox_api": mock_proxmox_api,
         }
         with _SysModulesPatch(mocks):
             _run_discovery(app)
@@ -1482,7 +1482,7 @@ class TestRunDiscovery:
         mock_proxmox_api.ProxmoxClient.assert_not_called()
 
     def test_logs_error_on_client_exception_without_propagating(self):
-        from scheduler import _run_discovery
+        from core.scheduler import _run_discovery
 
         app = _make_app()
 
@@ -1499,13 +1499,13 @@ class TestRunDiscovery:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model, db=mock_db),
-            "proxmox_api": mock_proxmox_api,
+            "clients.proxmox_api": mock_proxmox_api,
         }
         with _SysModulesPatch(mocks):
             _run_discovery(app)  # must not raise
 
     def test_multiple_host_failures_all_handled(self):
-        from scheduler import _run_discovery
+        from core.scheduler import _run_discovery
 
         app = _make_app()
 
@@ -1521,7 +1521,7 @@ class TestRunDiscovery:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, ProxmoxHost=mock_host_model, db=mock_db),
-            "proxmox_api": mock_proxmox_api,
+            "clients.proxmox_api": mock_proxmox_api,
         }
         with _SysModulesPatch(mocks):
             _run_discovery(app)  # all three failures handled

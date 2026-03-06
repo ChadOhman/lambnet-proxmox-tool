@@ -1,7 +1,7 @@
 import io
 import logging
 import paramiko
-from credential_store import decrypt
+from auth.credential_store import decrypt
 
 logger = logging.getLogger(__name__)
 
