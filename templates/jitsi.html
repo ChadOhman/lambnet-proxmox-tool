@@ -267,10 +267,18 @@
 
                 <div class="alert alert-info py-2 mb-3">
                     <i class="bi bi-cloud"></i>
+                    {% if settings.cf_mode == 'tcp_only' %}
+                    <strong>Cloudflare Zero Trust (TCP-only):</strong> All traffic routes through the tunnel.
+                    Media falls back to TURN over <code>5349/tcp</code>. No firewall changes needed, but expect slightly higher latency.
+                    {% elif settings.cf_mode == 'hybrid' %}
+                    <strong>Cloudflare Zero Trust (Hybrid):</strong> Web UI routes through the tunnel on <code>443/tcp</code>.
+                    Media goes direct over <code>10000/udp</code> for best call quality. Requires opening <code>10000/udp</code> on your firewall/NAT.
+                    {% else %}
                     <strong>Cloudflare Zero Trust:</strong> Route <code>443/tcp</code> through a tunnel to the guest's internal IP.
                     <code>10000/udp</code> (WebRTC media) cannot traverse Cloudflare tunnels &mdash; clients will fall back to
                     <code>5349/tcp</code> (TURN) which can be tunnelled, but with higher latency.
                     For best call quality, allow direct UDP on <code>10000/udp</code> to the guest.
+                    {% endif %}
                     <a class="d-block mt-1 small" data-bs-toggle="collapse" href="#cfSetupGuide" role="button" aria-expanded="false" aria-controls="cfSetupGuide">
                         <i class="bi bi-book"></i> Show full setup guide
                     </a>
@@ -281,12 +289,28 @@
 
 <h6 class="text-info mb-2">Cloudflare Zero Trust + Jitsi Meet Setup</h6>
 
+{% if settings.cf_mode and settings.cf_mode != 'none' %}
 <div class="alert alert-success py-2 mb-2">
     <i class="bi bi-lightning-charge"></i>
-    <strong>Steps 2&ndash;7 are now automated.</strong> Select a Cloudflare mode in the Configuration panel, save, then click
-    <strong>Configure for Cloudflare</strong>. This guide is kept for reference and manual verification.
+    <strong>Steps below are automated.</strong> Click <strong>Configure for Cloudflare</strong> to apply the
+    {{ 'TCP-only' if settings.cf_mode == 'tcp_only' else 'Hybrid' }} configuration.
+    Step 1 (Cloudflare tunnel route) must still be done manually in the Cloudflare dashboard.
+    This guide is kept for reference and verification.
 </div>
+{% else %}
+<div class="alert alert-info py-2 mb-2">
+    <i class="bi bi-info-circle"></i>
+    Select a Cloudflare Zero Trust mode in the Configuration panel and save to enable automated configuration.
+</div>
+{% endif %}
 
+{% if settings.cf_mode == 'tcp_only' %}
+<p>You have selected <strong>TCP-only mode</strong>. All traffic goes through the Cloudflare tunnel.
+Media falls back to TURN over TCP (<code>5349/tcp</code>). No firewall changes needed.</p>
+{% elif settings.cf_mode == 'hybrid' %}
+<p>You have selected <strong>Hybrid mode</strong>. Web UI goes through the Cloudflare tunnel on <code>443/tcp</code>.
+Media goes direct over <code>10000/udp</code> for best call quality. You must open <code>10000/udp</code> on your firewall/NAT.</p>
+{% else %}
 <p>Cloudflare tunnels only carry TCP/HTTP traffic. Jitsi's video bridge (JVB) uses <code>10000/udp</code> for media, which cannot traverse a tunnel. Two options:</p>
 
 <p><strong>Option A: Tunnel everything (TCP-only, easiest)</strong><br>
@@ -294,6 +318,7 @@ All traffic goes through Cloudflare. Media falls back to TURN over TCP. Slightly
 
 <p><strong>Option B: Tunnel HTTP + direct UDP (best quality)</strong><br>
 Web UI through Cloudflare tunnel, media direct over UDP. Requires opening <code>10000/udp</code> on your firewall/NAT to the Jitsi guest.</p>
+{% endif %}
 
 <hr class="border-secondary my-2">
 
@@ -308,15 +333,19 @@ HTTP Host Header: {{ settings.hostname or 'meet.example.com' }}</pre>
 
 <hr class="border-secondary my-2">
 
-<h6 class="text-warning mb-1">2. JVB NAT Harvester (Option B only)</h6>
+{% if settings.cf_mode != 'tcp_only' %}
+<h6 class="text-warning mb-1">2. JVB NAT Harvester{% if not settings.cf_mode %} (Option B only){% endif %}</h6>
 <p>Tell JVB its public IP so it can send correct ICE candidates. Edit on the Jitsi guest:</p>
 <pre class="bg-black border border-secondary rounded p-2 mb-2"># /etc/jitsi/videobridge/sip-communicator.properties
 org.ice4j.ice.harvest.NAT_HARVESTER_LOCAL_ADDRESS=&lt;guest-internal-ip&gt;
-org.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS=&lt;your-public-ip&gt;
+org.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS={{ settings.public_ip or '&lt;your-public-ip&gt;' }}
 
 # Then restart:
 sudo systemctl restart jitsi-videobridge2</pre>
+{% if not settings.cf_mode %}
 <p>Skip this step for Option A (tunnel-only) &mdash; all media goes through TURN.</p>
+{% endif %}
+{% endif %}
 
 <hr class="border-secondary my-2">
 
@@ -383,20 +412,27 @@ location /colibri-ws/ {
 
 <h6 class="text-warning mb-1">6. Firewall summary</h6>
 <table class="table table-dark table-sm table-bordered mb-2">
-    <thead><tr><th>Port</th><th>Protocol</th><th>Purpose</th><th>Tunnel?</th></tr></thead>
+    <thead><tr><th>Port</th><th>Protocol</th><th>Purpose</th><th>Required?</th></tr></thead>
     <tbody>
-        <tr><td>443</td><td>TCP</td><td>HTTPS (web UI, BOSH, WebSocket)</td><td class="text-success">Yes</td></tr>
-        <tr><td>80</td><td>TCP</td><td>HTTP redirect</td><td class="text-success">Yes</td></tr>
+        <tr><td>443</td><td>TCP</td><td>HTTPS (web UI, BOSH, WebSocket)</td><td class="text-success">Tunnelled</td></tr>
+        <tr><td>80</td><td>TCP</td><td>HTTP redirect</td><td class="text-success">Tunnelled</td></tr>
+        {% if settings.cf_mode == 'tcp_only' %}
+        <tr class="text-muted"><td>10000</td><td>UDP</td><td>JVB media (WebRTC)</td><td>Not needed &mdash; media uses TURN</td></tr>
+        {% elif settings.cf_mode == 'hybrid' %}
+        <tr><td>10000</td><td>UDP</td><td>JVB media (WebRTC)</td><td class="text-warning">Open on firewall/NAT</td></tr>
+        {% else %}
         <tr><td>10000</td><td>UDP</td><td>JVB media (WebRTC)</td><td class="text-danger">No &mdash; open on firewall (Option B) or skip (Option A, use TURN)</td></tr>
-        <tr><td>5349</td><td>TCP</td><td>TURN TLS relay</td><td class="text-success">Yes (via separate tunnel route) or open on firewall</td></tr>
-        <tr><td>3478</td><td>UDP</td><td>STUN/TURN</td><td class="text-danger">No &mdash; open on firewall or rely on 5349/tcp</td></tr>
+        {% endif %}
+        <tr><td>5349</td><td>TCP</td><td>TURN TLS relay</td><td class="text-success">Tunnelled or open on firewall</td></tr>
+        <tr><td>3478</td><td>UDP</td><td>STUN/TURN</td><td class="text-muted">Optional &mdash; clients use 5349/tcp via tunnel</td></tr>
     </tbody>
 </table>
 
 <hr class="border-secondary my-2">
 
-<h6 class="text-warning mb-1">7. Force TCP-only (Option A)</h6>
-<p>To force all media through TURN/TCP (no direct UDP), disable UDP candidates in the JVB:</p>
+{% if settings.cf_mode != 'hybrid' %}
+<h6 class="text-warning mb-1">7. Force TCP-only{% if not settings.cf_mode %} (Option A){% endif %}</h6>
+<p>Force all media through TURN/TCP (no direct UDP). Disable P2P and enable TCP transport in JVB:</p>
 <pre class="bg-black border border-secondary rounded p-2 mb-2"># /etc/jitsi/videobridge/jvb.conf
 # Add inside the videobridge { } block:
 ice {
@@ -413,6 +449,7 @@ ice {
 # Force TURN by setting:
 config.p2p = { enabled: false };
 config.openBridgeChannel = 'websocket';</pre>
+{% endif %}
 
 <p class="text-muted mb-0"><i class="bi bi-info-circle"></i> After any config changes, restart all Jitsi services:
 <code>sudo systemctl restart prosody jicofo jitsi-videobridge2 coturn nginx</code></p>
