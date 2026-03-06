@@ -832,6 +832,7 @@ def init_scheduler(app):
         discovery_hours = int(Setting.get("discovery_interval", "4") or 4)
         service_check_minutes = int(Setting.get("service_check_interval", "5") or 5)
         unifi_poll_minutes = int(Setting.get("unifi_api_poll_interval", "5") or 5)
+        prometheus_collect_seconds = int(Setting.get("prometheus_collect_interval", "60") or 60)
 
     # Discovery job - refresh hosts periodically
     _scheduler.add_job(
@@ -989,7 +990,6 @@ def init_scheduler(app):
     )
 
     # Prometheus metric collection - runs every 60s to keep gauges fresh
-    prometheus_collect_seconds = int(Setting.get("prometheus_collect_interval", "60") or 60)
     _scheduler.add_job(
         _collect_prometheus_metrics,
         trigger=IntervalTrigger(seconds=prometheus_collect_seconds),
