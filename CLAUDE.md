@@ -104,6 +104,11 @@ make all           # lint → security → test
 - **SQLAlchemy filters:** `== True` comparisons are intentional (E712 is ignored in ruff) — required by SQLAlchemy filter syntax.
 - **Import conventions:** Core modules (`models`, `config`) are at root. Everything else uses package imports: `from auth.audit import log_action`, `from clients.ssh_client import SSHClient`, `from core.scanner import scan_guest`, `from apps.mastodon import check_mastodon_release`.
 
+## Working Standards
+
+- **Own all failures:** Never dismiss test failures as "pre-existing" without fixing them. Investigate the root cause and fix them in the same PR. Don't push broken CI.
+- **CI must pass:** Every push must have a green CI. Take ownership of all failures on the branch, even if the root cause predates the current work.
+
 ## Lint / Style
 
 - Ruff: `line-length = 120`, `target-version = "py310"`
