@@ -297,12 +297,6 @@ def edit(guest_id):
         flash("Permission denied.", "error")
         return redirect(url_for("guests.detail", guest_id=guest.id))
 
-    # Allow admin to override guest_type (for VMID reuse correction)
-    new_type = request.form.get("guest_type")
-    if new_type in ("vm", "ct") and new_type != guest.guest_type:
-        guest.guest_type = new_type
-        guest.clear_stale_data()
-
     guest.connection_method = request.form.get("connection_method", "ssh")
     guest.auto_update = "auto_update" in request.form
     guest.require_snapshot = request.form.get("require_snapshot", "inherit")
