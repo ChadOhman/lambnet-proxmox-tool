@@ -534,7 +534,7 @@ class TestRefreshBackupStorages:
     def test_refresh_storages_xhr_returns_json(self, app, auth_client):
         """AJAX refresh should poll Proxmox and return JSON with storages list."""
         with patch("models.ProxmoxHost") as MockHost, \
-             patch("proxmox_api.ProxmoxClient"):
+             patch("clients.proxmox_api.ProxmoxClient"):
             MockHost.query.filter.return_value.all.return_value = []
             resp = auth_client.post(
                 "/settings/backups/refresh-storages",
@@ -549,7 +549,7 @@ class TestRefreshBackupStorages:
     def test_refresh_storages_saves_cache(self, app, auth_client):
         """Refresh should persist the storages list in the Setting table."""
         with patch("models.ProxmoxHost") as MockHost, \
-             patch("proxmox_api.ProxmoxClient"):
+             patch("clients.proxmox_api.ProxmoxClient"):
             MockHost.query.filter.return_value.all.return_value = []
             auth_client.post(
                 "/settings/backups/refresh-storages",
@@ -562,7 +562,7 @@ class TestRefreshBackupStorages:
     def test_refresh_storages_form_post_redirects(self, app, auth_client):
         """Non-AJAX POST should redirect back to settings."""
         with patch("models.ProxmoxHost") as MockHost, \
-             patch("proxmox_api.ProxmoxClient"):
+             patch("clients.proxmox_api.ProxmoxClient"):
             MockHost.query.filter.return_value.all.return_value = []
             resp = auth_client.post(
                 "/settings/backups/refresh-storages",

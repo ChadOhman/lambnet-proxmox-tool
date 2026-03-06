@@ -259,7 +259,7 @@ class TestApplicationsIndexJitsi:
 
 class TestCheckJitsiRelease:
     def test_returns_early_when_no_jitsi_guest_configured(self):
-        from scheduler import _check_jitsi_release
+        from core.scheduler import _check_jitsi_release
 
         app = _make_app()
 
@@ -269,7 +269,7 @@ class TestCheckJitsiRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "jitsi": mock_jitsi,
+            "apps.jitsi": mock_jitsi,
         }
         with _SysModulesPatch(mocks):
             _check_jitsi_release(app)
@@ -277,7 +277,7 @@ class TestCheckJitsiRelease:
         mock_jitsi.check_jitsi_release.assert_not_called()
 
     def test_returns_early_when_not_installed(self):
-        from scheduler import _check_jitsi_release
+        from core.scheduler import _check_jitsi_release
 
         app = _make_app()
 
@@ -290,7 +290,7 @@ class TestCheckJitsiRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "jitsi": mock_jitsi,
+            "apps.jitsi": mock_jitsi,
         }
         with _SysModulesPatch(mocks):
             _check_jitsi_release(app)
@@ -298,7 +298,7 @@ class TestCheckJitsiRelease:
         mock_jitsi.check_jitsi_release.assert_not_called()
 
     def test_sends_notification_when_update_available(self):
-        from scheduler import _check_jitsi_release
+        from core.scheduler import _check_jitsi_release
 
         app = _make_app()
 
@@ -318,8 +318,8 @@ class TestCheckJitsiRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "jitsi": mock_jitsi,
-            "notifier": mock_notifier,
+            "apps.jitsi": mock_jitsi,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_jitsi_release(app)
@@ -329,7 +329,7 @@ class TestCheckJitsiRelease:
         )
 
     def test_skips_notification_when_already_notified_for_version(self):
-        from scheduler import _check_jitsi_release
+        from core.scheduler import _check_jitsi_release
 
         app = _make_app()
 
@@ -348,8 +348,8 @@ class TestCheckJitsiRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "jitsi": mock_jitsi,
-            "notifier": mock_notifier,
+            "apps.jitsi": mock_jitsi,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_jitsi_release(app)
@@ -357,7 +357,7 @@ class TestCheckJitsiRelease:
         mock_notifier.send_jitsi_update_notification.assert_not_called()
 
     def test_no_notification_when_no_update_available(self):
-        from scheduler import _check_jitsi_release
+        from core.scheduler import _check_jitsi_release
 
         app = _make_app()
 
@@ -372,8 +372,8 @@ class TestCheckJitsiRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "jitsi": mock_jitsi,
-            "notifier": mock_notifier,
+            "apps.jitsi": mock_jitsi,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_jitsi_release(app)
@@ -381,7 +381,7 @@ class TestCheckJitsiRelease:
         mock_notifier.send_jitsi_update_notification.assert_not_called()
 
     def test_auto_upgrade_triggered_when_enabled(self):
-        from scheduler import _check_jitsi_release
+        from core.scheduler import _check_jitsi_release
 
         app = _make_app()
 
@@ -404,9 +404,9 @@ class TestCheckJitsiRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, db=mock_db),
-            "jitsi": mock_jitsi,
-            "notifier": mock_notifier,
-            "audit": mock_audit,
+            "apps.jitsi": mock_jitsi,
+            "core.notifier": mock_notifier,
+            "auth.audit": mock_audit,
         }
         with _SysModulesPatch(mocks):
             _check_jitsi_release(app)
@@ -423,18 +423,18 @@ class TestJitsiNotifier:
     """Jitsi notification functions exist and follow patterns."""
 
     def test_send_jitsi_update_notification_exists(self):
-        from notifier import send_jitsi_update_notification
+        from core.notifier import send_jitsi_update_notification
         assert callable(send_jitsi_update_notification)
 
     def test_upgrade_started_supports_jitsi(self, app):
         with app.app_context():
-            from notifier import send_upgrade_started_notification
+            from core.notifier import send_upgrade_started_notification
             ok, msg = send_upgrade_started_notification("jitsi", "2.0.9500", "manual")
             assert isinstance(ok, bool)
 
     def test_upgrade_result_supports_jitsi(self, app):
         with app.app_context():
-            from notifier import send_upgrade_result_notification
+            from core.notifier import send_upgrade_result_notification
             ok, msg = send_upgrade_result_notification("jitsi", "2.0.9500", True, "manual")
             assert isinstance(ok, bool)
 
@@ -513,7 +513,7 @@ class TestJitsiCloudflareLogic:
         from models import Setting
         with app.app_context():
             Setting.set("jitsi_cf_mode", "none")
-            from jitsi import run_cloudflare_configure
+            from apps.jitsi import run_cloudflare_configure
             ok, log = run_cloudflare_configure()
             assert ok is False
             assert "nothing" in log.lower()
@@ -523,7 +523,7 @@ class TestJitsiCloudflareLogic:
         with app.app_context():
             Setting.set("jitsi_cf_mode", "tcp_only")
             Setting.set("jitsi_installed", "false")
-            from jitsi import run_cloudflare_configure
+            from apps.jitsi import run_cloudflare_configure
             ok, log = run_cloudflare_configure()
             assert ok is False
             assert "installed" in log.lower()
@@ -535,7 +535,7 @@ class TestJitsiCloudflareLogic:
             Setting.set("jitsi_installed", "true")
             Setting.set("jitsi_hostname", "meet.example.com")
             Setting.set("jitsi_public_ip", "")
-            from jitsi import run_cloudflare_configure
+            from apps.jitsi import run_cloudflare_configure
             ok, log = run_cloudflare_configure()
             assert ok is False
             assert "public ip" in log.lower() or "required" in log.lower()
@@ -547,7 +547,7 @@ class TestJitsiCloudflareLogic:
             Setting.set("jitsi_installed", "true")
             Setting.set("jitsi_hostname", "meet.example.com")
             Setting.set("jitsi_public_ip", "not-an-ip")
-            from jitsi import run_cloudflare_configure
+            from apps.jitsi import run_cloudflare_configure
             ok, log = run_cloudflare_configure()
             assert ok is False
             assert "valid" in log.lower()
@@ -558,7 +558,7 @@ class TestJitsiCloudflareLogic:
             Setting.set("jitsi_cf_mode", "tcp_only")
             Setting.set("jitsi_installed", "true")
             Setting.set("jitsi_hostname", "")
-            from jitsi import run_cloudflare_configure
+            from apps.jitsi import run_cloudflare_configure
             ok, log = run_cloudflare_configure()
             assert ok is False
             assert "hostname" in log.lower()
@@ -689,7 +689,7 @@ class TestJitsiServiceMonitoring:
 
     def test_enable_jvb_rest_api_idempotent(self):
         """_enable_jvb_rest_api should skip if REST API already enabled."""
-        from jitsi import _enable_jvb_rest_api
+        from apps.jitsi import _enable_jvb_rest_api
         ssh = MagicMock()
         ssh.execute_sudo.return_value = (
             'videobridge {\n  apis {\n    rest {\n      enabled = true\n    }\n  }\n}',
@@ -704,7 +704,7 @@ class TestJitsiServiceMonitoring:
 
     def test_enable_jvb_rest_api_patches_conf(self):
         """_enable_jvb_rest_api should patch jvb.conf when REST not enabled."""
-        from jitsi import _enable_jvb_rest_api
+        from apps.jitsi import _enable_jvb_rest_api
         ssh = MagicMock()
         original_conf = 'videobridge {\n  ice {\n    udp {\n      port = 10000\n    }\n  }\n}'
         # First call reads the file, subsequent calls are write + restart

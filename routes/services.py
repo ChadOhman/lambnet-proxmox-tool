@@ -9,9 +9,9 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, stream_with_context
 from sqlalchemy import func
 from flask_login import login_required, current_user
-from audit import log_action
+from auth.audit import log_action
 from models import db, AuditLog, Guest, Tag, GuestService, ServiceMetricSnapshot
-from scanner import (check_service_statuses, service_action, get_service_logs, get_service_stats,
+from core.scanner import (check_service_statuses, service_action, get_service_logs, get_service_stats,
                      sidekiq_clear_dead, sidekiq_retry_dead,
                      sidekiq_clear_retry, sidekiq_retry_retry,
                      sidekiq_list_jobs, sidekiq_delete_job, sidekiq_retry_job,
@@ -323,7 +323,7 @@ def pg_kill_query(service_id, pid):
     if svc.service_name != "postgresql":
         return jsonify({"ok": False, "message": "Not a PostgreSQL service"}), 400
     guest = svc.guest
-    from scanner import _execute_command
+    from core.scanner import _execute_command
     stdout, error = _execute_command(
         guest,
         f"sudo -u postgres psql -t -A -c \"SELECT pg_terminate_backend({pid})\" 2>&1",
@@ -380,7 +380,7 @@ def pg_vacuum(service_id):
         return jsonify({"ok": False, "message": "database is required"}), 400
     if not _PG_DB_NAME_RE.match(database):
         return jsonify({"ok": False, "message": "Invalid database name."}), 400
-    from scanner import _execute_command
+    from core.scanner import _execute_command
     options = ["VERBOSE"] if verbose else []
     if analyze:
         options.append("ANALYZE")
@@ -414,7 +414,7 @@ def pg_explain(service_id):
         return jsonify({"ok": False, "message": "database and query are required"}), 400
     if not _PG_DB_NAME_RE.match(database):
         return jsonify({"ok": False, "message": "Invalid database name."}), 400
-    from scanner import _execute_command
+    from core.scanner import _execute_command
     import uuid
     tmpfile = f"/tmp/.pg_explain_{uuid.uuid4().hex[:12]}.sql"  # nosec B108 — remote SSH path, not a local temp file
     # Use shlex.quote() to safely shell-quote the SQL content; single quotes in the shell
@@ -447,7 +447,7 @@ def pg_roles(service_id):
     svc, guest = _pg_guard(service_id)
     if svc is None:
         return jsonify({"error": "Not a PostgreSQL service"}), 400
-    from scanner import _execute_command
+    from core.scanner import _execute_command
     stdout, error = _execute_command(
         guest,
         "sudo -u postgres psql -t -A -c \""
@@ -480,7 +480,7 @@ def pg_settings(service_id):
     svc, guest = _pg_guard(service_id)
     if svc is None:
         return jsonify({"error": "Not a PostgreSQL service"}), 400
-    from scanner import _execute_command
+    from core.scanner import _execute_command
     # Fetch a curated set of important settings
     names = (
         "max_connections,shared_buffers,work_mem,maintenance_work_mem,"

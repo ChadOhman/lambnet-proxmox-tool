@@ -17,7 +17,7 @@ from unittest.mock import patch, MagicMock
 from io import BytesIO
 
 from models import db, Setting
-from notifier import (
+from core.notifier import (
     _send_discord,
     _get_discord_config,
     send_test_notification,

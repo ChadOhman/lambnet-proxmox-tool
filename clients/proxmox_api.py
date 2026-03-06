@@ -1,7 +1,7 @@
 import time
 import logging
 from proxmoxer import ProxmoxAPI
-from credential_store import decrypt
+from auth.credential_store import decrypt
 
 logger = logging.getLogger(__name__)
 

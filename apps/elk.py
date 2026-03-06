@@ -14,11 +14,11 @@ from datetime import datetime
 from urllib.request import Request, urlopen
 
 from models import Guest, Setting
-from proxmox_api import ProxmoxClient
-from ssh_client import SSHClient
+from clients.proxmox_api import ProxmoxClient
+from clients.ssh_client import SSHClient
 
 # Shared shell-safety and output helpers from the Mastodon module
-from mastodon import _log_cmd_output, _validate_shell_param, _version_gt
+from apps.utils import _log_cmd_output, _validate_shell_param, _version_gt
 
 logger = logging.getLogger(__name__)
 

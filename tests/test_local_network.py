@@ -2,7 +2,7 @@
 
 import ipaddress
 
-from local_network import _is_trusted, _get_client_ip
+from auth.local_network import _is_trusted, _get_client_ip
 from models import db, Setting
 
 

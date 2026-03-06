@@ -5,7 +5,7 @@ import time
 from unittest.mock import patch, MagicMock
 
 from models import db, User, Setting
-import cloudflare_access
+import auth.cloudflare_access as cloudflare_access
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ class TestGetOrCreateCfUser:
         with app.app_context():
             Setting.set("cf_access_auto_provision", "true")
             # Temporarily hide the viewer role by patching the query result
-            with patch("cloudflare_access.Role") as mock_role_cls:
+            with patch("auth.cloudflare_access.Role") as mock_role_cls:
                 mock_role_cls.query.filter_by.return_value.first.return_value = None
                 # _get_cf_config() also calls Setting, leave that intact via User/db
                 user = cloudflare_access._get_or_create_cf_user("nobody@example.com")
@@ -224,9 +224,9 @@ class TestFetchJwks:
         fake_resp = _make_fake_urlopen({"keys": fake_keys, "public_certs": []})
 
         with app.app_context():
-            with patch("cloudflare_access.urlopen", return_value=fake_resp):
+            with patch("auth.cloudflare_access.urlopen", return_value=fake_resp):
                 # Patch RSAAlgorithm.from_jwk so parsing fake keys doesn't raise
-                with patch("cloudflare_access.pyjwt.algorithms.RSAAlgorithm.from_jwk",
+                with patch("auth.cloudflare_access.pyjwt.algorithms.RSAAlgorithm.from_jwk",
                            return_value=MagicMock()):
                     keys = cloudflare_access._fetch_jwks("myteam.cloudflareaccess.com")
 
@@ -237,8 +237,8 @@ class TestFetchJwks:
         fake_resp = _make_fake_urlopen({"keys": fake_keys, "public_certs": []})
 
         with app.app_context():
-            with patch("cloudflare_access.urlopen", return_value=fake_resp):
-                with patch("cloudflare_access.pyjwt.algorithms.RSAAlgorithm.from_jwk",
+            with patch("auth.cloudflare_access.urlopen", return_value=fake_resp):
+                with patch("auth.cloudflare_access.pyjwt.algorithms.RSAAlgorithm.from_jwk",
                            return_value=MagicMock()):
                     cloudflare_access._fetch_jwks("myteam.cloudflareaccess.com")
 
@@ -251,7 +251,7 @@ class TestFetchJwks:
         cloudflare_access._jwks_cache["fetched_at"] = time.time()  # just fetched
 
         with app.app_context():
-            with patch("cloudflare_access.urlopen") as mock_open:
+            with patch("auth.cloudflare_access.urlopen") as mock_open:
                 keys = cloudflare_access._fetch_jwks("myteam.cloudflareaccess.com")
 
         mock_open.assert_not_called()
@@ -268,8 +268,8 @@ class TestFetchJwks:
         fake_resp = _make_fake_urlopen({"keys": new_keys, "public_certs": []})
 
         with app.app_context():
-            with patch("cloudflare_access.urlopen", return_value=fake_resp):
-                with patch("cloudflare_access.pyjwt.algorithms.RSAAlgorithm.from_jwk",
+            with patch("auth.cloudflare_access.urlopen", return_value=fake_resp):
+                with patch("auth.cloudflare_access.pyjwt.algorithms.RSAAlgorithm.from_jwk",
                            return_value=MagicMock()):
                     keys = cloudflare_access._fetch_jwks("myteam.cloudflareaccess.com")
 
@@ -283,7 +283,7 @@ class TestFetchJwks:
         )
 
         with app.app_context():
-            with patch("cloudflare_access.urlopen", side_effect=OSError("connection refused")):
+            with patch("auth.cloudflare_access.urlopen", side_effect=OSError("connection refused")):
                 keys = cloudflare_access._fetch_jwks("myteam.cloudflareaccess.com")
 
         assert keys == [{"kty": "RSA", "kid": "stale-fallback"}]
@@ -291,7 +291,7 @@ class TestFetchJwks:
     def test_returns_empty_list_on_network_error_with_empty_cache(self, app):
         """If no stale keys exist and the network call fails, return an empty list."""
         with app.app_context():
-            with patch("cloudflare_access.urlopen", side_effect=OSError("timeout")):
+            with patch("auth.cloudflare_access.urlopen", side_effect=OSError("timeout")):
                 keys = cloudflare_access._fetch_jwks("myteam.cloudflareaccess.com")
 
         assert keys == []
@@ -306,7 +306,7 @@ class TestFetchJwks:
             return fake_resp
 
         with app.app_context():
-            with patch("cloudflare_access.urlopen", side_effect=fake_urlopen):
+            with patch("auth.cloudflare_access.urlopen", side_effect=fake_urlopen):
                 cloudflare_access._fetch_jwks("example.cloudflareaccess.com")
 
         assert len(captured_urls) == 1
@@ -407,7 +407,7 @@ class TestCfAccessMiddleware:
         fake_payload = {"email": _cleanup_email, "name": "JWT Tester"}
 
         with app.test_client() as c:
-            with patch("cloudflare_access.validate_cf_token", return_value=fake_payload):
+            with patch("auth.cloudflare_access.validate_cf_token", return_value=fake_payload):
                 resp = c.get(
                     "/",
                     headers={"Cf-Access-Jwt-Assertion": "fake.jwt.token"},
@@ -430,7 +430,7 @@ class TestCfAccessMiddleware:
         self._set_cf_enabled(app, enabled=True, bypass_local=False)
 
         with app.test_client() as c:
-            with patch("cloudflare_access.validate_cf_token",
+            with patch("auth.cloudflare_access.validate_cf_token",
                        side_effect=ValueError("bad sig")):
                 resp = c.get(
                     "/",
@@ -447,7 +447,7 @@ class TestCfAccessMiddleware:
         self._set_cf_enabled(app, enabled=True, bypass_local=True)
 
         with app.test_client() as c:
-            with patch("cloudflare_access.validate_cf_token",
+            with patch("auth.cloudflare_access.validate_cf_token",
                        side_effect=ValueError("expired")):
                 resp = c.get(
                     "/",
@@ -492,7 +492,7 @@ class TestCfAccessMiddleware:
 
         with app.test_client() as c:
             c.set_cookie("CF_Authorization", "fake.cookie.token")
-            with patch("cloudflare_access.validate_cf_token", return_value=fake_payload):
+            with patch("auth.cloudflare_access.validate_cf_token", return_value=fake_payload):
                 resp = c.get("/", follow_redirects=False)
 
         assert resp.status_code == 200

@@ -290,7 +290,7 @@ class TestApplicationsIndexElk:
 
 class TestCheckElkRelease:
     def test_returns_early_when_no_elk_guest_configured(self):
-        from scheduler import _check_elk_release
+        from core.scheduler import _check_elk_release
 
         app = _make_app()
 
@@ -300,7 +300,7 @@ class TestCheckElkRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "elk": mock_elk,
+            "apps.elk": mock_elk,
         }
         with _SysModulesPatch(mocks):
             _check_elk_release(app)
@@ -308,7 +308,7 @@ class TestCheckElkRelease:
         mock_elk.check_elk_release.assert_not_called()
 
     def test_returns_early_when_not_installed(self):
-        from scheduler import _check_elk_release
+        from core.scheduler import _check_elk_release
 
         app = _make_app()
 
@@ -321,7 +321,7 @@ class TestCheckElkRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "elk": mock_elk,
+            "apps.elk": mock_elk,
         }
         with _SysModulesPatch(mocks):
             _check_elk_release(app)
@@ -329,7 +329,7 @@ class TestCheckElkRelease:
         mock_elk.check_elk_release.assert_not_called()
 
     def test_sends_notification_when_update_available(self):
-        from scheduler import _check_elk_release
+        from core.scheduler import _check_elk_release
 
         app = _make_app()
 
@@ -349,8 +349,8 @@ class TestCheckElkRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "elk": mock_elk,
-            "notifier": mock_notifier,
+            "apps.elk": mock_elk,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_elk_release(app)
@@ -360,7 +360,7 @@ class TestCheckElkRelease:
         )
 
     def test_skips_notification_when_already_notified_for_version(self):
-        from scheduler import _check_elk_release
+        from core.scheduler import _check_elk_release
 
         app = _make_app()
 
@@ -379,8 +379,8 @@ class TestCheckElkRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "elk": mock_elk,
-            "notifier": mock_notifier,
+            "apps.elk": mock_elk,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_elk_release(app)
@@ -388,7 +388,7 @@ class TestCheckElkRelease:
         mock_notifier.send_elk_update_notification.assert_not_called()
 
     def test_no_notification_when_no_update_available(self):
-        from scheduler import _check_elk_release
+        from core.scheduler import _check_elk_release
 
         app = _make_app()
 
@@ -403,8 +403,8 @@ class TestCheckElkRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting),
-            "elk": mock_elk,
-            "notifier": mock_notifier,
+            "apps.elk": mock_elk,
+            "core.notifier": mock_notifier,
         }
         with _SysModulesPatch(mocks):
             _check_elk_release(app)
@@ -412,7 +412,7 @@ class TestCheckElkRelease:
         mock_notifier.send_elk_update_notification.assert_not_called()
 
     def test_auto_upgrade_triggered_when_enabled(self):
-        from scheduler import _check_elk_release
+        from core.scheduler import _check_elk_release
 
         app = _make_app()
 
@@ -435,9 +435,9 @@ class TestCheckElkRelease:
 
         mocks = {
             "models": MagicMock(Setting=mock_setting, db=mock_db),
-            "elk": mock_elk,
-            "notifier": mock_notifier,
-            "audit": mock_audit,
+            "apps.elk": mock_elk,
+            "core.notifier": mock_notifier,
+            "auth.audit": mock_audit,
         }
         with _SysModulesPatch(mocks):
             _check_elk_release(app)
@@ -454,18 +454,18 @@ class TestElkNotifier:
     """Elk notification functions exist and follow patterns."""
 
     def test_send_elk_update_notification_exists(self):
-        from notifier import send_elk_update_notification
+        from core.notifier import send_elk_update_notification
         assert callable(send_elk_update_notification)
 
     def test_upgrade_started_supports_elk(self, app):
         with app.app_context():
-            from notifier import send_upgrade_started_notification
+            from core.notifier import send_upgrade_started_notification
             ok, msg = send_upgrade_started_notification("elk", "0.13.0", "manual")
             assert isinstance(ok, bool)
 
     def test_upgrade_result_supports_elk(self, app):
         with app.app_context():
-            from notifier import send_upgrade_result_notification
+            from core.notifier import send_upgrade_result_notification
             ok, msg = send_upgrade_result_notification("elk", "0.13.0", True, "manual")
             assert isinstance(ok, bool)
 
@@ -480,8 +480,8 @@ class TestCheckElkReleaseUnit:
 
     def test_returns_false_on_network_error(self, app):
         with app.app_context():
-            with patch("elk.urlopen", side_effect=Exception("timeout")):
-                from elk import check_elk_release
+            with patch("apps.elk.urlopen", side_effect=Exception("timeout")):
+                from apps.elk import check_elk_release
                 update, version, url = check_elk_release()
                 assert update is False
                 assert version == ""
@@ -505,8 +505,8 @@ class TestCheckElkReleaseUnit:
             from models import db
             db.session.commit()
 
-            with patch("elk.urlopen", return_value=fake_resp):
-                from elk import check_elk_release
+            with patch("apps.elk.urlopen", return_value=fake_resp):
+                from apps.elk import check_elk_release
                 update, version, url = check_elk_release()
                 assert update is True
                 assert version == "0.13.1"

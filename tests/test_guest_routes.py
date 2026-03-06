@@ -76,7 +76,7 @@ def test_credential(app):
     """Seed a Credential for use in guest tests; clean up after each test."""
     cred_id = None
     with app.app_context():
-        import credential_store
+        import auth.credential_store as credential_store
         cred = Credential(
             name="_test-guest-cred",
             username="ubuntu",

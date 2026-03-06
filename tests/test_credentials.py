@@ -13,7 +13,7 @@ def credential(app):
     """Seed a single Credential row; clean up after the test."""
     cred_id = None
     with app.app_context():
-        import credential_store
+        import auth.credential_store as credential_store
         cred = Credential(
             name="_test-cred",
             username="root",
@@ -39,7 +39,7 @@ def default_credential(app):
     """Seed a Credential already marked as default; clean up after the test."""
     cred_id = None
     with app.app_context():
-        import credential_store
+        import auth.credential_store as credential_store
         # Unset any pre-existing defaults to keep state predictable.
         Credential.query.filter_by(is_default=True).update({"is_default": False})
         db.session.commit()
@@ -267,7 +267,7 @@ class TestCredentialEdit:
         assert resp.status_code == 302
 
         with app.app_context():
-            import credential_store
+            import auth.credential_store as credential_store
             cred = Credential.query.get(credential)
             decrypted = credential_store.decrypt(cred.encrypted_value)
             assert decrypted == "NewPassword99!"
@@ -350,7 +350,7 @@ class TestCredentialStore:
         Point LAMBNET_SECRET_KEY at a temporary file and reset the cached
         Fernet instance so every test starts with a fresh, known key.
         """
-        import credential_store
+        import auth.credential_store as credential_store
 
         key_path = str(tmp_path / "test_secret.key")
         monkeypatch.setenv("LAMBNET_SECRET_KEY", key_path)
@@ -366,7 +366,7 @@ class TestCredentialStore:
         credential_store._fernet = None
 
     def test_encrypt_decrypt_roundtrip(self):
-        from credential_store import encrypt, decrypt
+        from auth.credential_store import encrypt, decrypt
 
         plaintext = "super-secret-value-42"
         ciphertext = encrypt(plaintext)
@@ -375,29 +375,29 @@ class TestCredentialStore:
         assert decrypt(ciphertext) == plaintext
 
     def test_encrypt_none_returns_none(self):
-        from credential_store import encrypt
+        from auth.credential_store import encrypt
 
         assert encrypt(None) is None
 
     def test_encrypt_empty_string_returns_none(self):
         """encrypt() treats empty string the same as None (falsy check)."""
-        from credential_store import encrypt
+        from auth.credential_store import encrypt
 
         assert encrypt("") is None
 
     def test_decrypt_none_returns_none(self):
-        from credential_store import decrypt
+        from auth.credential_store import decrypt
 
         assert decrypt(None) is None
 
     def test_decrypt_empty_string_returns_none(self):
-        from credential_store import decrypt
+        from auth.credential_store import decrypt
 
         assert decrypt("") is None
 
     def test_ciphertext_differs_each_call(self):
         """Fernet produces a unique ciphertext on every call (random IV)."""
-        from credential_store import encrypt
+        from auth.credential_store import encrypt
 
         plaintext = "same-input"
         ct1 = encrypt(plaintext)

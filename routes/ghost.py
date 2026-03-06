@@ -4,7 +4,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required
 from models import db, Setting, Guest
-from audit import log_action
+from auth.audit import log_action
 
 
 def _parse_iso(value):
@@ -93,7 +93,7 @@ def upgrade_page():
         try:
             g = Guest.query.get(int(guest_id))
             if g and g.proxmox_host and not g.proxmox_host.is_pbs:
-                from proxmox_api import ProxmoxClient
+                from clients.proxmox_api import ProxmoxClient
                 client = ProxmoxClient(g.proxmox_host)
                 node = client.find_guest_node(g.vmid)
                 if node:
@@ -138,7 +138,7 @@ def save():
 
 @bp.route("/check", methods=["POST"])
 def check():
-    from ghost import check_ghost_release
+    from apps.ghost import check_ghost_release
 
     update_available, latest, release_url = check_ghost_release()
     current = Setting.get("ghost_current_version", "")
@@ -179,7 +179,7 @@ def preflight_status():
 
 @bp.route("/preflight", methods=["POST"])
 def preflight():
-    from ghost import run_ghost_preflight
+    from apps.ghost import run_ghost_preflight
     from flask import current_app
 
     if _upgrade_job["running"]:
@@ -216,7 +216,7 @@ def preflight():
 
 @bp.route("/upgrade", methods=["POST"])
 def upgrade():
-    from ghost import run_ghost_upgrade
+    from apps.ghost import run_ghost_upgrade
     from flask import current_app
     from flask_login import current_user
 
@@ -241,7 +241,7 @@ def upgrade():
         ok = False
         try:
             with _app.app_context():
-                from notifier import send_upgrade_started_notification
+                from core.notifier import send_upgrade_started_notification
                 send_upgrade_started_notification("ghost", target_version, "manual")
                 ok, _ = run_ghost_upgrade(log_callback=_cb, skip_protection=skip_protection)
         except Exception as e:
@@ -258,7 +258,7 @@ def upgrade():
             log_action("ghost_upgrade", "settings", resource_name="ghost",
                        details={"status": "success" if ok else "error"})
             db.session.commit()
-            from notifier import send_upgrade_result_notification
+            from core.notifier import send_upgrade_result_notification
             send_upgrade_result_notification("ghost", target_version, ok, "manual")
 
     try:
@@ -272,7 +272,7 @@ def upgrade():
 
 @bp.route("/detect-versions", methods=["POST"])
 def detect_versions():
-    from ghost import detect_ghost_version
+    from apps.ghost import detect_ghost_version
 
     guest_id = Setting.get("ghost_guest_id", "")
     ghost_dir = Setting.get("ghost_dir", "/opt/ghost")

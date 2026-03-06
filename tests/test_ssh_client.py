@@ -27,7 +27,7 @@ from unittest.mock import MagicMock, patch
 
 def _make_client(**kwargs):
     """Return an SSHClient with sensible defaults, using only pure-Python args."""
-    from ssh_client import SSHClient
+    from clients.ssh_client import SSHClient
 
     defaults = dict(
         hostname="10.0.0.1",
@@ -59,15 +59,15 @@ def _make_credential(auth_type="password", value="s3cr3t", sudo_pw=None):
 
 class TestModuleImport:
     def test_ssh_client_module_imports_without_error(self):
-        import ssh_client  # noqa: F401
+        import clients.ssh_client  # noqa: F401
 
     def test_SSHClient_class_is_importable(self):
-        from ssh_client import SSHClient
+        from clients.ssh_client import SSHClient
 
         assert SSHClient is not None
 
     def test_SSHClient_is_a_class(self):
-        from ssh_client import SSHClient
+        from clients.ssh_client import SSHClient
 
         assert isinstance(SSHClient, type)
 
@@ -79,7 +79,7 @@ class TestModuleImport:
 
 class TestInstantiation:
     def test_instantiate_with_only_hostname(self):
-        from ssh_client import SSHClient
+        from clients.ssh_client import SSHClient
 
         client = SSHClient("192.168.1.1")
         assert client.hostname == "192.168.1.1"
@@ -235,7 +235,7 @@ class TestFeedSudoPassword:
 
 
 class TestConnect:
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_connect_with_password_calls_connect_correctly(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -252,7 +252,7 @@ class TestConnect:
         )
         assert result is mock_raw
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_connect_sets_auto_add_policy(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -262,7 +262,7 @@ class TestConnect:
 
         mock_raw.set_missing_host_key_policy.assert_called_once()
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_connect_with_no_auth_omits_password_kwarg(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -274,8 +274,8 @@ class TestConnect:
         assert "password" not in call_kwargs
         assert "pkey" not in call_kwargs
 
-    @patch("ssh_client.paramiko.RSAKey")
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.RSAKey")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_connect_with_rsa_private_key(self, MockSSH, MockRSA):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -289,10 +289,10 @@ class TestConnect:
         assert call_kwargs["pkey"] is mock_pkey
         assert "password" not in call_kwargs
 
-    @patch("ssh_client.paramiko.ECDSAKey")
-    @patch("ssh_client.paramiko.Ed25519Key")
-    @patch("ssh_client.paramiko.RSAKey")
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.ECDSAKey")
+    @patch("clients.ssh_client.paramiko.Ed25519Key")
+    @patch("clients.ssh_client.paramiko.RSAKey")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_connect_falls_back_to_ed25519_when_rsa_fails(
         self, MockSSH, MockRSA, MockEd25519, MockECDSA
     ):
@@ -311,10 +311,10 @@ class TestConnect:
         call_kwargs = mock_raw.connect.call_args[1]
         assert call_kwargs["pkey"] is mock_ed_key
 
-    @patch("ssh_client.paramiko.ECDSAKey")
-    @patch("ssh_client.paramiko.Ed25519Key")
-    @patch("ssh_client.paramiko.RSAKey")
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.ECDSAKey")
+    @patch("clients.ssh_client.paramiko.Ed25519Key")
+    @patch("clients.ssh_client.paramiko.RSAKey")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_connect_falls_back_to_ecdsa_when_rsa_and_ed25519_fail(
         self, MockSSH, MockRSA, MockEd25519, MockECDSA
     ):
@@ -334,7 +334,7 @@ class TestConnect:
         call_kwargs = mock_raw.connect.call_args[1]
         assert call_kwargs["pkey"] is mock_ecdsa_key
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_connect_stores_internal_client(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -362,7 +362,7 @@ class TestExecute:
         mock_stdin = MagicMock()
         return mock_stdin, mock_stdout, mock_stderr
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_execute_returns_stdout_stderr_exit_code(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -379,7 +379,7 @@ class TestExecute:
         assert err == ""
         assert code == 0
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_execute_auto_connects_when_client_is_none(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -394,7 +394,7 @@ class TestExecute:
 
         assert client._client is mock_raw
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_execute_returns_minus_one_on_exception(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -409,7 +409,7 @@ class TestExecute:
         assert "broken pipe" in err
         assert code == -1
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_execute_with_sudo_feeds_password(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -425,7 +425,7 @@ class TestExecute:
         # stdin.write must have been called with the password.
         stdin.write.assert_called_once_with(b"sudopass\n")
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_execute_passes_timeout_to_exec_command(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -440,7 +440,7 @@ class TestExecute:
 
         mock_raw.exec_command.assert_called_once_with("sleep 1", timeout=999)
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_execute_decodes_non_utf8_output_with_replace(self, MockSSH):
         """Binary output with invalid UTF-8 must not raise — replaced instead."""
         mock_raw = MagicMock()
@@ -470,7 +470,7 @@ class TestExecute:
 
 
 class TestExecuteSudo:
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_root_user_command_not_wrapped(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -491,7 +491,7 @@ class TestExecuteSudo:
         cmd_used = mock_raw.exec_command.call_args[0][0]
         assert cmd_used == "id"
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_non_root_command_is_wrapped_with_sudo(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -512,7 +512,7 @@ class TestExecuteSudo:
         cmd_used = mock_raw.exec_command.call_args[0][0]
         assert cmd_used.startswith("sudo")
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_sudo_password_fed_to_stdin_for_non_root(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -568,7 +568,7 @@ class TestClose:
 
 
 class TestContextManager:
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_enter_calls_connect_and_returns_self(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -579,7 +579,7 @@ class TestContextManager:
         assert result is client
         assert client._client is mock_raw
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_exit_calls_close(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -592,7 +592,7 @@ class TestContextManager:
         mock_raw.close.assert_called_once()
         assert client._client is None
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_context_manager_via_with_statement(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -605,7 +605,7 @@ class TestContextManager:
         stderr.read.return_value = b""
         mock_raw.exec_command.return_value = (stdin, stdout, stderr)
 
-        from ssh_client import SSHClient
+        from clients.ssh_client import SSHClient
 
         with SSHClient("10.0.0.1", password="pw") as ssh:
             out, _, code = ssh.execute("echo ok")
@@ -620,7 +620,7 @@ class TestContextManager:
 
 
 class TestTestConnection:
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_success_when_echo_ok_returns_zero(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -639,7 +639,7 @@ class TestTestConnection:
         assert ok is True
         assert "successful" in msg.lower()
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_failure_when_exit_code_nonzero(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -657,7 +657,7 @@ class TestTestConnection:
 
         assert ok is False
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_failure_when_connect_raises(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -669,7 +669,7 @@ class TestTestConnection:
         assert ok is False
         assert "Connection refused" in msg
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_failure_when_stdout_does_not_contain_ok(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -687,7 +687,7 @@ class TestTestConnection:
 
         assert ok is False
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_connection_closed_after_test(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -712,12 +712,12 @@ class TestTestConnection:
 
 
 class TestFromCredential:
-    @patch("ssh_client.decrypt")
+    @patch("clients.ssh_client.decrypt")
     def test_password_credential_sets_password(self, mock_decrypt):
         mock_decrypt.return_value = "plaintext-password"
         cred = _make_credential(auth_type="password", value="enc-pw")
 
-        from ssh_client import SSHClient
+        from clients.ssh_client import SSHClient
 
         client = SSHClient.from_credential("10.0.0.1", cred, port=22)
 
@@ -725,19 +725,19 @@ class TestFromCredential:
         assert client.private_key is None
         assert client.hostname == "10.0.0.1"
 
-    @patch("ssh_client.decrypt")
+    @patch("clients.ssh_client.decrypt")
     def test_key_credential_sets_private_key(self, mock_decrypt):
         mock_decrypt.return_value = "-----BEGIN RSA PRIVATE KEY-----\nfake"
         cred = _make_credential(auth_type="key", value="enc-key")
 
-        from ssh_client import SSHClient
+        from clients.ssh_client import SSHClient
 
         client = SSHClient.from_credential("10.0.0.1", cred)
 
         assert client.private_key == "-----BEGIN RSA PRIVATE KEY-----\nfake"
         assert client.password is None
 
-    @patch("ssh_client.decrypt")
+    @patch("clients.ssh_client.decrypt")
     def test_sudo_password_is_decrypted_when_present(self, mock_decrypt):
         def decrypt_side_effect(val):
             return val.replace("enc:", "")
@@ -745,53 +745,53 @@ class TestFromCredential:
         mock_decrypt.side_effect = decrypt_side_effect
         cred = _make_credential(auth_type="password", value="enc:pw", sudo_pw="sudosecret")
 
-        from ssh_client import SSHClient
+        from clients.ssh_client import SSHClient
 
         client = SSHClient.from_credential("10.0.0.1", cred)
 
         assert client.sudo_password == "sudosecret"
 
-    @patch("ssh_client.decrypt")
+    @patch("clients.ssh_client.decrypt")
     def test_sudo_password_is_none_when_not_set_on_credential(self, mock_decrypt):
         mock_decrypt.return_value = "plaintext"
         cred = _make_credential(auth_type="password")
         cred.encrypted_sudo_password = None
 
-        from ssh_client import SSHClient
+        from clients.ssh_client import SSHClient
 
         client = SSHClient.from_credential("10.0.0.1", cred)
 
         assert client.sudo_password is None
 
-    @patch("ssh_client.decrypt")
+    @patch("clients.ssh_client.decrypt")
     def test_username_taken_from_credential(self, mock_decrypt):
         mock_decrypt.return_value = "pw"
         cred = _make_credential(auth_type="password")
         cred.username = "deploy"
 
-        from ssh_client import SSHClient
+        from clients.ssh_client import SSHClient
 
         client = SSHClient.from_credential("10.0.0.1", cred)
 
         assert client.username == "deploy"
 
-    @patch("ssh_client.decrypt")
+    @patch("clients.ssh_client.decrypt")
     def test_port_defaults_to_22(self, mock_decrypt):
         mock_decrypt.return_value = "pw"
         cred = _make_credential(auth_type="password")
 
-        from ssh_client import SSHClient
+        from clients.ssh_client import SSHClient
 
         client = SSHClient.from_credential("10.0.0.1", cred)
 
         assert client.port == 22
 
-    @patch("ssh_client.decrypt")
+    @patch("clients.ssh_client.decrypt")
     def test_custom_port_is_forwarded(self, mock_decrypt):
         mock_decrypt.return_value = "pw"
         cred = _make_credential(auth_type="password")
 
-        from ssh_client import SSHClient
+        from clients.ssh_client import SSHClient
 
         client = SSHClient.from_credential("10.0.0.1", cred, port=2222)
 
@@ -832,7 +832,7 @@ class TestExecuteStreaming:
 
         return channel
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_streaming_calls_callback_with_output(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -856,7 +856,7 @@ class TestExecuteStreaming:
         all_output = "".join(chunks)
         assert "hello" in all_output
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_streaming_returns_exit_code(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -878,7 +878,7 @@ class TestExecuteStreaming:
 
         assert code == 42
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_streaming_exception_calls_callback_with_error(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -894,7 +894,7 @@ class TestExecuteStreaming:
         all_output = "".join(chunks)
         assert "SSH Error" in all_output
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_streaming_stop_fn_closes_channel(self, MockSSH):
         """stop_fn returning True should cause the channel to close early."""
         mock_raw = MagicMock()
@@ -935,7 +935,7 @@ class TestExecuteStreaming:
 
 
 class TestExecuteSudoStreaming:
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_delegates_to_execute_streaming(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw
@@ -967,7 +967,7 @@ class TestExecuteSudoStreaming:
         cmd_used = mock_raw.exec_command.call_args[0][0]
         assert cmd_used == "apt-get upgrade -y"
 
-    @patch("ssh_client.paramiko.SSHClient")
+    @patch("clients.ssh_client.paramiko.SSHClient")
     def test_non_root_command_is_sudo_wrapped(self, MockSSH):
         mock_raw = MagicMock()
         MockSSH.return_value = mock_raw

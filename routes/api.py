@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 from flask import Blueprint, redirect, url_for, flash, request, render_template, jsonify, Response, stream_with_context
 from flask_login import login_required, current_user
 from models import db, Guest, ProxmoxHost, Tag
-from scanner import scan_guest, scan_all_guests
-from notifier import send_update_notification
-from audit import log_action
+from core.scanner import scan_guest, scan_all_guests
+from core.notifier import send_update_notification
+from auth.audit import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +61,8 @@ class UpdateJob:
 
 def _run_update_background(app, guest_id, dist_upgrade=False):
     """Run apt upgrade in a background thread with streaming output."""
-    from ssh_client import SSHClient
-    from proxmox_api import ProxmoxClient
+    from clients.ssh_client import SSHClient
+    from clients.proxmox_api import ProxmoxClient
 
     with app.app_context():
         job = _update_jobs.get(guest_id)
@@ -169,7 +169,7 @@ def _run_update_background(app, guest_id, dist_upgrade=False):
                                 job.append(stdout)
                             job.append("\n\nUpdates applied successfully.\n")
                             # Check reboot-required via guest agent
-                            from scanner import check_reboot_required
+                            from core.scanner import check_reboot_required
                             check_reboot_required(guest)
                             job.reboot_required = guest.reboot_required
                             now = datetime.now(timezone.utc)
@@ -415,7 +415,7 @@ class ProxmoxJob:
 
 def _poll_proxmox_task(app, job_key):
     """Poll Proxmox task status and accumulate log output."""
-    from proxmox_api import ProxmoxClient
+    from clients.proxmox_api import ProxmoxClient
 
     with app.app_context():
         job = _proxmox_jobs.get(job_key)
@@ -529,7 +529,7 @@ def task_cancel(guest_id, job_type):
         return jsonify({"ok": False, "error": "No active job"})
     job.cancel_requested = True
     try:
-        from proxmox_api import ProxmoxClient
+        from clients.proxmox_api import ProxmoxClient
         client = ProxmoxClient(job.host_model)
         client.cancel_task(job.node, job.upid)
     except Exception:
@@ -546,7 +546,7 @@ def task_cancel(guest_id, job_type):
 @login_required
 def guest_rrd(guest_id):
     """Return RRD performance data as JSON for Chart.js."""
-    from proxmox_api import ProxmoxClient
+    from clients.proxmox_api import ProxmoxClient
 
     guest = Guest.query.get_or_404(guest_id)
 
@@ -647,7 +647,7 @@ def guest_rrd(guest_id):
 @login_required
 def host_rrd(host_id):
     """Return node-level RRD performance data as JSON for Chart.js."""
-    from proxmox_api import ProxmoxClient
+    from clients.proxmox_api import ProxmoxClient
 
     if not current_user.can_view_hosts and not current_user.can_manage_hosts:
         return jsonify({"error": "Permission denied"}), 403
@@ -764,7 +764,7 @@ def host_rrd(host_id):
 @login_required
 def dashboard_host_stats():
     """Return aggregated live stats from all Proxmox hosts for the dashboard."""
-    from proxmox_api import ProxmoxClient
+    from clients.proxmox_api import ProxmoxClient
 
     if not current_user.can_view_hosts and not current_user.can_manage_hosts:
         return jsonify({"error": "Permission denied"}), 403
@@ -778,7 +778,7 @@ def dashboard_host_stats():
         entry = {"id": host.id, "name": host.name, "online": False, "is_pbs": host.is_pbs}
         try:
             if host.is_pbs:
-                from pbs_client import PBSClient
+                from clients.pbs_client import PBSClient
                 status = PBSClient(host).get_node_status()
             else:
                 client = ProxmoxClient(host)
@@ -831,7 +831,7 @@ def dashboard_host_stats():
 @login_required
 def dashboard_guest_stats():
     """Return live CPU/memory/disk usage for all running guests across all Proxmox hosts."""
-    from proxmox_api import ProxmoxClient
+    from clients.proxmox_api import ProxmoxClient
 
     if not current_user.can_view_hosts and not current_user.can_manage_hosts:
         return jsonify({"error": "Permission denied"}), 403
@@ -910,7 +910,7 @@ def dashboard_guest_stats():
 @login_required
 def host_guest_stats(host_id):
     """Return live CPU/memory/disk keyed by VMID for all guests on one PVE host."""
-    from proxmox_api import ProxmoxClient
+    from clients.proxmox_api import ProxmoxClient
 
     host = ProxmoxHost.query.get_or_404(host_id)
 
@@ -997,7 +997,7 @@ def collab_stream():
     active connection).  For multi-process deployments, replace the in-process
     CollaborationHub with a Redis pub/sub backend.
     """
-    from collaboration import collab_hub
+    from core.collaboration import collab_hub
 
     user_id = current_user.id
     username = current_user.username
@@ -1039,7 +1039,7 @@ def collab_stream():
 @login_required
 def collab_presence():
     """Heartbeat + page update sent by every tab every 30 seconds."""
-    from collaboration import collab_hub
+    from core.collaboration import collab_hub
     data = request.get_json(silent=True) or {}
     page = data.get("page", "/")
     following = data.get("following") or None  # username string or null
@@ -1051,7 +1051,7 @@ def collab_presence():
 @login_required
 def collab_terminal_sessions():
     """List active terminal sessions the current user is permitted to follow."""
-    from collaboration import terminal_registry
+    from core.collaboration import terminal_registry
     sessions = []
     for s in terminal_registry.get_all():
         guest = Guest.query.get(s.guest_id)
@@ -1074,7 +1074,7 @@ def collab_terminal_sessions():
 @login_required
 def collab_cursor_update():
     """Receive and store the current user's cursor position (GET with query params)."""
-    from collaboration import cursor_hub
+    from core.collaboration import cursor_hub
     try:
         x_pct = float(request.args["x_pct"])
         y_pct = float(request.args["y_pct"])
@@ -1094,7 +1094,7 @@ def collab_cursor_update():
 @login_required
 def collab_cursors():
     """Return cursor positions of all co-viewers on the given page."""
-    from collaboration import cursor_hub
+    from core.collaboration import cursor_hub
     page = request.args.get("page", "/")
     return jsonify(cursors=cursor_hub.get_for_page(
         page, exclude_username=current_user.username

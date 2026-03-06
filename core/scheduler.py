@@ -17,10 +17,10 @@ def _run_scan(app):
             return
 
         logger.info("Starting scheduled scan of all guests...")
-        from scanner import scan_all_guests
+        from core.scanner import scan_all_guests
         results = scan_all_guests()
 
-        from notifier import send_update_notification
+        from core.notifier import send_update_notification
         send_update_notification(results)
 
         logger.info(f"Scheduled scan complete. Scanned {len(results)} guest(s).")
@@ -30,7 +30,7 @@ def _run_auto_updates(app):
     """Apply updates to guests with auto-update enabled during their maintenance window."""
     with app.app_context():
         from models import Guest
-        from scanner import apply_updates
+        from core.scanner import apply_updates
         import calendar
 
         now = datetime.now()
@@ -75,7 +75,7 @@ def _check_mastodon_release(app):
         if not Setting.get("mastodon_guest_id"):
             return
 
-        from mastodon import check_mastodon_release
+        from apps.mastodon import check_mastodon_release
         update_available, latest, release_url = check_mastodon_release()
 
         if not update_available:
@@ -87,7 +87,7 @@ def _check_mastodon_release(app):
         # Send Discord notification (only if not already notified for this version)
         last_notified = Setting.get("mastodon_last_notified_version", "")
         if latest != last_notified:
-            from notifier import send_mastodon_update_notification
+            from core.notifier import send_mastodon_update_notification
             ok, _msg = send_mastodon_update_notification(current, latest, release_url)
             if ok:
                 Setting.set("mastodon_last_notified_version", latest)
@@ -95,10 +95,10 @@ def _check_mastodon_release(app):
         # Auto-upgrade if enabled
         if Setting.get("mastodon_auto_upgrade", "false") == "true":
             logger.info("Auto-upgrade enabled, starting Mastodon upgrade...")
-            from mastodon import run_mastodon_upgrade
-            from audit import log_action
+            from apps.mastodon import run_mastodon_upgrade
+            from auth.audit import log_action
             from models import db
-            from notifier import send_upgrade_started_notification, send_upgrade_result_notification
+            from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
             send_upgrade_started_notification("mastodon", latest, "auto")
             ok, log_output = run_mastodon_upgrade()
             log_action("mastodon_upgrade", "settings", resource_name="mastodon",
@@ -120,7 +120,7 @@ def _check_ghost_release(app):
         if not Setting.get("ghost_guest_id"):
             return
 
-        from ghost import check_ghost_release
+        from apps.ghost import check_ghost_release
         update_available, latest, release_url = check_ghost_release()
 
         if not update_available:
@@ -132,7 +132,7 @@ def _check_ghost_release(app):
         # Send Discord notification (only if not already notified for this version)
         last_notified = Setting.get("ghost_last_notified_version", "")
         if latest != last_notified:
-            from notifier import send_ghost_update_notification
+            from core.notifier import send_ghost_update_notification
             ok, _msg = send_ghost_update_notification(current, latest, release_url)
             if ok:
                 Setting.set("ghost_last_notified_version", latest)
@@ -140,10 +140,10 @@ def _check_ghost_release(app):
         # Auto-upgrade if enabled
         if Setting.get("ghost_auto_upgrade", "false") == "true":
             logger.info("Auto-upgrade enabled, starting Ghost upgrade...")
-            from ghost import run_ghost_upgrade
-            from audit import log_action
+            from apps.ghost import run_ghost_upgrade
+            from auth.audit import log_action
             from models import db
-            from notifier import send_upgrade_started_notification, send_upgrade_result_notification
+            from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
             send_upgrade_started_notification("ghost", latest, "auto")
             ok, log_output = run_ghost_upgrade()
             log_action("ghost_upgrade", "settings", resource_name="ghost",
@@ -165,7 +165,7 @@ def _check_peertube_release(app):
         if not Setting.get("peertube_guest_id"):
             return
 
-        from peertube import check_peertube_release
+        from apps.peertube import check_peertube_release
         update_available, latest, release_url = check_peertube_release()
 
         if not update_available:
@@ -177,7 +177,7 @@ def _check_peertube_release(app):
         # Send Discord notification (only if not already notified for this version)
         last_notified = Setting.get("peertube_last_notified_version", "")
         if latest != last_notified:
-            from notifier import send_peertube_update_notification
+            from core.notifier import send_peertube_update_notification
             ok, _msg = send_peertube_update_notification(current, latest, release_url)
             if ok:
                 Setting.set("peertube_last_notified_version", latest)
@@ -185,10 +185,10 @@ def _check_peertube_release(app):
         # Auto-upgrade if enabled
         if Setting.get("peertube_auto_upgrade", "false") == "true":
             logger.info("Auto-upgrade enabled, starting PeerTube upgrade...")
-            from peertube import run_peertube_upgrade
-            from audit import log_action
+            from apps.peertube import run_peertube_upgrade
+            from auth.audit import log_action
             from models import db
-            from notifier import send_upgrade_started_notification, send_upgrade_result_notification
+            from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
             send_upgrade_started_notification("peertube", latest, "auto")
             ok, log_output = run_peertube_upgrade()
             log_action("peertube_upgrade", "settings", resource_name="peertube",
@@ -212,7 +212,7 @@ def _check_elk_release(app):
         if Setting.get("elk_installed", "false") != "true":
             return
 
-        from elk import check_elk_release
+        from apps.elk import check_elk_release
         update_available, latest, release_url = check_elk_release()
 
         if not update_available:
@@ -224,7 +224,7 @@ def _check_elk_release(app):
         # Send Discord notification (only if not already notified for this version)
         last_notified = Setting.get("elk_last_notified_version", "")
         if latest != last_notified:
-            from notifier import send_elk_update_notification
+            from core.notifier import send_elk_update_notification
             ok, _msg = send_elk_update_notification(current, latest, release_url)
             if ok:
                 Setting.set("elk_last_notified_version", latest)
@@ -232,10 +232,10 @@ def _check_elk_release(app):
         # Auto-upgrade if enabled
         if Setting.get("elk_auto_upgrade", "false") == "true":
             logger.info("Auto-upgrade enabled, starting Elk upgrade...")
-            from elk import run_elk_upgrade
-            from audit import log_action
+            from apps.elk import run_elk_upgrade
+            from auth.audit import log_action
             from models import db
-            from notifier import send_upgrade_started_notification, send_upgrade_result_notification
+            from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
             send_upgrade_started_notification("elk", latest, "auto")
             ok, log_output = run_elk_upgrade()
             log_action("elk_upgrade", "settings", resource_name="elk",
@@ -259,7 +259,7 @@ def _check_jitsi_release(app):
         if Setting.get("jitsi_installed", "false") != "true":
             return
 
-        from jitsi import check_jitsi_release
+        from apps.jitsi import check_jitsi_release
         update_available, latest, release_url = check_jitsi_release()
 
         if not update_available:
@@ -271,7 +271,7 @@ def _check_jitsi_release(app):
         # Send Discord notification (only if not already notified for this version)
         last_notified = Setting.get("jitsi_last_notified_version", "")
         if latest != last_notified:
-            from notifier import send_jitsi_update_notification
+            from core.notifier import send_jitsi_update_notification
             ok, _msg = send_jitsi_update_notification(current, latest, release_url)
             if ok:
                 Setting.set("jitsi_last_notified_version", latest)
@@ -279,10 +279,10 @@ def _check_jitsi_release(app):
         # Auto-upgrade if enabled
         if Setting.get("jitsi_auto_upgrade", "false") == "true":
             logger.info("Auto-upgrade enabled, starting Jitsi upgrade...")
-            from jitsi import run_jitsi_upgrade
-            from audit import log_action
+            from apps.jitsi import run_jitsi_upgrade
+            from auth.audit import log_action
             from models import db
-            from notifier import send_upgrade_started_notification, send_upgrade_result_notification
+            from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
             send_upgrade_started_notification("jitsi", latest, "auto")
             ok, log_output = run_jitsi_upgrade()
             log_action("jitsi_upgrade", "settings", resource_name="jitsi",
@@ -300,7 +300,7 @@ def _run_discovery(app):
     with app.app_context():
         import re
         from models import db, Setting, ProxmoxHost, Guest, Tag
-        from proxmox_api import ProxmoxClient
+        from clients.proxmox_api import ProxmoxClient
 
         if Setting.get("discovery_enabled", "true") == "false":
             logger.info("Automatic discovery is disabled, skipping.")
@@ -441,11 +441,11 @@ def _check_host_updates(app):
         for host in hosts:
             try:
                 if host.is_pbs:
-                    from pbs_client import PBSClient
+                    from clients.pbs_client import PBSClient
                     client = PBSClient(host)
                     updates = client.get_apt_updates()
                 else:
-                    from proxmox_api import ProxmoxClient
+                    from clients.proxmox_api import ProxmoxClient
                     client = ProxmoxClient(host)
                     node_name = client.get_local_node_name()
                     updates = client.get_apt_updates(node_name) if node_name else []
@@ -459,7 +459,7 @@ def _check_host_updates(app):
                 logger.error(f"Failed to check host updates for '{host.name}': {e}")
 
         if host_results:
-            from notifier import send_host_update_notification
+            from core.notifier import send_host_update_notification
             send_host_update_notification(host_results)
 
 
@@ -501,7 +501,7 @@ def _check_app_update(app):
             last_notified = Setting.get("app_last_notified_version", "")
             if latest != last_notified:
                 logger.info(f"New app version available: v{current_version} -> v{latest}")
-                from notifier import send_app_update_notification
+                from core.notifier import send_app_update_notification
                 ok, _msg = send_app_update_notification(current_version, latest)
                 if ok:
                     Setting.set("app_last_notified_version", latest)
@@ -559,8 +559,8 @@ def _poll_unifi_events(app):
         if Setting.get("unifi_enabled", "false") != "true":
             return
 
-        from credential_store import decrypt
-        from unifi_client import UniFiClient
+        from auth.credential_store import decrypt
+        from clients.unifi_client import UniFiClient
 
         base_url = Setting.get("unifi_base_url", "")
         username = Setting.get("unifi_username", "")
@@ -608,7 +608,7 @@ def _poll_unifi_events(app):
                 # GeoIP enrichment
                 geo = {}
                 if geoip_enabled and geoip_db_path:
-                    import unifi_geoip
+                    from clients import unifi_geoip
                     ext_ip = src_ip or dst_ip
                     if ext_ip:
                         geo = unifi_geoip.lookup(ext_ip, geoip_db_path)
@@ -661,7 +661,7 @@ def _run_service_health_checks(app):
     """Check status of all tracked services on all guests."""
     with app.app_context():
         from models import Setting, Guest
-        from scanner import check_service_statuses
+        from core.scanner import check_service_statuses
 
         if Setting.get("service_check_enabled", "true") == "false":
             logger.info("Service health checks disabled, skipping.")
