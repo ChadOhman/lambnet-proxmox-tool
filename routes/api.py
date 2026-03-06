@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 from flask import Blueprint, redirect, url_for, flash, request, render_template, jsonify, Response, stream_with_context
 from flask_login import login_required, current_user
-from models import db, Guest, ProxmoxHost, Tag
+from models import db, Guest, ProxmoxHost, Tag, Setting
 from core.scanner import scan_guest, scan_all_guests
 from core.notifier import send_update_notification
 from auth.audit import log_action
@@ -557,8 +557,23 @@ def guest_rrd(guest_id):
         return jsonify({"error": "Guest has no Proxmox host configured"}), 400
 
     timeframe = request.args.get("timeframe", "day")
-    if timeframe not in ("hour", "day", "week", "month", "year"):
+    if timeframe not in ("hour", "day", "week", "month", "year", "30d", "90d"):
         timeframe = "day"
+
+    # Try Prometheus first if enabled
+    if Setting.get("prometheus_enabled", "false") == "true" and Setting.get("prometheus_url", ""):
+        try:
+            from clients.prometheus_query import PrometheusQueryClient
+            prom = PrometheusQueryClient()
+            data = prom.get_guest_rrd(guest.vmid, timeframe)
+            if data and data.get("labels"):
+                return jsonify(data)
+        except Exception:
+            logger.debug("Prometheus query failed for guest %s, falling back to RRD", guest_id)
+
+    # Extended timeframes only available with Prometheus
+    if timeframe in ("30d", "90d"):
+        timeframe = "month"
 
     try:
         client = ProxmoxClient(guest.proxmox_host)
@@ -655,8 +670,23 @@ def host_rrd(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
 
     timeframe = request.args.get("timeframe", "day")
-    if timeframe not in ("hour", "day", "week", "month", "year"):
+    if timeframe not in ("hour", "day", "week", "month", "year", "30d", "90d"):
         timeframe = "day"
+
+    # Try Prometheus first if enabled
+    if Setting.get("prometheus_enabled", "false") == "true" and Setting.get("prometheus_url", ""):
+        try:
+            from clients.prometheus_query import PrometheusQueryClient
+            prom = PrometheusQueryClient()
+            data = prom.get_host_rrd(host.id, timeframe)
+            if data and data.get("labels"):
+                return jsonify(data)
+        except Exception:
+            logger.debug("Prometheus query failed for host %s, falling back to RRD", host_id)
+
+    # Extended timeframes only available with Prometheus
+    if timeframe in ("30d", "90d"):
+        timeframe = "month"
 
     try:
         client = ProxmoxClient(host)
