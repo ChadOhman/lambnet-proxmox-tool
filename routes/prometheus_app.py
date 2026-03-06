@@ -51,7 +51,7 @@ def _get_settings():
         "latest_version": Setting.get("prometheus_latest_version", ""),
         "update_available": Setting.get("prometheus_update_available", "") == "true",
         "installed": Setting.get("prometheus_installed", "") == "true",
-        "retention_days": Setting.get("prometheus_retention_days", "90"),
+        "retention_days": Setting.get("prometheus_retention_days", "365"),
         "protection_type": Setting.get("prometheus_protection_type", "snapshot"),
         "backup_storage": Setting.get("prometheus_backup_storage", ""),
         "backup_mode": Setting.get("prometheus_backup_mode", "snapshot"),
@@ -109,11 +109,11 @@ def save():
     Setting.set("prometheus_lambnet_metrics_url",
                 request.form.get("prometheus_lambnet_metrics_url", "").strip())
 
-    retention = request.form.get("prometheus_retention_days", "90").strip()
+    retention = request.form.get("prometheus_retention_days", "365").strip()
     try:
         retention = str(max(1, int(retention)))
     except (ValueError, TypeError):
-        retention = "90"
+        retention = "365"
     Setting.set("prometheus_retention_days", retention)
 
     protection_type = request.form.get("prometheus_protection_type", "snapshot")

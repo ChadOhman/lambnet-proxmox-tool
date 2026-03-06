@@ -293,7 +293,7 @@ def run_prometheus_install(log_callback=None):
             # Generate prometheus.yml
             lambnet_url = config.get("lambnet_metrics_url", "")
             auth_token = Setting.get("prometheus_auth_token", "")
-            retention_days = config.get("retention_days", "90")
+            retention_days = config.get("retention_days", "365")
 
             _log("Generating prometheus.yml...")
             yml = _generate_prometheus_yml(lambnet_url, auth_token)
@@ -492,7 +492,7 @@ def _get_config():
     return {
         "guest_id": Setting.get("prometheus_guest_id", ""),
         "url": Setting.get("prometheus_url", ""),
-        "retention_days": Setting.get("prometheus_retention_days", "90"),
+        "retention_days": Setting.get("prometheus_retention_days", "365"),
         "protection_type": Setting.get("prometheus_protection_type", "snapshot"),
         "backup_storage": Setting.get("prometheus_backup_storage", ""),
         "backup_mode": Setting.get("prometheus_backup_mode", "snapshot"),
@@ -531,7 +531,7 @@ scrape_configs:
 """
 
 
-def _generate_systemd_unit(retention_days="90"):
+def _generate_systemd_unit(retention_days="365"):
     """Generate the Prometheus systemd service unit."""
     return f"""[Unit]
 Description=Prometheus Monitoring System

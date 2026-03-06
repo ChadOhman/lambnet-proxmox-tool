@@ -557,7 +557,7 @@ def guest_rrd(guest_id):
         return jsonify({"error": "Guest has no Proxmox host configured"}), 400
 
     timeframe = request.args.get("timeframe", "day")
-    if timeframe not in ("hour", "day", "week", "month", "year", "30d", "90d"):
+    if timeframe not in ("hour", "day", "3d", "week", "month", "3mo", "year", "365d"):
         timeframe = "day"
 
     # Try Prometheus first if enabled
@@ -571,9 +571,10 @@ def guest_rrd(guest_id):
         except Exception:
             logger.debug("Prometheus query failed for guest %s, falling back to RRD", guest_id)
 
-    # Extended timeframes only available with Prometheus
-    if timeframe in ("30d", "90d"):
-        timeframe = "month"
+    # Extended timeframes only available with Prometheus — fall back to closest RRD equivalent
+    if timeframe in ("3d", "3mo", "365d"):
+        _fallback = {"3d": "week", "3mo": "month", "365d": "year"}
+        timeframe = _fallback.get(timeframe, "month")
 
     try:
         client = ProxmoxClient(guest.proxmox_host)
@@ -670,7 +671,7 @@ def host_rrd(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
 
     timeframe = request.args.get("timeframe", "day")
-    if timeframe not in ("hour", "day", "week", "month", "year", "30d", "90d"):
+    if timeframe not in ("hour", "day", "3d", "week", "month", "3mo", "year", "365d"):
         timeframe = "day"
 
     # Try Prometheus first if enabled
@@ -684,9 +685,10 @@ def host_rrd(host_id):
         except Exception:
             logger.debug("Prometheus query failed for host %s, falling back to RRD", host_id)
 
-    # Extended timeframes only available with Prometheus
-    if timeframe in ("30d", "90d"):
-        timeframe = "month"
+    # Extended timeframes only available with Prometheus — fall back to closest RRD equivalent
+    if timeframe in ("3d", "3mo", "365d"):
+        _fallback = {"3d": "week", "3mo": "month", "365d": "year"}
+        timeframe = _fallback.get(timeframe, "month")
 
     try:
         client = ProxmoxClient(host)
