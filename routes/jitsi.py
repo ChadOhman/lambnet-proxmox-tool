@@ -18,11 +18,12 @@ def _parse_iso(value):
 
 
 # ---------------------------------------------------------------------------
-# In-memory job state — three jobs: upgrade, preflight, and install
+# In-memory job state — four jobs: upgrade, preflight, install, and CF configure
 # ---------------------------------------------------------------------------
 _upgrade_job = {"running": False, "success": None, "log": []}
 _preflight_job = {"running": False, "success": None, "log": []}
 _install_job = {"running": False, "success": None, "log": []}
+_cf_configure_job = {"running": False, "success": None, "log": []}
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,10 @@ def _get_jitsi_settings():
         "protection_type": Setting.get("jitsi_protection_type", "snapshot"),
         "backup_storage": Setting.get("jitsi_backup_storage", ""),
         "backup_mode": Setting.get("jitsi_backup_mode", "snapshot"),
+        "cf_mode": Setting.get("jitsi_cf_mode", "none"),
+        "public_ip": Setting.get("jitsi_public_ip", ""),
+        "last_cf_configure_at": _parse_iso(Setting.get("jitsi_last_cf_configure_at", "")),
+        "last_cf_configure_status": Setting.get("jitsi_last_cf_configure_status", ""),
     }
 
 
@@ -118,6 +123,10 @@ def save():
     backup_mode = request.form.get("jitsi_backup_mode", "snapshot")
     Setting.set("jitsi_backup_mode",
                 backup_mode if backup_mode in ("snapshot", "suspend", "stop") else "snapshot")
+
+    cf_mode = request.form.get("jitsi_cf_mode", "none")
+    Setting.set("jitsi_cf_mode", cf_mode if cf_mode in ("none", "tcp_only", "hybrid") else "none")
+    Setting.set("jitsi_public_ip", request.form.get("jitsi_public_ip", "").strip())
 
     log_action("jitsi_config_save", "settings", resource_name="jitsi")
     db.session.commit()
@@ -357,5 +366,69 @@ def detect_versions():
             flash(f"Jitsi not found on guest: {error}. Marked as not installed.", "warning")
         else:
             flash(f"Could not detect Jitsi version: {error}", "warning")
+
+    return redirect(url_for("jitsi.upgrade_page"))
+
+
+# ---------------------------------------------------------------------------
+# Cloudflare Zero Trust configuration
+# ---------------------------------------------------------------------------
+
+@bp.route("/configure-cloudflare/status")
+def cf_configure_status():
+    return jsonify({
+        "running": _cf_configure_job["running"],
+        "success": _cf_configure_job["success"],
+        "log": _cf_configure_job["log"],
+    })
+
+
+@bp.route("/configure-cloudflare", methods=["POST"])
+def cf_configure():
+    from jitsi import run_cloudflare_configure
+    from flask import current_app
+
+    if Setting.get("jitsi_installed", "") != "true":
+        flash("Jitsi must be installed before configuring Cloudflare.", "warning")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    if (_cf_configure_job["running"] or _upgrade_job["running"]
+            or _install_job["running"]):
+        flash("An operation is already in progress.", "warning")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    _cf_configure_job.update({"running": True, "success": None, "log": []})
+
+    def _cb(msg):
+        _cf_configure_job["log"].append(msg)
+
+    _app = current_app._get_current_object()
+
+    def _bg():
+        ok = False
+        try:
+            with _app.app_context():
+                ok, _ = run_cloudflare_configure(log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _cf_configure_job["running"] = False
+        _cf_configure_job["success"] = ok
+        from datetime import datetime, timezone
+        with _app.app_context():
+            now = datetime.now(timezone.utc).isoformat()
+            Setting.set("jitsi_last_cf_configure_at", now)
+            Setting.set("jitsi_last_cf_configure_status", "success" if ok else "error")
+            Setting.set("jitsi_last_cf_configure_log", "\n".join(_cf_configure_job["log"]))
+            log_action("jitsi_cf_configure", "settings", resource_name="jitsi",
+                       details={"status": "success" if ok else "error",
+                                "mode": Setting.get("jitsi_cf_mode", "none")})
+            db.session.commit()
+
+    try:
+        import gevent as _gevent
+        _gevent.spawn(_bg)
+    except ImportError:
+        _threading.Thread(target=_bg, daemon=True).start()
 
     return redirect(url_for("jitsi.upgrade_page"))

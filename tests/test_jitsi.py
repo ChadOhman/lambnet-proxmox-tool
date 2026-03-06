@@ -437,3 +437,128 @@ class TestJitsiNotifier:
             from notifier import send_upgrade_result_notification
             ok, msg = send_upgrade_result_notification("jitsi", "2.0.9500", True, "manual")
             assert isinstance(ok, bool)
+
+
+# ---------------------------------------------------------------------------
+# Cloudflare Zero Trust configuration
+# ---------------------------------------------------------------------------
+
+
+class TestJitsiCfRouteAuth:
+    """Cloudflare configure routes require authentication."""
+
+    def test_cf_configure_unauthenticated(self, client):
+        resp = client.post("/jitsi/configure-cloudflare", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "/login" in resp.headers.get("Location", "")
+
+    def test_cf_configure_status_unauthenticated(self, client):
+        resp = client.get("/jitsi/configure-cloudflare/status", follow_redirects=False)
+        assert resp.status_code == 302
+
+
+class TestJitsiCfRouteAuthed:
+    """Authenticated admin can use Cloudflare configure routes."""
+
+    def test_cf_configure_status_returns_json(self, auth_client):
+        resp = auth_client.get("/jitsi/configure-cloudflare/status")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "running" in data
+        assert "success" in data
+        assert "log" in data
+
+    def test_cf_configure_blocked_when_not_installed(self, app, auth_client):
+        from models import Setting
+        with app.app_context():
+            Setting.set("jitsi_installed", "false")
+        resp = auth_client.post("/jitsi/configure-cloudflare", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_save_persists_cf_mode(self, app, auth_client):
+        from models import Setting
+        auth_client.post(
+            "/jitsi/save",
+            data={"jitsi_cf_mode": "tcp_only", "jitsi_public_ip": ""},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            assert Setting.get("jitsi_cf_mode") == "tcp_only"
+
+    def test_save_validates_cf_mode(self, app, auth_client):
+        from models import Setting
+        auth_client.post(
+            "/jitsi/save",
+            data={"jitsi_cf_mode": "invalid"},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            assert Setting.get("jitsi_cf_mode") == "none"
+
+    def test_save_persists_public_ip(self, app, auth_client):
+        from models import Setting
+        auth_client.post(
+            "/jitsi/save",
+            data={"jitsi_cf_mode": "hybrid", "jitsi_public_ip": "203.0.113.1"},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            assert Setting.get("jitsi_public_ip") == "203.0.113.1"
+
+
+class TestJitsiCloudflareLogic:
+    """Unit tests for run_cloudflare_configure validation paths."""
+
+    def test_mode_none_returns_error(self, app):
+        from models import Setting
+        with app.app_context():
+            Setting.set("jitsi_cf_mode", "none")
+            from jitsi import run_cloudflare_configure
+            ok, log = run_cloudflare_configure()
+            assert ok is False
+            assert "nothing" in log.lower()
+
+    def test_not_installed_returns_error(self, app):
+        from models import Setting
+        with app.app_context():
+            Setting.set("jitsi_cf_mode", "tcp_only")
+            Setting.set("jitsi_installed", "false")
+            from jitsi import run_cloudflare_configure
+            ok, log = run_cloudflare_configure()
+            assert ok is False
+            assert "installed" in log.lower()
+
+    def test_hybrid_mode_requires_public_ip(self, app):
+        from models import Setting
+        with app.app_context():
+            Setting.set("jitsi_cf_mode", "hybrid")
+            Setting.set("jitsi_installed", "true")
+            Setting.set("jitsi_hostname", "meet.example.com")
+            Setting.set("jitsi_public_ip", "")
+            from jitsi import run_cloudflare_configure
+            ok, log = run_cloudflare_configure()
+            assert ok is False
+            assert "public ip" in log.lower() or "required" in log.lower()
+
+    def test_hybrid_mode_validates_ip_format(self, app):
+        from models import Setting
+        with app.app_context():
+            Setting.set("jitsi_cf_mode", "hybrid")
+            Setting.set("jitsi_installed", "true")
+            Setting.set("jitsi_hostname", "meet.example.com")
+            Setting.set("jitsi_public_ip", "not-an-ip")
+            from jitsi import run_cloudflare_configure
+            ok, log = run_cloudflare_configure()
+            assert ok is False
+            assert "valid" in log.lower()
+
+    def test_no_hostname_returns_error(self, app):
+        from models import Setting
+        with app.app_context():
+            Setting.set("jitsi_cf_mode", "tcp_only")
+            Setting.set("jitsi_installed", "true")
+            Setting.set("jitsi_hostname", "")
+            from jitsi import run_cloudflare_configure
+            ok, log = run_cloudflare_configure()
+            assert ok is False
+            assert "hostname" in log.lower()

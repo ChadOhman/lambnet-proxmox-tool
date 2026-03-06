@@ -138,6 +138,42 @@
                     <hr class="border-secondary">
 
                     <div class="mb-3">
+                        <label class="form-label">Cloudflare Zero Trust Mode</label>
+                        <div class="form-check">
+                            <input type="radio" class="form-check-input" name="jitsi_cf_mode"
+                                   id="cfNone" value="none" onchange="toggleCfFields()"
+                                   {{ 'checked' if settings.cf_mode == 'none' or not settings.cf_mode }}>
+                            <label class="form-check-label" for="cfNone">
+                                None <small class="text-muted">— no Cloudflare-specific config</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input type="radio" class="form-check-input" name="jitsi_cf_mode"
+                                   id="cfTcpOnly" value="tcp_only" onchange="toggleCfFields()"
+                                   {{ 'checked' if settings.cf_mode == 'tcp_only' }}>
+                            <label class="form-check-label" for="cfTcpOnly">
+                                TCP-only <small class="text-muted">— all media via TURN/TCP through tunnel (easiest)</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input type="radio" class="form-check-input" name="jitsi_cf_mode"
+                                   id="cfHybrid" value="hybrid" onchange="toggleCfFields()"
+                                   {{ 'checked' if settings.cf_mode == 'hybrid' }}>
+                            <label class="form-check-label" for="cfHybrid">
+                                Hybrid <small class="text-muted">— tunnel HTTP, direct UDP on 10000/udp (best quality)</small>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mb-3 {{ '' if settings.cf_mode == 'hybrid' else 'd-none' }}" id="cfPublicIpRow">
+                        <label class="form-label">Public IP Address</label>
+                        <input type="text" class="form-control font-monospace" name="jitsi_public_ip"
+                               value="{{ settings.public_ip }}" placeholder="203.0.113.1">
+                        <div class="form-text">Public IPv4 address of this server — used as <code>NAT_HARVESTER_PUBLIC_ADDRESS</code> for JVB ICE candidates.</div>
+                    </div>
+
+                    <hr class="border-secondary">
+
+                    <div class="mb-3">
                         <label class="form-label">Jitsi URL <small class="text-muted">(optional)</small></label>
                         <input type="text" class="form-control font-monospace" name="jitsi_url"
                                value="{{ settings.url }}" placeholder="https://meet.example.com">
@@ -244,6 +280,12 @@
                     <div class="card card-body bg-dark border-secondary">
 
 <h6 class="text-info mb-2">Cloudflare Zero Trust + Jitsi Meet Setup</h6>
+
+<div class="alert alert-success py-2 mb-2">
+    <i class="bi bi-lightning-charge"></i>
+    <strong>Steps 2&ndash;7 are now automated.</strong> Select a Cloudflare mode in the Configuration panel, save, then click
+    <strong>Configure for Cloudflare</strong>. This guide is kept for reference and manual verification.
+</div>
 
 <p>Cloudflare tunnels only carry TCP/HTTP traffic. Jitsi's video bridge (JVB) uses <code>10000/udp</code> for media, which cannot traverse a tunnel. Two options:</p>
 
@@ -433,6 +475,14 @@ config.openBridgeChannel = 'websocket';</pre>
                         </button>
                     </form>
                     {% endif %}
+                    {% if settings.installed and settings.cf_mode and settings.cf_mode != 'none' %}
+                    <form method="post" action="/jitsi/configure-cloudflare" id="cfConfigureForm"
+                          onsubmit="return startCfConfigure(event)">
+                        <button type="submit" class="btn btn-outline-primary" id="cfConfigureBtn">
+                            <i class="bi bi-cloud-arrow-up"></i> Configure for Cloudflare
+                        </button>
+                    </form>
+                    {% endif %}
                     {% endif %}
                 </div>
                 <div class="mt-2" id="preflightStatusBadge"></div>
@@ -539,6 +589,11 @@ function toggleBackupStorage() {
     document.getElementById('backupModeRow').classList.toggle('d-none', !isBkp);
 }
 
+function toggleCfFields() {
+    const isHybrid = document.getElementById('cfHybrid').checked;
+    document.getElementById('cfPublicIpRow').classList.toggle('d-none', !isHybrid);
+}
+
 function toggleCertFields() {
     const isLE = document.getElementById('certLE').checked;
     document.getElementById('letsencryptEmailRow').classList.toggle('d-none', !isLE);
@@ -618,14 +673,16 @@ function _setOperationRunning(running) {
     const spinner = document.getElementById('operationSpinner');
     const upgradeBtn = document.getElementById('upgradeBtn');
     const installBtn = document.getElementById('installBtn');
+    const cfConfigureBtn = document.getElementById('cfConfigureBtn');
     spinner.classList.toggle('d-none', !running);
     if (upgradeBtn) upgradeBtn.disabled = running;
     if (installBtn) installBtn.disabled = running;
+    if (cfConfigureBtn) cfConfigureBtn.disabled = running;
 }
 
 function _setOperationBadge(success, type) {
     const badge = document.getElementById('operationStatusBadge');
-    const label = type === 'install' ? 'Install' : 'Upgrade';
+    const label = type === 'install' ? 'Install' : type === 'configure' ? 'CF Configure' : 'Upgrade';
     if (success === true) {
         badge.innerHTML = '<span class="badge bg-success">' + label + ' Success</span>';
     } else if (success === false) {
@@ -706,13 +763,32 @@ function startInstall(e) {
     return true;
 }
 
+// ── Cloudflare configure ─────────────────────────────────────────────────────
+function startCfConfigure(e) {
+    const mode = document.querySelector('input[name="jitsi_cf_mode"]:checked');
+    const modeName = mode ? mode.value.replace('_', '-') : 'none';
+    const msg = 'This will configure Jitsi Meet for Cloudflare Zero Trust (' + modeName + ' mode).\n\n'
+        + 'The Cloudflare tunnel route itself must already be created in your Cloudflare dashboard.\n\n'
+        + 'Continue?';
+    if (!confirm(msg)) return false;
+
+    _logLen = 0;
+    document.getElementById('liveLog').textContent = 'Starting Cloudflare configure\u2026\n';
+    document.getElementById('operationStatusBadge').innerHTML = '';
+    _setOperationRunning(true);
+    document.getElementById('logCard').scrollIntoView({behavior: 'smooth'});
+    setTimeout(() => pollOperationStatus('/jitsi/configure-cloudflare/status', 'configure'), 1500);
+    return true;
+}
+
 // On page load: resume any in-progress operation
 function _resumeIfRunning() {
     Promise.all([
         fetch('/jitsi/upgrade/status').then(r => r.json()),
         fetch('/jitsi/install/status').then(r => r.json()),
         fetch('/jitsi/preflight/status').then(r => r.json()),
-    ]).then(([upgrade, install, preflight]) => {
+        fetch('/jitsi/configure-cloudflare/status').then(r => r.json()),
+    ]).then(([upgrade, install, preflight, cfConfigure]) => {
         if (upgrade.running) {
             _logLen = 0;
             document.getElementById('liveLog').textContent = '';
@@ -733,6 +809,12 @@ function _resumeIfRunning() {
             const preflightBtn = document.getElementById('preflightBtn');
             if (preflightBtn) preflightBtn.disabled = true;
             pollPreflightStatus();
+        } else if (cfConfigure.running) {
+            _logLen = 0;
+            document.getElementById('liveLog').textContent = '';
+            document.getElementById('operationStatusBadge').innerHTML = '';
+            _setOperationRunning(true);
+            pollOperationStatus('/jitsi/configure-cloudflare/status', 'configure');
         } else {
             if (upgrade.log && upgrade.log.length) {
                 document.getElementById('liveLog').textContent = upgrade.log.join('\n');
@@ -742,6 +824,10 @@ function _resumeIfRunning() {
                 document.getElementById('liveLog').textContent = install.log.join('\n');
                 _logLen = install.log.length;
                 if (install.success !== null) _setOperationBadge(install.success, 'install');
+            } else if (cfConfigure.log && cfConfigure.log.length) {
+                document.getElementById('liveLog').textContent = cfConfigure.log.join('\n');
+                _logLen = cfConfigure.log.length;
+                if (cfConfigure.success !== null) _setOperationBadge(cfConfigure.success, 'configure');
             }
         }
     }).catch(() => {});

@@ -1,11 +1,12 @@
 """
-Jitsi Meet install and upgrade automation.
+Jitsi Meet install, upgrade, and Cloudflare Zero Trust configuration automation.
 
 Installs Jitsi Meet via apt packages with debconf preseeding for non-interactive
 setup, or upgrades existing installations via targeted apt upgrade.  Takes a
 Proxmox snapshot or vzdump backup of the guest before any changes.
 """
 
+import base64
 import logging
 import re
 import time
@@ -23,6 +24,9 @@ logger = logging.getLogger(__name__)
 # Jitsi services that must be running for a healthy installation
 _JITSI_SERVICES = ["jitsi-videobridge2", "jicofo", "prosody"]
 
+# All Jitsi-related services (including coturn and nginx) for full restarts
+_JITSI_ALL_SERVICES = ["jitsi-videobridge2", "jicofo", "prosody", "coturn", "nginx"]
+
 # Packages to upgrade during a targeted apt upgrade
 _JITSI_APT_PACKAGES = [
     "jitsi-meet",
@@ -38,6 +42,9 @@ _HOSTNAME_RE = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-z
 
 # Email validation: basic pattern for Let's Encrypt email
 _EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
+
+# IPv4 address validation
+_IP_RE = re.compile(r'^((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)$')
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +228,24 @@ def _backup_jitsi_guest(guest, storage, mode="snapshot"):
 # Internal config helper
 # ---------------------------------------------------------------------------
 
+def _ssh_write_file(ssh, path, content, log):
+    """Write content to a remote file via base64 pipe.
+
+    Uses base64 encoding to avoid heredoc quoting issues with special
+    characters in config file content.  Returns True on success.
+    """
+    encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
+    stdout, stderr, code = ssh.execute_sudo(
+        f"printf '%s' '{encoded}' | base64 -d | tee {path} > /dev/null",
+        timeout=15,
+    )
+    if code != 0:
+        log(f"  ERROR: Could not write {path} (exit {code})")
+        _log_cmd_output(log, stdout, stderr, code, max_chars=500)
+        return False
+    return True
+
+
 def _get_jitsi_config():
     """Read all Jitsi-related settings."""
     return {
@@ -236,6 +261,8 @@ def _get_jitsi_config():
         "backup_mode": Setting.get("jitsi_backup_mode", "snapshot"),
         "auto_upgrade": Setting.get("jitsi_auto_upgrade", "false") == "true",
         "installed": Setting.get("jitsi_installed", "false") == "true",
+        "cf_mode": Setting.get("jitsi_cf_mode", "none"),
+        "public_ip": Setting.get("jitsi_public_ip", ""),
     }
 
 
@@ -1025,3 +1052,350 @@ def run_jitsi_upgrade(log_callback=None, skip_protection=False):
     except Exception as e:
         log(f"FATAL ERROR: {e}")
         return False, "\n".join(log_lines)
+
+
+# ---------------------------------------------------------------------------
+# Cloudflare Zero Trust configuration
+# ---------------------------------------------------------------------------
+
+def run_cloudflare_configure(log_callback=None):
+    """Configure Jitsi Meet for Cloudflare Zero Trust networking.
+
+    TCP-only mode (Option A): Forces all media through TURN/TCP by enabling
+    TCP transport in JVB and disabling P2P in the client config.
+
+    Hybrid mode (Option B): Sets NAT harvester addresses so JVB advertises
+    the correct public IP for direct UDP media.
+
+    Both modes verify Prosody TURN advertisement and coturn, then restart
+    all Jitsi services.
+
+    Returns (ok: bool, log_output: str).
+    """
+    from models import Credential
+
+    config = _get_jitsi_config()
+    log_lines = []
+
+    def log(msg):
+        logger.info(msg)
+        log_lines.append(msg)
+        if log_callback:
+            log_callback(msg)
+
+    # --- Validate config ---
+    cf_mode = config.get("cf_mode", "none")
+    if cf_mode == "none":
+        return False, "Cloudflare mode is set to 'none' — nothing to configure"
+    if cf_mode not in ("tcp_only", "hybrid"):
+        return False, f"Unknown Cloudflare mode: {cf_mode!r}"
+
+    if not config.get("installed"):
+        return False, "Jitsi must be installed before configuring Cloudflare"
+
+    hostname = config.get("hostname", "")
+    if not hostname:
+        return False, "Jitsi hostname not configured"
+
+    public_ip = config.get("public_ip", "")
+    if cf_mode == "hybrid":
+        if not public_ip:
+            return False, "Public IP is required for hybrid mode"
+        if not _IP_RE.match(public_ip):
+            return False, f"Public IP '{public_ip}' is not a valid IPv4 address"
+
+    if not config["guest_id"]:
+        return False, "Jitsi guest not configured"
+
+    app_guest = Guest.query.get(int(config["guest_id"]))
+    if not app_guest:
+        return False, "Jitsi guest not found"
+
+    credential = app_guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        return False, "No SSH credential available"
+    if not app_guest.ip_address:
+        return False, "Jitsi guest has no IP address"
+
+    guest_ip = app_guest.ip_address
+    mode_label = "TCP-only" if cf_mode == "tcp_only" else "Hybrid"
+
+    log("=== Cloudflare Zero Trust Configuration ===")
+    log(f"Guest: {app_guest.name} ({guest_ip})")
+    log(f"Hostname: {hostname}")
+    log(f"Mode: {mode_label}")
+    if cf_mode == "hybrid":
+        log(f"Public IP: {public_ip}")
+    log("")
+
+    warnings = 0
+
+    try:
+        with SSHClient.from_credential(guest_ip, credential) as ssh:
+
+            if cf_mode == "tcp_only":
+                # --- Option A: Force TCP-only ---
+                warnings += _cf_patch_jvb_conf_tcp(ssh, log)
+                warnings += _cf_patch_meet_config_js(ssh, hostname, log)
+            else:
+                # --- Option B: Hybrid (NAT harvester) ---
+                warnings += _cf_patch_nat_harvester(ssh, guest_ip, public_ip, log)
+
+            # --- Common: verify Prosody external_services ---
+            _cf_verify_prosody_turns(ssh, hostname, log)
+
+            # --- Common: verify coturn listening ---
+            _cf_verify_coturn(ssh, log)
+
+            # --- Restart all services ---
+            log("")
+            log("=== Restarting Jitsi services ===")
+            for svc in _JITSI_ALL_SERVICES:
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"systemctl restart {svc} 2>&1", timeout=30
+                )
+                if code != 0:
+                    log(f"  WARNING: {svc} restart returned exit code {code}")
+                    warnings += 1
+                else:
+                    log(f"  {svc} restarted")
+
+            # Brief stabilization delay
+            time.sleep(3)
+
+            # Verify core services
+            log("")
+            log("=== Verifying services ===")
+            for svc in _JITSI_SERVICES:
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"systemctl is-active {svc} 2>/dev/null", timeout=10
+                )
+                status = (stdout or "").strip()
+                if status == "active":
+                    log(f"  {svc}: active")
+                else:
+                    log(f"  WARNING: {svc}: {status or 'unknown'}")
+                    warnings += 1
+
+            log("")
+            if warnings:
+                log(f"=== Cloudflare configuration complete with {warnings} warning(s) ===")
+            else:
+                log("=== Cloudflare configuration complete ===")
+            return True, "\n".join(log_lines)
+
+    except Exception as e:
+        log(f"FATAL ERROR: {e}")
+        return False, "\n".join(log_lines)
+
+
+def _cf_patch_jvb_conf_tcp(ssh, log):
+    """Patch jvb.conf to enable TCP transport (Option A). Returns warning count."""
+    log("=== Step 1: Enabling TCP transport in jvb.conf ===")
+    path = "/etc/jitsi/videobridge/jvb.conf"
+
+    stdout, stderr, code = ssh.execute_sudo(f"cat {path} 2>/dev/null", timeout=10)
+    if code != 0 or not stdout:
+        log(f"  WARNING: Could not read {path}")
+        return 1
+
+    content = stdout
+
+    # Idempotency: check if TCP is already enabled
+    if "tcp {" in content and "enabled = true" in content:
+        log("  [SKIP] TCP transport already enabled in jvb.conf")
+        return 0
+
+    # Check if ice { block exists
+    if "ice {" in content:
+        # Replace existing ice { block with our version
+        lines = content.split("\n")
+        new_lines = []
+        in_ice = False
+        brace_depth = 0
+        replaced = False
+        for line in lines:
+            if not in_ice and line.strip().startswith("ice {"):
+                in_ice = True
+                brace_depth = 1
+                replaced = True
+                continue
+            elif in_ice:
+                brace_depth += line.count("{") - line.count("}")
+                if brace_depth <= 0:
+                    in_ice = False
+                continue
+            new_lines.append(line)
+
+        if replaced:
+            # Insert new ice block before last closing brace of videobridge block
+            ice_block = (
+                "ice {\n"
+                "    udp {\n"
+                "        port = 10000\n"
+                "    }\n"
+                "    tcp {\n"
+                "        enabled = true\n"
+                "        port = 4443\n"
+                "    }\n"
+                "}"
+            )
+            # Find the last } and insert before it
+            for i in range(len(new_lines) - 1, -1, -1):
+                if "}" in new_lines[i]:
+                    new_lines.insert(i, ice_block)
+                    break
+            content = "\n".join(new_lines)
+        else:
+            log("  WARNING: Could not find ice { block boundary")
+            return 1
+    else:
+        # No ice block — append before final closing brace
+        ice_block = (
+            "\nice {\n"
+            "    udp {\n"
+            "        port = 10000\n"
+            "    }\n"
+            "    tcp {\n"
+            "        enabled = true\n"
+            "        port = 4443\n"
+            "    }\n"
+            "}\n"
+        )
+        # Insert before last }
+        last_brace = content.rfind("}")
+        if last_brace >= 0:
+            content = content[:last_brace] + ice_block + content[last_brace:]
+        else:
+            content += ice_block
+
+    if _ssh_write_file(ssh, path, content, log):
+        log("  TCP transport enabled in jvb.conf")
+        return 0
+    return 1
+
+
+def _cf_patch_meet_config_js(ssh, hostname, log):
+    """Patch Jitsi Meet config.js to disable P2P and force WebSocket (Option A).
+
+    Returns warning count.
+    """
+    log("")
+    log("=== Step 2: Patching Jitsi Meet client config ===")
+    path = f"/etc/jitsi/meet/{hostname}-config.js"
+
+    stdout, stderr, code = ssh.execute_sudo(f"cat {path} 2>/dev/null", timeout=10)
+    if code != 0 or not stdout:
+        log(f"  WARNING: Could not read {path}")
+        return 1
+
+    content = stdout
+    modified = False
+
+    if "config.p2p" not in content or "enabled: false" not in content:
+        content = content.rstrip() + "\nconfig.p2p = { enabled: false };\n"
+        modified = True
+        log("  Added: config.p2p = { enabled: false }")
+    else:
+        log("  [SKIP] config.p2p already disabled")
+
+    if "config.openBridgeChannel" not in content:
+        content = content.rstrip() + "\nconfig.openBridgeChannel = 'websocket';\n"
+        modified = True
+        log("  Added: config.openBridgeChannel = 'websocket'")
+    else:
+        log("  [SKIP] config.openBridgeChannel already set")
+
+    if modified:
+        if not _ssh_write_file(ssh, path, content, log):
+            return 1
+    return 0
+
+
+def _cf_patch_nat_harvester(ssh, guest_ip, public_ip, log):
+    """Patch sip-communicator.properties with NAT harvester IPs (Option B).
+
+    Returns warning count.
+    """
+    log("=== Step 1: Configuring NAT Harvester ===")
+    path = "/etc/jitsi/videobridge/sip-communicator.properties"
+
+    stdout, stderr, code = ssh.execute_sudo(f"cat {path} 2>/dev/null", timeout=10)
+    if code != 0:
+        log(f"  WARNING: Could not read {path} — file may not exist yet")
+        # Create the file with just the harvester config
+        content = (
+            f"org.ice4j.ice.harvest.NAT_HARVESTER_LOCAL_ADDRESS={guest_ip}\n"
+            f"org.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS={public_ip}\n"
+        )
+        if _ssh_write_file(ssh, path, content, log):
+            log(f"  Created {path} with NAT harvester config")
+            return 0
+        return 1
+
+    content = stdout
+    lines = content.split("\n")
+    new_lines = []
+    local_set = False
+    public_set = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("org.ice4j.ice.harvest.NAT_HARVESTER_LOCAL_ADDRESS="):
+            new_lines.append(f"org.ice4j.ice.harvest.NAT_HARVESTER_LOCAL_ADDRESS={guest_ip}")
+            local_set = True
+        elif stripped.startswith("org.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS="):
+            new_lines.append(f"org.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS={public_ip}")
+            public_set = True
+        else:
+            new_lines.append(line)
+
+    if not local_set:
+        new_lines.append(f"org.ice4j.ice.harvest.NAT_HARVESTER_LOCAL_ADDRESS={guest_ip}")
+    if not public_set:
+        new_lines.append(f"org.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS={public_ip}")
+
+    content = "\n".join(new_lines)
+    if not content.endswith("\n"):
+        content += "\n"
+
+    if _ssh_write_file(ssh, path, content, log):
+        log(f"  NAT_HARVESTER_LOCAL_ADDRESS={guest_ip}")
+        log(f"  NAT_HARVESTER_PUBLIC_ADDRESS={public_ip}")
+        return 0
+    return 1
+
+
+def _cf_verify_prosody_turns(ssh, hostname, log):
+    """Verify Prosody has a 'turns' external_services entry (read-only)."""
+    log("")
+    log("=== Verifying Prosody TURN advertisement ===")
+    path = f"/etc/prosody/conf.d/{hostname}.cfg.lua"
+
+    stdout, stderr, code = ssh.execute_sudo(f"cat {path} 2>/dev/null", timeout=10)
+    if code != 0 or not stdout:
+        log(f"  WARNING: Could not read {path}")
+        return
+
+    if 'type = "turns"' in stdout and "5349" in stdout:
+        log("  [OK] Prosody external_services has turns entry (5349/tcp)")
+    else:
+        log("  [WARN] Prosody external_services may be missing the 'turns' entry for 5349/tcp")
+        log("  Check /etc/prosody/conf.d/ for the external_services block — see setup guide for details")
+
+
+def _cf_verify_coturn(ssh, log):
+    """Verify coturn is listening on port 5349 (read-only)."""
+    log("")
+    log("=== Verifying coturn TURN relay ===")
+    stdout, stderr, code = ssh.execute_sudo(
+        "ss -tlnp 'sport = 5349' 2>/dev/null || netstat -tlnp 2>/dev/null | grep 5349",
+        timeout=10,
+    )
+    if code == 0 and stdout and "5349" in stdout:
+        log("  [OK] coturn listening on 5349/tcp")
+    else:
+        log("  [WARN] coturn does not appear to be listening on 5349/tcp")
+        log("  Verify /etc/turnserver.conf has tls-listening-port=5349")
