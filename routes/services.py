@@ -543,6 +543,19 @@ def pg_metrics_history(service_id):
                     "lambnet_pg_rollbacks_total",
                 ]
                 data = prom.get_service_metrics_history(svc.id, pg_metrics, timeframe)
+                # Rename keys to match the SQLite snapshot format the chart JS expects
+                _pg_key_map = {
+                    "pg_connections_total": "total_connections",
+                    "pg_cache_hit_ratio": "cache_hit_ratio",
+                    "pg_connections_active": "active_connections",
+                    "pg_lock_waits": "lock_waits",
+                    "pg_commits_total": "total_commits",
+                    "pg_rollbacks_total": "total_rollbacks",
+                }
+                for snap in data.get("snapshots", []):
+                    for old_key, new_key in _pg_key_map.items():
+                        if old_key in snap:
+                            snap[new_key] = snap.pop(old_key)
 
             if data and data.get("snapshots"):
                 return jsonify(data)

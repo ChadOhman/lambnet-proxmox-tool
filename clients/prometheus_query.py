@@ -304,16 +304,16 @@ class PrometheusQueryClient:
         rate_interval = f"{max(step * 2, 120)}s"
 
         queries = {
-            "pg_connections_total": f'sum(pg_stat_activity_count{{{inst}}})',
-            "pg_connections_active": f'sum(pg_stat_activity_count{{state="active",{inst}}})',
-            "pg_cache_hit_ratio": (
+            "total_connections": f'sum(pg_stat_activity_count{{{inst}}})',
+            "active_connections": f'sum(pg_stat_activity_count{{state="active",{inst}}})',
+            "cache_hit_ratio": (
                 f'sum(rate(pg_stat_database_blks_hit{{{inst}}}[{rate_interval}])) / '
                 f'clamp_min(sum(rate(pg_stat_database_blks_hit{{{inst}}}[{rate_interval}])) + '
                 f'sum(rate(pg_stat_database_blks_read{{{inst}}}[{rate_interval}])), 1) * 100'
             ),
-            "pg_commits_total": f'sum(pg_stat_database_xact_commit{{{inst}}})',
-            "pg_rollbacks_total": f'sum(pg_stat_database_xact_rollback{{{inst}}})',
-            "pg_lock_waits": f'sum(pg_locks_count{{{inst}}}) or vector(0)',
+            "total_commits": f'sum(pg_stat_database_xact_commit{{{inst}}})',
+            "total_rollbacks": f'sum(pg_stat_database_xact_rollback{{{inst}}})',
+            "lock_waits": f'sum(pg_locks_count{{{inst}}}) or vector(0)',
         }
 
         return self._run_snapshot_queries(queries, start, end, step, source="postgres_exporter")

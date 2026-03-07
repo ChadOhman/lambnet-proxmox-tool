@@ -709,7 +709,7 @@ class TestExporterAwareQueries:
             assert result["source"] == "postgres_exporter"
             assert len(result["snapshots"]) > 0
             snap = result["snapshots"][0]
-            assert "pg_connections_total" in snap
+            assert "total_connections" in snap
             assert "captured_at" in snap
 
     @patch("clients.prometheus_query.requests.get")
