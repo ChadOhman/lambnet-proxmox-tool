@@ -632,11 +632,7 @@ class TestExporterAwareQueries:
             assert len(result["labels"]) > 0
 
             # Verify node_exporter queries were used (check the query param)
-            calls = mock_get.call_args_list
-            queries_used = [c.kwargs.get("params", c.args[0] if c.args else {}).get("query", "")
-                            for c in calls if hasattr(c, 'kwargs')]
-            # At least one call should contain node_cpu_seconds_total
-            all_urls_and_params = str(calls)
+            all_urls_and_params = str(mock_get.call_args_list)
             assert "node_cpu_seconds_total" in all_urls_and_params
 
             db.session.delete(exp)
