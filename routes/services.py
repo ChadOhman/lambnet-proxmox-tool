@@ -526,17 +526,24 @@ def pg_metrics_history(service_id):
     timeframe = request.args.get("timeframe", "day")
     if Setting.get("prometheus_enabled", "false") == "true" and Setting.get("prometheus_url", ""):
         try:
-            from clients.prometheus_query import PrometheusQueryClient
+            from clients.prometheus_query import PrometheusQueryClient, _get_exporter_target
             prom = PrometheusQueryClient()
-            pg_metrics = [
-                "lambnet_pg_connections_total",
-                "lambnet_pg_cache_hit_ratio",
-                "lambnet_pg_connections_active",
-                "lambnet_pg_lock_waits",
-                "lambnet_pg_commits_total",
-                "lambnet_pg_rollbacks_total",
-            ]
-            data = prom.get_service_metrics_history(svc.id, pg_metrics, timeframe)
+
+            # Prefer postgres_exporter if installed on this guest
+            pg_target = _get_exporter_target(svc.guest_id, "postgres_exporter")
+            if pg_target:
+                data = prom.get_pg_metrics_exporter(pg_target, timeframe)
+            else:
+                pg_metrics = [
+                    "lambnet_pg_connections_total",
+                    "lambnet_pg_cache_hit_ratio",
+                    "lambnet_pg_connections_active",
+                    "lambnet_pg_lock_waits",
+                    "lambnet_pg_commits_total",
+                    "lambnet_pg_rollbacks_total",
+                ]
+                data = prom.get_service_metrics_history(svc.id, pg_metrics, timeframe)
+
             if data and data.get("snapshots"):
                 return jsonify(data)
         except Exception:
