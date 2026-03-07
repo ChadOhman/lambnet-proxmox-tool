@@ -91,6 +91,20 @@ class TestPrometheusExporter:
             val = JITSI_CONFERENCES.labels("3", "jitsi-guest")._value.get()
             assert val == 5.0
 
+    def test_update_prometheus_metrics(self, app):
+        from clients.prometheus_exporter import update_prometheus_metrics, PROM_TARGETS_UP, PROM_HEAD_SERIES
+        with app.app_context():
+            update_prometheus_metrics(4, "prom-guest", {
+                "targets_up": 3,
+                "targets_down": 1,
+                "storage_bytes": 500_000_000,
+                "head_series": 12345,
+            })
+            val = PROM_TARGETS_UP.labels("4", "prom-guest")._value.get()
+            assert val == 3.0
+            val = PROM_HEAD_SERIES.labels("4", "prom-guest")._value.get()
+            assert val == 12345.0
+
     def test_update_apt_metrics(self, app):
         from clients.prometheus_exporter import update_apt_metrics, APT_PENDING
         with app.app_context():

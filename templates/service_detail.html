@@ -33,6 +33,7 @@
         {% if stats.puma_version %}<span class="ms-2 badge bg-secondary">Puma {{ stats.puma_version }}</span>{% endif %}
         {% if stats.sidekiq_version %}<span class="ms-2 badge bg-secondary">Sidekiq {{ stats.sidekiq_version }}</span>{% endif %}
         {% if stats.jvb_version %}<span class="ms-2 badge bg-secondary">JVB {{ stats.jvb_version }}</span>{% endif %}
+        {% if stats.prom_version %}<span class="ms-2 badge bg-secondary">Prometheus {{ stats.prom_version }}</span>{% endif %}
     </div>
     <div class="d-flex gap-2 flex-shrink-0">
         <button class="btn btn-outline-primary btn-sm" id="refreshBtn" onclick="refreshStats()">
@@ -1376,6 +1377,123 @@
     </div>
 </div>
 {% endif %}{# rest_api_disabled #}
+
+{% elif stats.type == 'prometheus' %}
+
+{% if stats.prom_api_disabled %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i> <strong>Prometheus API not reachable.</strong>
+    Ensure Prometheus is running and the web interface is accessible on port {{ service.port or 9090 }}.
+    Check logs with: <code>journalctl -u prometheus</code>
+</div>
+{% else %}
+
+<!-- Overview -->
+<div class="card bg-dark mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-graph-up"></i> Overview
+            {% if stats.prom_healthy %}
+            <span class="badge bg-success ms-2">Healthy</span>
+            {% elif stats.prom_healthy is defined and not stats.prom_healthy %}
+            <span class="badge bg-danger ms-2">Unhealthy</span>
+            {% endif %}
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Version</div>
+                <div class="fs-5">{{ stats.prom_version|default('N/A') }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Retention</div>
+                <div class="fs-5">{{ stats.prom_retention|default('N/A') }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Active Targets</div>
+                <div class="fs-5">
+                    <span class="text-success">{{ stats.targets_up|default(0) }} up</span>
+                    {% if stats.targets_down|default(0) > 0 %}
+                    / <span class="text-danger">{{ stats.targets_down }} down</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Start Time</div>
+                <div class="fs-6 font-monospace">{{ stats.prom_start_time|default('N/A') }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Storage -->
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-hdd"></i> Storage</h5></div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Total TSDB Size</div>
+                <div class="fs-5">{{ stats.storage_human|default('N/A') }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">WAL Size</div>
+                <div class="fs-5">{{ stats.wal_human|default('N/A') }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Head Series</div>
+                <div class="fs-5">{{ '{:,}'.format(stats.head_series|default(0)) }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Head Chunks</div>
+                <div class="fs-5">{{ '{:,}'.format(stats.head_chunks|default(0)) }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scrape Targets -->
+{% if stats.targets %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-bullseye"></i> Scrape Targets</h5></div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Job</th>
+                        <th>Endpoint</th>
+                        <th>Health</th>
+                        <th>Last Scrape</th>
+                        <th>Duration</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in stats.targets %}
+                    <tr>
+                        <td><code>{{ t.job }}</code></td>
+                        <td class="font-monospace small">{{ t.endpoint }}</td>
+                        <td>
+                            {% if t.health == 'up' %}
+                            <span class="badge bg-success">up</span>
+                            {% elif t.health == 'down' %}
+                            <span class="badge bg-danger" {% if t.lastError %}title="{{ t.lastError }}"{% endif %}>down</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ t.health }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="small">{{ t.lastScrape[:19]|default('N/A') if t.lastScrape else 'N/A' }}</td>
+                        <td>{{ t.scrapeDuration }}s</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endif %}{# prom_api_disabled #}
 
 {% endif %}
 

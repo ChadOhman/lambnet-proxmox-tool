@@ -495,6 +495,7 @@ class GuestService(db.Model):
         "jitsi-videobridge2": ("Jitsi Videobridge", "jitsi-videobridge2.service", 8080),
         "jicofo": ("Jicofo", "jicofo.service", None),
         "prosody": ("Prosody", "prosody.service", None),
+        "prometheus": ("Prometheus", "prometheus.service", 9090),
     }
 
     id = db.Column(db.Integer, primary_key=True)

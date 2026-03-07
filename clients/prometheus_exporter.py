@@ -123,6 +123,18 @@ JITSI_BITRATE_DL = Gauge("lambnet_jitsi_bitrate_download_bps", "Jitsi download b
                          ["service_id", "guest_name"], registry=registry)
 
 # ---------------------------------------------------------------------------
+# Prometheus server (labels: service_id, guest_name)
+# ---------------------------------------------------------------------------
+PROM_TARGETS_UP = Gauge("lambnet_prometheus_targets_up", "Prometheus scrape targets that are up",
+                        ["service_id", "guest_name"], registry=registry)
+PROM_TARGETS_DOWN = Gauge("lambnet_prometheus_targets_down", "Prometheus scrape targets that are down",
+                          ["service_id", "guest_name"], registry=registry)
+PROM_STORAGE = Gauge("lambnet_prometheus_storage_bytes", "Prometheus TSDB storage size in bytes",
+                     ["service_id", "guest_name"], registry=registry)
+PROM_HEAD_SERIES = Gauge("lambnet_prometheus_head_series", "Prometheus TSDB head series count",
+                         ["service_id", "guest_name"], registry=registry)
+
+# ---------------------------------------------------------------------------
 # UniFi (labels: site_name)
 # ---------------------------------------------------------------------------
 UNIFI_DEVICES = Gauge("lambnet_unifi_device_count", "UniFi managed device count",
@@ -304,6 +316,23 @@ def update_jitsi_metrics(service_id, guest_name, data):
                 JITSI_BITRATE_DL.labels(*labels).set(_to_num(data["bit_rate_download"]))
         except Exception:
             logger.debug("Failed to update Jitsi metrics for service %s", service_id, exc_info=True)
+
+
+def update_prometheus_metrics(service_id, guest_name, data):
+    """Update Prometheus server metrics from stats dict."""
+    labels = [str(service_id), guest_name]
+    with _lock:
+        try:
+            if data.get("targets_up") is not None:
+                PROM_TARGETS_UP.labels(*labels).set(_to_num(data["targets_up"]))
+            if data.get("targets_down") is not None:
+                PROM_TARGETS_DOWN.labels(*labels).set(_to_num(data["targets_down"]))
+            if data.get("storage_bytes") is not None:
+                PROM_STORAGE.labels(*labels).set(_to_num(data["storage_bytes"]))
+            if data.get("head_series") is not None:
+                PROM_HEAD_SERIES.labels(*labels).set(_to_num(data["head_series"]))
+        except Exception:
+            logger.debug("Failed to update Prometheus metrics for service %s", service_id, exc_info=True)
 
 
 def update_unifi_metrics(site_name, device_count=None, client_count=None):

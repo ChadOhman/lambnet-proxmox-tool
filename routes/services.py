@@ -654,6 +654,9 @@ def _update_prometheus_service_stats(svc, guest, data):
         elif svc.service_name == "jitsi-videobridge2" and not data.get("rest_api_disabled"):
             from clients.prometheus_exporter import update_jitsi_metrics
             update_jitsi_metrics(svc.id, guest.name, data)
+        elif svc.service_name == "prometheus" and not data.get("prom_api_disabled"):
+            from clients.prometheus_exporter import update_prometheus_metrics
+            update_prometheus_metrics(svc.id, guest.name, data)
     except Exception:
         logger.debug("Failed to update Prometheus metrics for service %s", svc.id, exc_info=True)
 

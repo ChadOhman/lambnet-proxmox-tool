@@ -1441,6 +1441,8 @@ def get_service_stats(guest, service):
             stats.update(_stats_libretranslate(guest, service))
         elif stype == "jitsi-videobridge2":
             stats.update(_stats_jitsi_videobridge(guest, service))
+        elif stype == "prometheus":
+            stats.update(_stats_prometheus(guest, service))
     except Exception as e:
         logger.error(f"Error collecting {stype} stats for {guest.name}: {e}")
         stats["error"] = str(e)
@@ -2366,6 +2368,136 @@ def _stats_jitsi_videobridge(guest, service):
     # Version
     if "version" in data:
         stats["jvb_version"] = data["version"]
+
+    return stats
+
+
+def _stats_prometheus(guest, service):
+    """Collect Prometheus server stats from its HTTP API."""
+    import json as _json
+    stats = {}
+    port = service.port or 9090
+
+    # Health check
+    hc_out, _ = _execute_command(
+        guest,
+        f"curl -sf -o /dev/null -w '%{{http_code}}' http://localhost:{port}/-/healthy 2>/dev/null || echo 000",
+        timeout=10,
+    )
+    http_code = (hc_out or "").strip()
+    if http_code == "000":
+        stats["prom_api_disabled"] = True
+        return stats
+
+    stats["prom_healthy"] = http_code == "200"
+
+    # Runtime info — version, retention, start time
+    out, _ = _execute_command(
+        guest,
+        f"curl -sf http://localhost:{port}/api/v1/status/runtimeinfo 2>/dev/null",
+        timeout=10,
+    )
+    if out:
+        try:
+            data = _json.loads(out)
+            info = data.get("data", {})
+            stats["prom_version"] = info.get("CWD", "")  # fallback
+            if info.get("storageRetention"):
+                stats["prom_retention"] = info["storageRetention"]
+            if info.get("startTime"):
+                stats["prom_start_time"] = info["startTime"]
+        except _json.JSONDecodeError:
+            pass
+
+    # Get version from build info (more reliable)
+    out, _ = _execute_command(
+        guest,
+        f"curl -sf http://localhost:{port}/api/v1/status/buildinfo 2>/dev/null",
+        timeout=10,
+    )
+    if out:
+        try:
+            data = _json.loads(out)
+            info = data.get("data", {})
+            if info.get("version"):
+                stats["prom_version"] = info["version"]
+        except _json.JSONDecodeError:
+            pass
+
+    # TSDB stats — series, chunks, storage size
+    out, _ = _execute_command(
+        guest,
+        f"curl -sf http://localhost:{port}/api/v1/status/tsdb 2>/dev/null",
+        timeout=10,
+    )
+    if out:
+        try:
+            data = _json.loads(out)
+            tsdb = data.get("data", {})
+            if "headStats" in tsdb:
+                head = tsdb["headStats"]
+                stats["head_series"] = head.get("numSeries", 0)
+                stats["head_chunks"] = head.get("numChunks", 0)
+                stats["min_time"] = head.get("minTime", 0)
+                stats["max_time"] = head.get("maxTime", 0)
+        except _json.JSONDecodeError:
+            pass
+
+    # Storage size via promtool or filesystem
+    out, _ = _execute_command(
+        guest,
+        "du -sb /var/lib/prometheus/ 2>/dev/null | cut -f1",
+        timeout=10,
+    )
+    if out and out.strip().isdigit():
+        storage_bytes = int(out.strip())
+        stats["storage_bytes"] = storage_bytes
+        stats["storage_human"] = _human_bytes(storage_bytes)
+
+    # WAL size
+    out, _ = _execute_command(
+        guest,
+        "du -sb /var/lib/prometheus/wal 2>/dev/null | cut -f1",
+        timeout=10,
+    )
+    if out and out.strip().isdigit():
+        wal_bytes = int(out.strip())
+        stats["wal_bytes"] = wal_bytes
+        stats["wal_human"] = _human_bytes(wal_bytes)
+
+    # Scrape targets
+    out, _ = _execute_command(
+        guest,
+        f"curl -sf http://localhost:{port}/api/v1/targets 2>/dev/null",
+        timeout=15,
+    )
+    if out:
+        try:
+            data = _json.loads(out)
+            active = data.get("data", {}).get("activeTargets", [])
+            targets = []
+            targets_up = 0
+            targets_down = 0
+            for t in active:
+                health = t.get("health", "unknown")
+                if health == "up":
+                    targets_up += 1
+                else:
+                    targets_down += 1
+                targets.append({
+                    "job": t.get("labels", {}).get("job", ""),
+                    "endpoint": t.get("scrapeUrl", ""),
+                    "health": health,
+                    "lastScrape": t.get("lastScrape", ""),
+                    "scrapeDuration": round(float(t.get("lastScrapeDuration", 0)), 4),
+                    "lastError": t.get("lastError", ""),
+                })
+            stats["targets"] = targets
+            stats["active_targets_count"] = len(active)
+            stats["targets_up"] = targets_up
+            stats["targets_down"] = targets_down
+        except (_json.JSONDecodeError, ValueError):
+            pass
 
     return stats
 
