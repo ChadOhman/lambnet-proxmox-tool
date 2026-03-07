@@ -153,6 +153,11 @@
                     {% if settings.update_available %}
                     <span class="badge bg-warning text-dark">Update available</span>
                     {% endif %}
+                    {% if settings.enabled and settings.url %}
+                    <span id="connHealthBadge" class="badge bg-secondary me-2" title="Checking connection…">
+                        <i class="bi bi-hourglass-split"></i> Checking…
+                    </span>
+                    {% endif %}
                 </div>
 
                 {% if settings.current_version %}
@@ -380,6 +385,30 @@ fetch('/prometheus/preflight/status').then(r => r.json()).then(data => {
                 });
         }, 1500);
     }
+
+    // Auto-check connection health on page load
+    (function() {
+        const badge = document.getElementById('connHealthBadge');
+        if (!badge) return;
+        fetch('/prometheus/test-connection', {method: 'POST'})
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok) {
+                    badge.className = 'badge bg-success me-2';
+                    badge.title = 'Prometheus is reachable — charts use Prometheus data';
+                    badge.innerHTML = '<i class="bi bi-heart-pulse-fill"></i> Connected';
+                } else {
+                    badge.className = 'badge bg-danger me-2';
+                    badge.title = (data.error || 'Connection failed') + ' — charts will fall back to Proxmox RRD';
+                    badge.innerHTML = '<i class="bi bi-heart-pulse-fill"></i> Unreachable';
+                }
+            })
+            .catch(() => {
+                badge.className = 'badge bg-danger me-2';
+                badge.title = 'Health check failed — charts will fall back to Proxmox RRD';
+                badge.innerHTML = '<i class="bi bi-heart-pulse-fill"></i> Unreachable';
+            });
+    })();
 
     // Check if an operation is in progress on page load
     fetch('/prometheus/install/status').then(r => r.json()).then(data => {
