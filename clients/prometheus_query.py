@@ -327,15 +327,15 @@ class PrometheusQueryClient:
         rate_interval = f"{max(step * 2, 120)}s"
 
         queries = {
-            "redis_memory_used_bytes": f'redis_memory_used_bytes{{{inst}}}',
-            "redis_connected_clients": f'redis_connected_clients{{{inst}}}',
-            "redis_ops_per_sec": f'rate(redis_commands_processed_total{{{inst}}}[{rate_interval}])',
-            "redis_hit_ratio": (
+            "used_memory_bytes": f'redis_memory_used_bytes{{{inst}}}',
+            "connected_clients": f'redis_connected_clients{{{inst}}}',
+            "ops_per_sec": f'rate(redis_commands_processed_total{{{inst}}}[{rate_interval}])',
+            "hit_ratio": (
                 f'redis_keyspace_hits_total{{{inst}}} / '
                 f'clamp_min(redis_keyspace_hits_total{{{inst}}} + '
                 f'redis_keyspace_misses_total{{{inst}}}, 1) * 100'
             ),
-            "redis_evicted_keys_total": f'redis_evicted_keys_total{{{inst}}}',
+            "evicted_keys": f'redis_evicted_keys_total{{{inst}}}',
         }
 
         return self._run_snapshot_queries(queries, start, end, step, source="redis_exporter")

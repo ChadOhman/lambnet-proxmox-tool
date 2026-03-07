@@ -734,4 +734,4 @@ class TestExporterAwareQueries:
             assert result["source"] == "redis_exporter"
             assert len(result["snapshots"]) > 0
             snap = result["snapshots"][0]
-            assert "redis_memory_used_bytes" in snap
+            assert "used_memory_bytes" in snap
