@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
-from models import db, Setting, Guest
+from models import db, Setting, Guest, ExporterInstance
 from auth.audit import log_action
 
 
@@ -27,6 +27,8 @@ def _parse_iso(value):
 _install_job = {"running": False, "success": None, "log": []}
 _upgrade_job = {"running": False, "success": None, "log": []}
 _preflight_job = {"running": False, "success": None, "log": []}
+_exporter_install_job = {"running": False, "success": None, "log": [], "instance_id": None}
+_exporter_uninstall_job = {"running": False, "success": None, "log": [], "instance_id": None}
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +91,17 @@ def manage():
         except Exception as e:
             logger.warning("Could not check snapshot/backup support: %s", e)
 
+    from apps.exporters import KNOWN_EXPORTERS
+    exporter_instances = ExporterInstance.query.join(Guest).order_by(Guest.name).all()
+
     return render_template(
         "prometheus.html",
         settings=settings,
         guests=guests,
         backup_storages=backup_storages,
         snapshots_supported=snapshots_supported,
+        exporter_instances=exporter_instances,
+        known_exporters=KNOWN_EXPORTERS,
     )
 
 
@@ -358,4 +365,198 @@ def upgrade():
     except ImportError:
         _threading.Thread(target=_bg, daemon=True).start()
 
+
+# ---------------------------------------------------------------------------
+# Exporter management routes
+# ---------------------------------------------------------------------------
+
+@bp.route("/exporters")
+def exporters_list():
+    from apps.exporters import KNOWN_EXPORTERS
+    instances = ExporterInstance.query.join(Guest).order_by(Guest.name).all()
+    return jsonify({"exporters": [
+        {
+            "id": e.id,
+            "guest_id": e.guest_id,
+            "guest_name": e.guest.name,
+            "exporter_type": e.exporter_type,
+            "display_name": KNOWN_EXPORTERS.get(e.exporter_type, {}).get("display_name", e.exporter_type),
+            "port": e.port,
+            "version": e.version,
+            "status": e.status,
+        }
+        for e in instances
+    ]})
+
+
+@bp.route("/exporters/add", methods=["POST"])
+def exporter_add():
+    from apps.exporters import KNOWN_EXPORTERS
+
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    guest_id = data.get("guest_id", "")
+    exporter_type = data.get("exporter_type", "")
+    port = data.get("port", "")
+
+    if exporter_type not in KNOWN_EXPORTERS:
+        flash("Invalid exporter type.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    if not guest_id:
+        flash("Please select a guest.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    try:
+        guest = Guest.query.get(int(guest_id))
+    except (TypeError, ValueError):
+        flash("Invalid guest ID.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    if not guest:
+        flash("Guest not found.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    info = KNOWN_EXPORTERS[exporter_type]
+    try:
+        port_int = int(port) if port else info["default_port"]
+    except (TypeError, ValueError):
+        port_int = info["default_port"]
+
+    # Check for duplicate
+    existing = ExporterInstance.query.filter_by(
+        guest_id=guest.id, exporter_type=exporter_type
+    ).filter(ExporterInstance.status != "removed").first()
+    if existing:
+        flash(f"{info['display_name']} already exists on {guest.name}.", "warning")
+        return redirect(url_for("prometheus_app.manage"))
+
+    instance = ExporterInstance(
+        guest_id=guest.id,
+        exporter_type=exporter_type,
+        port=port_int,
+        status="pending",
+    )
+    db.session.add(instance)
+    log_action("exporter_add", "guest", resource_id=guest.id, resource_name=guest.name,
+               details={"exporter_type": exporter_type, "port": port_int})
+    db.session.commit()
+
+    flash(f"{info['display_name']} added for {guest.name}. Click Install to deploy.", "success")
+    return redirect(url_for("prometheus_app.manage"))
+
+
+@bp.route("/exporters/<int:instance_id>/install", methods=["POST"])
+def exporter_install(instance_id):
+    if _exporter_install_job["running"] or _exporter_uninstall_job["running"]:
+        return jsonify({"error": "Another exporter operation is already running."}), 409
+
+    instance = ExporterInstance.query.get_or_404(instance_id)
+
+    _exporter_install_job["running"] = True
+    _exporter_install_job["success"] = None
+    _exporter_install_job["log"] = []
+    _exporter_install_job["instance_id"] = instance_id
+
+    from flask import current_app
+    _app = current_app._get_current_object()
+    _guest_id = instance.guest_id
+    _guest_name = instance.guest.name
+    _etype = instance.exporter_type
+
+    def _bg():
+        from apps.exporters import run_exporter_install
+        def _cb(msg):
+            _exporter_install_job["log"].append(msg)
+        try:
+            with _app.app_context():
+                ok, _ = run_exporter_install(instance_id, log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _exporter_install_job["running"] = False
+        _exporter_install_job["success"] = ok
+        with _app.app_context():
+            log_action("exporter_install", "guest", resource_id=_guest_id,
+                       resource_name=_guest_name,
+                       details={"exporter_type": _etype, "status": "success" if ok else "error"})
+            db.session.commit()
+
+    _threading.Thread(target=_bg, daemon=True).start()
+    return jsonify({"started": True})
+
+
+@bp.route("/exporters/install/status")
+def exporter_install_status():
+    return jsonify({
+        "running": _exporter_install_job["running"],
+        "success": _exporter_install_job["success"],
+        "log": _exporter_install_job["log"],
+        "instance_id": _exporter_install_job["instance_id"],
+    })
+
+
+@bp.route("/exporters/<int:instance_id>/uninstall", methods=["POST"])
+def exporter_uninstall(instance_id):
+    if _exporter_install_job["running"] or _exporter_uninstall_job["running"]:
+        return jsonify({"error": "Another exporter operation is already running."}), 409
+
+    instance = ExporterInstance.query.get_or_404(instance_id)
+
+    _exporter_uninstall_job["running"] = True
+    _exporter_uninstall_job["success"] = None
+    _exporter_uninstall_job["log"] = []
+    _exporter_uninstall_job["instance_id"] = instance_id
+
+    from flask import current_app
+    _app = current_app._get_current_object()
+    _guest_id = instance.guest_id
+    _guest_name = instance.guest.name
+    _etype = instance.exporter_type
+
+    def _bg():
+        from apps.exporters import run_exporter_uninstall
+        def _cb(msg):
+            _exporter_uninstall_job["log"].append(msg)
+        try:
+            with _app.app_context():
+                ok, _ = run_exporter_uninstall(instance_id, log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _exporter_uninstall_job["running"] = False
+        _exporter_uninstall_job["success"] = ok
+        with _app.app_context():
+            log_action("exporter_uninstall", "guest", resource_id=_guest_id,
+                       resource_name=_guest_name,
+                       details={"exporter_type": _etype, "status": "success" if ok else "error"})
+            db.session.commit()
+
+    _threading.Thread(target=_bg, daemon=True).start()
+    return jsonify({"started": True})
+
+
+@bp.route("/exporters/uninstall/status")
+def exporter_uninstall_status():
+    return jsonify({
+        "running": _exporter_uninstall_job["running"],
+        "success": _exporter_uninstall_job["success"],
+        "log": _exporter_uninstall_job["log"],
+        "instance_id": _exporter_uninstall_job["instance_id"],
+    })
+
+
+@bp.route("/exporters/<int:instance_id>/delete", methods=["POST"])
+def exporter_delete(instance_id):
+    instance = ExporterInstance.query.get_or_404(instance_id)
+    if instance.status == "installed":
+        flash("Uninstall the exporter before deleting.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    guest_name = instance.guest.name
+    etype = instance.exporter_type
+    log_action("exporter_delete", "guest", resource_id=instance.guest_id, resource_name=guest_name,
+               details={"exporter_type": etype})
+    db.session.delete(instance)
+    db.session.commit()
+    flash(f"Exporter entry removed for {guest_name}.", "success")
     return redirect(url_for("prometheus_app.manage"))
