@@ -106,8 +106,6 @@ def create_app(test_config=None):
     from routes.services import bp as services_bp
     from routes.unifi import bp as unifi_bp
     from routes.applications import bp as applications_bp
-    from routes.prometheus_metrics import bp as prometheus_metrics_bp
-    from routes.prometheus_app import bp as prometheus_app_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -127,8 +125,6 @@ def create_app(test_config=None):
     app.register_blueprint(unifi_bp, url_prefix="/unifi")
     app.register_blueprint(api_bp, url_prefix="/api")
     app.register_blueprint(applications_bp, url_prefix="/applications")
-    app.register_blueprint(prometheus_metrics_bp)
-    app.register_blueprint(prometheus_app_bp, url_prefix="/prometheus")
 
     # Initialize WebSocket for terminal
     from routes.terminal import init_websocket
