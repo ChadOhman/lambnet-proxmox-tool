@@ -1,8 +1,8 @@
 """Tests for the Prometheus exporter management system."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, PropertyMock
 
-from models import db, Guest, ExporterInstance, ProxmoxHost
+from models import db, Guest, ExporterInstance, ProxmoxHost, Setting
 
 
 # ---------------------------------------------------------------------------
@@ -735,3 +735,421 @@ class TestExporterAwareQueries:
             assert len(result["snapshots"]) > 0
             snap = result["snapshots"][0]
             assert "used_memory_bytes" in snap
+
+
+# ---------------------------------------------------------------------------
+# Mastodon built-in exporter tests
+# ---------------------------------------------------------------------------
+
+class TestBuildMastodonEnvVars:
+
+    def test_default_config(self):
+        from apps.exporters import _build_mastodon_env_vars
+
+        env = _build_mastodon_env_vars()
+        assert env["MASTODON_PROMETHEUS_EXPORTER_ENABLED"] == "true"
+        assert env["MASTODON_PROMETHEUS_EXPORTER_WEB_DETAILED_METRICS"] == "true"
+        assert env["MASTODON_PROMETHEUS_EXPORTER_SIDEKIQ_DETAILED_METRICS"] == "true"
+        # External mode by default
+        assert env["PROMETHEUS_EXPORTER_HOST"] == "localhost"
+        assert env["PROMETHEUS_EXPORTER_PORT"] == "9394"
+        # Should NOT have local mode vars
+        assert "MASTODON_PROMETHEUS_EXPORTER_LOCAL" not in env
+        assert "MASTODON_PROMETHEUS_EXPORTER_HOST" not in env
+        assert "MASTODON_PROMETHEUS_EXPORTER_PORT" not in env
+
+    def test_empty_config(self):
+        from apps.exporters import _build_mastodon_env_vars
+
+        env = _build_mastodon_env_vars({})
+        assert env["MASTODON_PROMETHEUS_EXPORTER_ENABLED"] == "true"
+        assert env["MASTODON_PROMETHEUS_EXPORTER_WEB_DETAILED_METRICS"] == "true"
+        assert env["MASTODON_PROMETHEUS_EXPORTER_SIDEKIQ_DETAILED_METRICS"] == "true"
+
+    def test_web_detailed_disabled(self):
+        from apps.exporters import _build_mastodon_env_vars
+
+        env = _build_mastodon_env_vars({"web_detailed_metrics": False})
+        assert env["MASTODON_PROMETHEUS_EXPORTER_WEB_DETAILED_METRICS"] == "false"
+        assert env["MASTODON_PROMETHEUS_EXPORTER_SIDEKIQ_DETAILED_METRICS"] == "true"
+
+    def test_sidekiq_detailed_disabled(self):
+        from apps.exporters import _build_mastodon_env_vars
+
+        env = _build_mastodon_env_vars({"sidekiq_detailed_metrics": False})
+        assert env["MASTODON_PROMETHEUS_EXPORTER_WEB_DETAILED_METRICS"] == "true"
+        assert env["MASTODON_PROMETHEUS_EXPORTER_SIDEKIQ_DETAILED_METRICS"] == "false"
+
+    def test_local_mode(self):
+        from apps.exporters import _build_mastodon_env_vars
+
+        env = _build_mastodon_env_vars({"mode": "local"})
+        assert env["MASTODON_PROMETHEUS_EXPORTER_LOCAL"] == "true"
+        assert env["MASTODON_PROMETHEUS_EXPORTER_HOST"] == "localhost"
+        assert env["MASTODON_PROMETHEUS_EXPORTER_PORT"] == "9394"
+        # Should NOT have external mode vars
+        assert "PROMETHEUS_EXPORTER_HOST" not in env
+        assert "PROMETHEUS_EXPORTER_PORT" not in env
+
+    def test_local_mode_custom_host_port(self):
+        from apps.exporters import _build_mastodon_env_vars
+
+        env = _build_mastodon_env_vars({"mode": "local", "host": "0.0.0.0", "port": 9500})
+        assert env["MASTODON_PROMETHEUS_EXPORTER_HOST"] == "0.0.0.0"
+        assert env["MASTODON_PROMETHEUS_EXPORTER_PORT"] == "9500"
+
+    def test_external_mode_custom_port(self):
+        from apps.exporters import _build_mastodon_env_vars
+
+        env = _build_mastodon_env_vars({"mode": "external", "port": 9500})
+        assert env["PROMETHEUS_EXPORTER_PORT"] == "9500"
+        assert env["PROMETHEUS_EXPORTER_HOST"] == "localhost"
+
+    def test_external_mode_custom_host(self):
+        from apps.exporters import _build_mastodon_env_vars
+
+        env = _build_mastodon_env_vars({"host": "10.0.0.5"})
+        assert env["PROMETHEUS_EXPORTER_HOST"] == "10.0.0.5"
+
+
+class TestBuiltinExporterRegistry:
+
+    def test_mastodon_in_registry(self):
+        from apps.exporters import BUILTIN_EXPORTERS
+
+        assert "mastodon" in BUILTIN_EXPORTERS
+        info = BUILTIN_EXPORTERS["mastodon"]
+        assert info["default_port"] == 9394
+        assert info["job_name"] == "mastodon"
+        assert info["display_name"] == "Mastodon (Built-in)"
+
+    def test_regenerate_config_looks_up_builtin(self, app):
+        """BUILTIN_EXPORTERS are checked during prometheus.yml regeneration."""
+        from apps.exporters import BUILTIN_EXPORTERS, KNOWN_EXPORTERS
+
+        # mastodon is in BUILTIN but not KNOWN
+        assert "mastodon" not in KNOWN_EXPORTERS
+        assert "mastodon" in BUILTIN_EXPORTERS
+
+
+class TestEnableMastodonExporter:
+
+    def test_guest_not_found(self, app):
+        from apps.exporters import enable_mastodon_exporter
+
+        with app.app_context():
+            log = []
+            result = enable_mastodon_exporter(99999, log_callback=log.append)
+            assert result is False
+            assert any("Guest not found" in m for m in log)
+
+    def test_no_credential(self, app):
+        from apps.exporters import enable_mastodon_exporter
+
+        with app.app_context():
+            guest = _create_guest(app, name="masto-nocred", ip="10.0.0.80")
+            log = []
+            with patch("apps.exporters.Credential") as MockCred:
+                MockCred.query.filter_by.return_value.first.return_value = None
+                # Also patch guest.credential to be None
+                with patch.object(type(guest), "credential", new_callable=PropertyMock, return_value=None):
+                    result = enable_mastodon_exporter(guest.id, log_callback=log.append)
+            assert result is False
+            assert any("No SSH credential" in m for m in log)
+
+            db.session.delete(guest)
+            db.session.commit()
+
+    def test_no_ip(self, app):
+        from apps.exporters import enable_mastodon_exporter
+
+        with app.app_context():
+            guest = _create_guest(app, name="masto-noip", ip="dhcp")
+            log = []
+            result = enable_mastodon_exporter(guest.id, log_callback=log.append)
+            assert result is False
+            assert any("no usable IP" in m for m in log)
+
+            db.session.delete(guest)
+            db.session.commit()
+
+    def test_already_enabled(self, app):
+        from apps.exporters import enable_mastodon_exporter
+
+        with app.app_context():
+            guest = _create_guest(app, name="masto-already", ip="10.0.0.81")
+            exp = ExporterInstance(
+                guest_id=guest.id,
+                exporter_type="mastodon",
+                port=9394,
+                status="installed",
+            )
+            db.session.add(exp)
+            db.session.commit()
+
+            log = []
+            result = enable_mastodon_exporter(guest.id, log_callback=log.append)
+            assert result is True
+            assert any("already enabled" in m for m in log)
+
+            db.session.delete(exp)
+            db.session.delete(guest)
+            db.session.commit()
+
+    @patch("apps.exporters.SSHClient")
+    def test_enable_success_default_config(self, MockSSH, app):
+        from apps.exporters import enable_mastodon_exporter
+
+        mock_ssh = MagicMock()
+        mock_ssh.execute_sudo.return_value = ("", "", 0)
+        mock_ssh.execute.return_value = ("mastodon-web.service\nmastodon-sidekiq.service\n", "", 0)
+        mock_ssh.__enter__ = MagicMock(return_value=mock_ssh)
+        mock_ssh.__exit__ = MagicMock(return_value=False)
+        MockSSH.from_credential.return_value = mock_ssh
+
+        with app.app_context():
+            guest = _create_guest(app, name="masto-enable-ok", ip="10.0.0.82")
+            log = []
+            with patch("apps.exporters._regenerate_prometheus_config"):
+                result = enable_mastodon_exporter(guest.id, log_callback=log.append)
+
+            assert result is True
+            exp = ExporterInstance.query.filter_by(
+                guest_id=guest.id, exporter_type="mastodon", status="installed"
+            ).first()
+            assert exp is not None
+            assert exp.port == 9394
+
+            db.session.delete(exp)
+            db.session.delete(guest)
+            db.session.commit()
+
+    @patch("apps.exporters.SSHClient")
+    def test_enable_with_custom_config(self, MockSSH, app):
+        from apps.exporters import enable_mastodon_exporter
+
+        mock_ssh = MagicMock()
+        mock_ssh.execute_sudo.return_value = ("", "", 0)
+        mock_ssh.execute.return_value = ("mastodon-web.service\n", "", 0)
+        mock_ssh.__enter__ = MagicMock(return_value=mock_ssh)
+        mock_ssh.__exit__ = MagicMock(return_value=False)
+        MockSSH.from_credential.return_value = mock_ssh
+
+        config = {
+            "web_detailed_metrics": False,
+            "sidekiq_detailed_metrics": True,
+            "mode": "local",
+            "host": "0.0.0.0",
+            "port": 9500,
+        }
+
+        with app.app_context():
+            guest = _create_guest(app, name="masto-enable-cfg", ip="10.0.0.83")
+            log = []
+            with patch("apps.exporters._regenerate_prometheus_config"):
+                result = enable_mastodon_exporter(guest.id, config=config, log_callback=log.append)
+
+            assert result is True
+            exp = ExporterInstance.query.filter_by(
+                guest_id=guest.id, exporter_type="mastodon", status="installed"
+            ).first()
+            assert exp is not None
+            assert exp.port == 9500
+            assert exp.config == config
+
+            db.session.delete(exp)
+            db.session.delete(guest)
+            db.session.commit()
+
+
+class TestDisableMastodonExporter:
+
+    def test_guest_not_found(self, app):
+        from apps.exporters import disable_mastodon_exporter
+
+        with app.app_context():
+            log = []
+            result = disable_mastodon_exporter(99999, log_callback=log.append)
+            assert result is False
+            assert any("Guest not found" in m for m in log)
+
+    @patch("apps.exporters.SSHClient")
+    def test_disable_success(self, MockSSH, app):
+        from apps.exporters import disable_mastodon_exporter
+
+        mock_ssh = MagicMock()
+        mock_ssh.execute_sudo.return_value = ("", "", 0)
+        mock_ssh.execute.return_value = ("mastodon-web.service\n", "", 0)
+        mock_ssh.__enter__ = MagicMock(return_value=mock_ssh)
+        mock_ssh.__exit__ = MagicMock(return_value=False)
+        MockSSH.from_credential.return_value = mock_ssh
+
+        with app.app_context():
+            guest = _create_guest(app, name="masto-disable-ok", ip="10.0.0.84")
+            exp = ExporterInstance(
+                guest_id=guest.id,
+                exporter_type="mastodon",
+                port=9394,
+                status="installed",
+            )
+            db.session.add(exp)
+            db.session.commit()
+
+            log = []
+            with patch("apps.exporters._regenerate_prometheus_config"):
+                result = disable_mastodon_exporter(guest.id, log_callback=log.append)
+
+            assert result is True
+            remaining = ExporterInstance.query.filter_by(
+                guest_id=guest.id, exporter_type="mastodon"
+            ).count()
+            assert remaining == 0
+
+            db.session.delete(guest)
+            db.session.commit()
+
+    @patch("apps.exporters.SSHClient")
+    def test_disable_sed_removes_unprefixed_vars(self, MockSSH, app):
+        """Verify the sed command also removes PROMETHEUS_EXPORTER_HOST/PORT."""
+        from apps.exporters import disable_mastodon_exporter
+
+        mock_ssh = MagicMock()
+        mock_ssh.execute_sudo.return_value = ("", "", 0)
+        mock_ssh.execute.return_value = ("mastodon-web.service\n", "", 0)
+        mock_ssh.__enter__ = MagicMock(return_value=mock_ssh)
+        mock_ssh.__exit__ = MagicMock(return_value=False)
+        MockSSH.from_credential.return_value = mock_ssh
+
+        with app.app_context():
+            guest = _create_guest(app, name="masto-disable-sed", ip="10.0.0.85")
+            exp = ExporterInstance(
+                guest_id=guest.id,
+                exporter_type="mastodon",
+                port=9394,
+                status="installed",
+            )
+            db.session.add(exp)
+            db.session.commit()
+
+            with patch("apps.exporters._regenerate_prometheus_config"):
+                disable_mastodon_exporter(guest.id)
+
+            # Verify sed was called with the pattern that catches unprefixed vars
+            sed_calls = [
+                str(call) for call in mock_ssh.execute_sudo.call_args_list
+                if "sed" in str(call)
+            ]
+            assert len(sed_calls) > 0
+            assert "PROMETHEUS_EXPORTER_HOST" in sed_calls[0]
+            assert "PROMETHEUS_EXPORTER_PORT" in sed_calls[0]
+
+            db.session.delete(guest)
+            db.session.commit()
+
+
+class TestReconfigureMastodonExporter:
+
+    def test_guest_not_found(self, app):
+        from apps.exporters import reconfigure_mastodon_exporter
+
+        with app.app_context():
+            log = []
+            result = reconfigure_mastodon_exporter(99999, {}, log_callback=log.append)
+            assert result is False
+            assert any("Guest not found" in m for m in log)
+
+    def test_not_enabled(self, app):
+        from apps.exporters import reconfigure_mastodon_exporter
+
+        with app.app_context():
+            guest = _create_guest(app, name="masto-reconf-none", ip="10.0.0.86")
+            log = []
+            result = reconfigure_mastodon_exporter(guest.id, {}, log_callback=log.append)
+            assert result is False
+            assert any("not currently enabled" in m for m in log)
+
+            db.session.delete(guest)
+            db.session.commit()
+
+    @patch("apps.exporters.SSHClient")
+    def test_reconfigure_success(self, MockSSH, app):
+        from apps.exporters import reconfigure_mastodon_exporter
+
+        mock_ssh = MagicMock()
+        mock_ssh.execute_sudo.return_value = ("", "", 0)
+        mock_ssh.execute.return_value = ("mastodon-web.service\n", "", 0)
+        mock_ssh.__enter__ = MagicMock(return_value=mock_ssh)
+        mock_ssh.__exit__ = MagicMock(return_value=False)
+        MockSSH.from_credential.return_value = mock_ssh
+
+        with app.app_context():
+            guest = _create_guest(app, name="masto-reconf-ok", ip="10.0.0.87")
+            exp = ExporterInstance(
+                guest_id=guest.id,
+                exporter_type="mastodon",
+                port=9394,
+                config={"mode": "external", "port": 9394},
+                status="installed",
+            )
+            db.session.add(exp)
+            db.session.commit()
+            exp_id = exp.id
+
+            new_config = {"mode": "local", "port": 9500, "host": "0.0.0.0"}
+            log = []
+            with patch("apps.exporters._regenerate_prometheus_config"):
+                result = reconfigure_mastodon_exporter(guest.id, new_config, log_callback=log.append)
+
+            assert result is True
+            updated = ExporterInstance.query.get(exp_id)
+            assert updated.port == 9500
+            assert updated.config == new_config
+
+            db.session.delete(updated)
+            db.session.delete(guest)
+            db.session.commit()
+
+
+class TestMastodonExporterRoutes:
+
+    def test_mastodon_exporter_status_endpoint(self, auth_client):
+        resp = auth_client.get("/prometheus/mastodon-exporter/status")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "running" in data
+        assert "log" in data
+
+    def test_enable_no_guest_configured(self, auth_client, app):
+        with app.app_context():
+            Setting.set("mastodon_guest_id", "")
+            db.session.commit()
+
+        resp = auth_client.post("/prometheus/mastodon-exporter/enable", data={
+            "web_detailed_metrics": "on",
+            "sidekiq_detailed_metrics": "on",
+            "mode": "external",
+            "host": "localhost",
+            "port": "9394",
+        }, follow_redirects=False)
+        assert resp.status_code in (302, 303)
+
+    def test_disable_no_guest_configured(self, auth_client, app):
+        with app.app_context():
+            Setting.set("mastodon_guest_id", "")
+            db.session.commit()
+
+        resp = auth_client.post("/prometheus/mastodon-exporter/disable",
+                                follow_redirects=False)
+        assert resp.status_code in (302, 303)
+
+    def test_reconfigure_no_guest_configured(self, auth_client, app):
+        with app.app_context():
+            Setting.set("mastodon_guest_id", "")
+            db.session.commit()
+
+        resp = auth_client.post("/prometheus/mastodon-exporter/reconfigure", data={
+            "web_detailed_metrics": "on",
+            "mode": "external",
+            "port": "9394",
+        }, follow_redirects=False)
+        assert resp.status_code in (302, 303)
