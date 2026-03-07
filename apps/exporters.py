@@ -53,6 +53,57 @@ KNOWN_EXPORTERS = {
     },
 }
 
+# Built-in exporters — these are part of the application itself (no binary to install).
+# Enabled by setting environment variables and restarting the service.
+BUILTIN_EXPORTERS = {
+    "mastodon": {
+        "display_name": "Mastodon (Built-in)",
+        "default_port": 9394,
+        "job_name": "mastodon",
+    },
+}
+
+# sed pattern that removes all Mastodon prometheus exporter env vars from .env.production,
+# including the unprefixed PROMETHEUS_EXPORTER_HOST/PORT used in external mode.
+_MASTODON_EXPORTER_SED = (
+    "/^MASTODON_PROMETHEUS_EXPORTER_/d; "
+    "/^PROMETHEUS_EXPORTER_HOST=/d; "
+    "/^PROMETHEUS_EXPORTER_PORT=/d"
+)
+
+
+def _build_mastodon_env_vars(config=None):
+    """Build the dict of env vars to write to .env.production for the Mastodon exporter.
+
+    Config keys (all optional):
+        web_detailed_metrics (bool, default True)
+        sidekiq_detailed_metrics (bool, default True)
+        mode ("external" or "local", default "external")
+        host (str, default "localhost")
+        port (int, default 9394)
+    """
+    config = config or {}
+    env = {"MASTODON_PROMETHEUS_EXPORTER_ENABLED": "true"}
+
+    web_detailed = config.get("web_detailed_metrics", True)
+    sidekiq_detailed = config.get("sidekiq_detailed_metrics", True)
+    env["MASTODON_PROMETHEUS_EXPORTER_WEB_DETAILED_METRICS"] = "true" if web_detailed else "false"
+    env["MASTODON_PROMETHEUS_EXPORTER_SIDEKIQ_DETAILED_METRICS"] = "true" if sidekiq_detailed else "false"
+
+    mode = config.get("mode", "external")
+    host = config.get("host", "localhost")
+    port = str(config.get("port", 9394))
+
+    if mode == "local":
+        env["MASTODON_PROMETHEUS_EXPORTER_LOCAL"] = "true"
+        env["MASTODON_PROMETHEUS_EXPORTER_HOST"] = host
+        env["MASTODON_PROMETHEUS_EXPORTER_PORT"] = port
+    else:
+        env["PROMETHEUS_EXPORTER_HOST"] = host
+        env["PROMETHEUS_EXPORTER_PORT"] = port
+
+    return env
+
 
 # ---------------------------------------------------------------------------
 # Version check
@@ -456,7 +507,7 @@ def _regenerate_prometheus_config(_log=None):
 
     extra_configs = ""
     for etype, targets in sorted(by_type.items()):
-        info = KNOWN_EXPORTERS.get(etype, {})
+        info = KNOWN_EXPORTERS.get(etype) or BUILTIN_EXPORTERS.get(etype, {})
         job_name = info.get("job_name", etype)
         targets_str = ", ".join(f'"{t}"' for t in sorted(targets))
         extra_configs += f"""
@@ -499,3 +550,329 @@ def _regenerate_prometheus_config(_log=None):
                 _log("Prometheus configuration updated successfully.")
     except Exception as e:
         _log(f"ERROR: Failed to update Prometheus config: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Built-in exporter management (Mastodon)
+# ---------------------------------------------------------------------------
+
+def enable_mastodon_exporter(guest_id, config=None, log_callback=None):
+    """Enable Mastodon's built-in Prometheus exporter on a guest.
+
+    SSHes into the Mastodon guest, adds env vars to .env.production,
+    restarts Mastodon services, verifies the exporter port responds, creates an
+    ExporterInstance record, and regenerates the Prometheus scrape config.
+    """
+    from datetime import datetime, timezone
+    from models import Credential, ExporterInstance, Guest, Setting, db
+
+    _log = log_callback or (lambda msg: None)
+
+    guest = Guest.query.get(guest_id)
+    if not guest:
+        _log("ERROR: Guest not found.")
+        return False
+
+    # Check for existing enabled instance
+    existing = ExporterInstance.query.filter_by(
+        guest_id=guest_id, exporter_type="mastodon", status="installed"
+    ).first()
+    if existing:
+        _log("Mastodon exporter is already enabled on this guest.")
+        return True
+
+    app_dir = Setting.get("mastodon_app_dir", "/home/mastodon/live")
+    env_file = f"{app_dir}/.env.production"
+    info = BUILTIN_EXPORTERS["mastodon"]
+    env_vars = _build_mastodon_env_vars(config)
+    port = int((config or {}).get("port", info["default_port"]))
+
+    # Resolve SSH credential
+    credential = guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        _log("ERROR: No SSH credential configured for this guest.")
+        return False
+
+    ip = guest.ip_address
+    if not ip or ip.lower() in ("dhcp", "dhcp6", "auto"):
+        _log("ERROR: Guest has no usable IP address.")
+        return False
+
+    try:
+        with SSHClient.from_credential(ip, credential) as ssh:
+            # Step 1: Remove existing exporter env vars (idempotent)
+            _log(f"Updating {env_file} with Prometheus exporter env vars...")
+            sed_cmd = f"sed -i '{_MASTODON_EXPORTER_SED}' {env_file}"
+            stdout, stderr, code = ssh.execute_sudo(sed_cmd, timeout=10)
+            if code != 0:
+                _log(f"WARNING: sed returned {code}: {(stderr or '')[:200]}")
+
+            # Step 2: Append env vars
+            env_lines = "\n".join(f"{k}={v}" for k, v in env_vars.items())
+            append_cmd = f"cat >> {env_file} << 'EOF'\n{env_lines}\nEOF"
+            stdout, stderr, code = ssh.execute_sudo(append_cmd, timeout=10)
+            if code != 0:
+                _log(f"ERROR: Failed to append env vars: {(stderr or '')[:200]}")
+                return False
+            _log("Environment variables added.")
+
+            # Step 3: Discover and restart Mastodon services
+            _log("Discovering Mastodon services...")
+            stdout, stderr, code = ssh.execute(
+                "systemctl list-units 'mastodon*' --no-pager --plain --no-legend"
+                " | awk '{print $1}'",
+                timeout=10,
+            )
+            units = [u.strip() for u in (stdout or "").splitlines() if u.strip() and ".service" in u]
+            if not units:
+                units = ["mastodon-web.service", "mastodon-sidekiq.service"]
+                _log(f"No units discovered, using defaults: {', '.join(units)}")
+            else:
+                _log(f"Found units: {', '.join(units)}")
+
+            for unit in units:
+                _log(f"Restarting {unit}...")
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"systemctl restart {unit}", timeout=60
+                )
+                if code != 0:
+                    _log(f"WARNING: Failed to restart {unit}: {(stderr or '')[:200]}")
+                else:
+                    _log(f"  {unit} restarted.")
+
+            # Step 4: Wait briefly and verify port 9394
+            _log("Waiting for exporter to start...")
+            time.sleep(5)
+            stdout, stderr, code = ssh.execute(
+                f"curl -sf http://localhost:{port}/metrics | head -5", timeout=10
+            )
+            if code != 0:
+                # Try wget fallback
+                stdout, stderr, code = ssh.execute(
+                    f"wget -qO- http://localhost:{port}/metrics 2>/dev/null | head -5",
+                    timeout=10,
+                )
+
+            if code == 0 and stdout and stdout.strip():
+                _log(f"Exporter responding on port {port}.")
+            else:
+                _log(f"WARNING: Could not verify exporter on port {port}. "
+                     "It may need more time to start, or the Mastodon version "
+                     "may not support the prometheus_exporter gem.")
+
+    except Exception as e:
+        _log(f"ERROR: SSH operation failed: {e}")
+        return False
+
+    # Step 5: Create ExporterInstance record
+    # Remove any old pending/failed records first
+    ExporterInstance.query.filter_by(
+        guest_id=guest_id, exporter_type="mastodon"
+    ).filter(ExporterInstance.status != "installed").delete()
+
+    instance = ExporterInstance(
+        guest_id=guest_id,
+        exporter_type="mastodon",
+        port=port,
+        config=config,
+        status="installed",
+        installed_at=datetime.now(timezone.utc),
+    )
+    db.session.add(instance)
+    db.session.commit()
+    _log("ExporterInstance record created.")
+
+    # Step 6: Regenerate Prometheus scrape config
+    _regenerate_prometheus_config(_log)
+
+    _log("Mastodon Prometheus exporter enabled successfully.")
+    return True
+
+
+def disable_mastodon_exporter(guest_id, log_callback=None):
+    """Disable Mastodon's built-in Prometheus exporter on a guest."""
+    from models import Credential, ExporterInstance, Guest, Setting, db
+
+    _log = log_callback or (lambda msg: None)
+
+    guest = Guest.query.get(guest_id)
+    if not guest:
+        _log("ERROR: Guest not found.")
+        return False
+
+    app_dir = Setting.get("mastodon_app_dir", "/home/mastodon/live")
+    env_file = f"{app_dir}/.env.production"
+
+    credential = guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        _log("ERROR: No SSH credential configured for this guest.")
+        return False
+
+    ip = guest.ip_address
+    if not ip or ip.lower() in ("dhcp", "dhcp6", "auto"):
+        _log("ERROR: Guest has no usable IP address.")
+        return False
+
+    try:
+        with SSHClient.from_credential(ip, credential) as ssh:
+            # Step 1: Remove env vars (both MASTODON_PROMETHEUS_EXPORTER_* and PROMETHEUS_EXPORTER_*)
+            _log(f"Removing Prometheus exporter env vars from {env_file}...")
+            sed_cmd = f"sed -i '{_MASTODON_EXPORTER_SED}' {env_file}"
+            stdout, stderr, code = ssh.execute_sudo(sed_cmd, timeout=10)
+            if code != 0:
+                _log(f"WARNING: sed returned {code}: {(stderr or '')[:200]}")
+            else:
+                _log("Environment variables removed.")
+
+            # Step 2: Discover and restart Mastodon services
+            _log("Discovering Mastodon services...")
+            stdout, stderr, code = ssh.execute(
+                "systemctl list-units 'mastodon*' --no-pager --plain --no-legend"
+                " | awk '{print $1}'",
+                timeout=10,
+            )
+            units = [u.strip() for u in (stdout or "").splitlines() if u.strip() and ".service" in u]
+            if not units:
+                units = ["mastodon-web.service", "mastodon-sidekiq.service"]
+
+            for unit in units:
+                _log(f"Restarting {unit}...")
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"systemctl restart {unit}", timeout=60
+                )
+                if code != 0:
+                    _log(f"WARNING: Failed to restart {unit}: {(stderr or '')[:200]}")
+                else:
+                    _log(f"  {unit} restarted.")
+
+    except Exception as e:
+        _log(f"ERROR: SSH operation failed: {e}")
+        return False
+
+    # Step 3: Remove ExporterInstance records
+    deleted = ExporterInstance.query.filter_by(
+        guest_id=guest_id, exporter_type="mastodon"
+    ).delete()
+    db.session.commit()
+    _log(f"Removed {deleted} ExporterInstance record(s).")
+
+    # Step 4: Regenerate Prometheus scrape config
+    _regenerate_prometheus_config(_log)
+
+    _log("Mastodon Prometheus exporter disabled successfully.")
+    return True
+
+
+def reconfigure_mastodon_exporter(guest_id, config, log_callback=None):
+    """Reconfigure the Mastodon Prometheus exporter on a guest that already has it enabled.
+
+    Updates env vars in .env.production, restarts Mastodon services, and updates
+    the ExporterInstance record and Prometheus scrape config.
+    """
+    from models import Credential, ExporterInstance, Guest, Setting, db
+
+    _log = log_callback or (lambda msg: None)
+
+    guest = Guest.query.get(guest_id)
+    if not guest:
+        _log("ERROR: Guest not found.")
+        return False
+
+    instance = ExporterInstance.query.filter_by(
+        guest_id=guest_id, exporter_type="mastodon", status="installed"
+    ).first()
+    if not instance:
+        _log("ERROR: Mastodon exporter is not currently enabled on this guest.")
+        return False
+
+    app_dir = Setting.get("mastodon_app_dir", "/home/mastodon/live")
+    env_file = f"{app_dir}/.env.production"
+    env_vars = _build_mastodon_env_vars(config)
+    new_port = int(config.get("port", BUILTIN_EXPORTERS["mastodon"]["default_port"]))
+
+    credential = guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        _log("ERROR: No SSH credential configured for this guest.")
+        return False
+
+    ip = guest.ip_address
+    if not ip or ip.lower() in ("dhcp", "dhcp6", "auto"):
+        _log("ERROR: Guest has no usable IP address.")
+        return False
+
+    try:
+        with SSHClient.from_credential(ip, credential) as ssh:
+            # Step 1: Remove old env vars
+            _log(f"Updating {env_file} with new Prometheus exporter configuration...")
+            sed_cmd = f"sed -i '{_MASTODON_EXPORTER_SED}' {env_file}"
+            stdout, stderr, code = ssh.execute_sudo(sed_cmd, timeout=10)
+            if code != 0:
+                _log(f"WARNING: sed returned {code}: {(stderr or '')[:200]}")
+
+            # Step 2: Append new env vars
+            env_lines = "\n".join(f"{k}={v}" for k, v in env_vars.items())
+            append_cmd = f"cat >> {env_file} << 'EOF'\n{env_lines}\nEOF"
+            stdout, stderr, code = ssh.execute_sudo(append_cmd, timeout=10)
+            if code != 0:
+                _log(f"ERROR: Failed to append env vars: {(stderr or '')[:200]}")
+                return False
+            _log("Environment variables updated.")
+
+            # Step 3: Restart Mastodon services
+            _log("Discovering Mastodon services...")
+            stdout, stderr, code = ssh.execute(
+                "systemctl list-units 'mastodon*' --no-pager --plain --no-legend"
+                " | awk '{print $1}'",
+                timeout=10,
+            )
+            units = [u.strip() for u in (stdout or "").splitlines() if u.strip() and ".service" in u]
+            if not units:
+                units = ["mastodon-web.service", "mastodon-sidekiq.service"]
+
+            for unit in units:
+                _log(f"Restarting {unit}...")
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"systemctl restart {unit}", timeout=60
+                )
+                if code != 0:
+                    _log(f"WARNING: Failed to restart {unit}: {(stderr or '')[:200]}")
+                else:
+                    _log(f"  {unit} restarted.")
+
+            # Step 4: Verify port
+            _log("Waiting for exporter to start...")
+            time.sleep(5)
+            stdout, stderr, code = ssh.execute(
+                f"curl -sf http://localhost:{new_port}/metrics | head -5", timeout=10
+            )
+            if code != 0:
+                stdout, stderr, code = ssh.execute(
+                    f"wget -qO- http://localhost:{new_port}/metrics 2>/dev/null | head -5",
+                    timeout=10,
+                )
+            if code == 0 and stdout and stdout.strip():
+                _log(f"Exporter responding on port {new_port}.")
+            else:
+                _log(f"WARNING: Could not verify exporter on port {new_port}.")
+
+    except Exception as e:
+        _log(f"ERROR: SSH operation failed: {e}")
+        return False
+
+    # Step 5: Update ExporterInstance record
+    instance.config = config
+    instance.port = new_port
+    db.session.commit()
+    _log("ExporterInstance record updated.")
+
+    # Step 6: Regenerate Prometheus scrape config (port may have changed)
+    _regenerate_prometheus_config(_log)
+
+    _log("Mastodon Prometheus exporter reconfigured successfully.")
+    return True
