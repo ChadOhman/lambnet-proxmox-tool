@@ -257,6 +257,131 @@
         </div>
     </div>
 </div>
+
+<!-- Exporters Section -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-plug"></i> Exporters</h5>
+                <button class="btn btn-sm btn-outline-success" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#addExporterForm">
+                    <i class="bi bi-plus-lg"></i> Add Exporter
+                </button>
+            </div>
+            <div class="card-body">
+                <!-- Add Exporter Form -->
+                <div class="collapse mb-3" id="addExporterForm">
+                    <form method="post" action="/prometheus/exporters/add" class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">Guest</label>
+                            <select class="form-select" name="guest_id" required>
+                                <option value="">-- Select Guest --</option>
+                                {% for guest in guests %}
+                                <option value="{{ guest.id }}">{{ guest.name }} ({{ guest.ip_address or 'no IP' }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Exporter</label>
+                            <select class="form-select" name="exporter_type" id="exporterTypeSelect" required
+                                    onchange="updateExporterPort()">
+                                <option value="">-- Select --</option>
+                                {% for key, info in known_exporters.items() %}
+                                <option value="{{ key }}" data-port="{{ info.default_port }}">{{ info.display_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Port</label>
+                            <input type="number" class="form-control" name="port" id="exporterPortInput"
+                                   placeholder="9100" min="1" max="65535">
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-success"><i class="bi bi-plus-lg"></i> Add</button>
+                        </div>
+                    </form>
+                    <hr class="border-secondary mt-3">
+                </div>
+
+                <!-- Exporter Instances Table -->
+                {% if exporter_instances %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Guest</th>
+                                <th>Exporter</th>
+                                <th>Port</th>
+                                <th>Version</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for exp in exporter_instances %}
+                            <tr>
+                                <td>{{ exp.guest.name }}</td>
+                                <td>{{ known_exporters[exp.exporter_type].display_name if exp.exporter_type in known_exporters else exp.exporter_type }}</td>
+                                <td class="font-monospace">{{ exp.port }}</td>
+                                <td>{{ exp.version or '—' }}</td>
+                                <td>
+                                    {% if exp.status == 'installed' %}
+                                    <span class="badge bg-success">installed</span>
+                                    {% elif exp.status == 'installing' %}
+                                    <span class="badge bg-info">installing</span>
+                                    {% elif exp.status == 'failed' %}
+                                    <span class="badge bg-danger">failed</span>
+                                    {% elif exp.status == 'removed' %}
+                                    <span class="badge bg-secondary">removed</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ exp.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if exp.status in ('pending', 'failed') %}
+                                    <button type="button" class="btn btn-sm btn-outline-success"
+                                            onclick="exporterInstall({{ exp.id }})">
+                                        <i class="bi bi-download"></i> Install
+                                    </button>
+                                    <form method="post" action="/prometheus/exporters/{{ exp.id }}/delete" class="d-inline"
+                                          data-confirm="Remove this exporter entry?">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                    {% elif exp.status == 'installed' %}
+                                    <button type="button" class="btn btn-sm btn-outline-warning"
+                                            onclick="exporterUninstall({{ exp.id }})"
+                                            data-confirm="Uninstall this exporter from {{ exp.guest.name }}?">
+                                        <i class="bi bi-x-circle"></i> Uninstall
+                                    </button>
+                                    {% elif exp.status == 'removed' %}
+                                    <form method="post" action="/prometheus/exporters/{{ exp.id }}/delete" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                            <i class="bi bi-trash"></i> Remove
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">No exporters configured. Add one to start collecting metrics directly from your guests.</p>
+                {% endif %}
+
+                <!-- Exporter operation log -->
+                <div id="exporterOpLog" class="mt-3 d-none">
+                    <h6>Exporter Operation Log</h6>
+                    <pre class="bg-black text-light p-3 rounded" style="max-height: 300px; overflow-y: auto; font-size: 0.85rem;" id="exporterLogOutput"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -432,5 +557,78 @@ fetch('/prometheus/preflight/status').then(r => r.json()).then(data => {
         });
     }
 })();
+
+// --- Exporter Management ---
+
+function updateExporterPort() {
+    const sel = document.getElementById('exporterTypeSelect');
+    const portInput = document.getElementById('exporterPortInput');
+    const opt = sel.options[sel.selectedIndex];
+    if (opt && opt.dataset.port) {
+        portInput.value = opt.dataset.port;
+    }
+}
+
+let _exporterPoll = null;
+
+function _pollExporterStatus(endpoint) {
+    const logDiv = document.getElementById('exporterOpLog');
+    const logOutput = document.getElementById('exporterLogOutput');
+    logDiv.classList.remove('d-none');
+
+    if (_exporterPoll) clearInterval(_exporterPoll);
+    _exporterPoll = setInterval(function() {
+        fetch(endpoint)
+            .then(r => r.json())
+            .then(data => {
+                logOutput.textContent = (data.log || []).join('\n');
+                logOutput.scrollTop = logOutput.scrollHeight;
+                if (!data.running) {
+                    clearInterval(_exporterPoll);
+                    _exporterPoll = null;
+                    if (data.success === true) {
+                        logOutput.textContent += '\n\n--- COMPLETED SUCCESSFULLY ---';
+                    } else if (data.success === false) {
+                        logOutput.textContent += '\n\n--- FAILED ---';
+                    }
+                    setTimeout(function() { location.reload(); }, 2000);
+                }
+            });
+    }, 1500);
+}
+
+function exporterInstall(id) {
+    fetch('/prometheus/exporters/' + id + '/install', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.started) {
+                _pollExporterStatus('/prometheus/exporters/install/status');
+            } else if (data.error) {
+                alert(data.error);
+            }
+        })
+        .catch(() => alert('Request failed'));
+}
+
+function exporterUninstall(id) {
+    fetch('/prometheus/exporters/' + id + '/uninstall', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.started) {
+                _pollExporterStatus('/prometheus/exporters/uninstall/status');
+            } else if (data.error) {
+                alert(data.error);
+            }
+        })
+        .catch(() => alert('Request failed'));
+}
+
+// Check if exporter operation is in progress on page load
+fetch('/prometheus/exporters/install/status').then(r => r.json()).then(data => {
+    if (data.running) _pollExporterStatus('/prometheus/exporters/install/status');
+});
+fetch('/prometheus/exporters/uninstall/status').then(r => r.json()).then(data => {
+    if (data.running) _pollExporterStatus('/prometheus/exporters/uninstall/status');
+});
 </script>
 {% endblock %}

@@ -718,7 +718,7 @@ def _get_config():
     }
 
 
-def _generate_prometheus_yml(lambnet_metrics_url, auth_token=""):
+def _generate_prometheus_yml(lambnet_metrics_url, auth_token="", extra_scrape_configs=""):
     """Generate a prometheus.yml config file."""
     scrape_configs = """  - job_name: "prometheus"
     static_configs:
@@ -738,6 +738,9 @@ def _generate_prometheus_yml(lambnet_metrics_url, auth_token=""):
     scrape_interval: 60s
     static_configs:
       - targets: ["{lambnet_metrics_url}"]{auth_section}"""
+
+    if extra_scrape_configs:
+        scrape_configs += extra_scrape_configs
 
     return f"""global:
   scrape_interval: 15s

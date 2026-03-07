@@ -413,6 +413,7 @@ class Guest(db.Model):
     updates = db.relationship("UpdatePackage", backref="guest", lazy=True, cascade="all, delete-orphan")
     scan_results = db.relationship("ScanResult", backref="guest", lazy=True, cascade="all, delete-orphan")
     services = db.relationship("GuestService", backref="guest", lazy=True, cascade="all, delete-orphan")
+    exporters = db.relationship("ExporterInstance", backref="guest", lazy=True, cascade="all, delete-orphan")
     tags = db.relationship("Tag", secondary=guest_tags, backref="guests")
 
     def pending_updates(self):
@@ -436,6 +437,8 @@ class Guest(db.Model):
             db.session.delete(up)
         for svc in list(self.services):
             db.session.delete(svc)
+        for exp in list(self.exporters):
+            db.session.delete(exp)
         self.last_scan = None
         self.status = "unknown"
         self.reboot_required = False
@@ -531,6 +534,24 @@ db.Index(
     ServiceMetricSnapshot.service_id,
     ServiceMetricSnapshot.captured_at,
 )
+
+
+class ExporterInstance(db.Model):
+    """Tracks a Prometheus exporter installed on a guest."""
+    __tablename__ = "exporter_instances"
+
+    id = db.Column(db.Integer, primary_key=True)
+    guest_id = db.Column(db.Integer, db.ForeignKey("guests.id"), nullable=False, index=True)
+    exporter_type = db.Column(db.String(64), nullable=False)
+    port = db.Column(db.Integer, nullable=False)
+    version = db.Column(db.String(32), nullable=True)
+    status = db.Column(db.String(32), default="pending")
+    config = db.Column(db.JSON, nullable=True)
+    installed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def __repr__(self):
+        return f"<ExporterInstance {self.exporter_type} on guest={self.guest_id} status={self.status}>"
 
 
 class Setting(db.Model):
