@@ -257,11 +257,13 @@ def run_prometheus_install(log_callback=None):
                 f"prometheus-{latest}.linux-{prom_arch}.tar.gz"
             )
             _log(f"Downloading Prometheus v{latest} ({prom_arch})...")
-            stdout, stderr, code = ssh.execute_sudo(
-                f"cd /tmp && curl -sSL -o prometheus.tar.gz '{dl_url}' && "
-                f"tar xzf prometheus.tar.gz",
-                timeout=120,
+            dl_cmd = (
+                f"cd /tmp && "
+                f"(curl -sSL -o prometheus.tar.gz '{dl_url}' 2>/dev/null "
+                f"|| wget -q -O prometheus.tar.gz '{dl_url}') && "
+                f"tar xzf prometheus.tar.gz"
             )
+            stdout, stderr, code = ssh.execute_sudo(dl_cmd, timeout=120)
             _log_cmd_output(_log, stdout, stderr, code)
             if code != 0:
                 _log("ERROR: Failed to download Prometheus.")
@@ -432,10 +434,13 @@ def run_prometheus_upgrade(log_callback=None):
                 f"prometheus-{latest}.linux-{prom_arch}.tar.gz"
             )
             _log(f"Downloading Prometheus v{latest}...")
-            stdout, stderr, code = ssh.execute_sudo(
-                f"cd /tmp && curl -sSL -o prometheus.tar.gz '{dl_url}' && tar xzf prometheus.tar.gz",
-                timeout=120,
+            dl_cmd = (
+                f"cd /tmp && "
+                f"(curl -sSL -o prometheus.tar.gz '{dl_url}' 2>/dev/null "
+                f"|| wget -q -O prometheus.tar.gz '{dl_url}') && "
+                f"tar xzf prometheus.tar.gz"
             )
+            stdout, stderr, code = ssh.execute_sudo(dl_cmd, timeout=120)
             _log_cmd_output(_log, stdout, stderr, code)
             if code != 0:
                 _log("ERROR: Failed to download new version.")
@@ -608,6 +613,15 @@ def run_prometheus_preflight(log_callback=None):
         try:
             with SSHClient.from_credential(app_guest.ip_address, credential) as ssh:
                 check("SSH connection established", True)
+
+                # Check download tool available (curl or wget)
+                stdout, stderr, code = ssh.execute_sudo(
+                    "command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 && echo ok",
+                    timeout=10,
+                )
+                check("Download tool available (curl or wget)",
+                      code == 0 and "ok" in (stdout or ""),
+                      "neither curl nor wget found — install one before proceeding")
 
                 # Check if prometheus binary exists
                 stdout, stderr, code = ssh.execute_sudo(
