@@ -526,17 +526,37 @@ def pg_metrics_history(service_id):
     timeframe = request.args.get("timeframe", "day")
     if Setting.get("prometheus_enabled", "false") == "true" and Setting.get("prometheus_url", ""):
         try:
-            from clients.prometheus_query import PrometheusQueryClient
+            from clients.prometheus_query import PrometheusQueryClient, _get_exporter_target
             prom = PrometheusQueryClient()
-            pg_metrics = [
-                "lambnet_pg_connections_total",
-                "lambnet_pg_cache_hit_ratio",
-                "lambnet_pg_connections_active",
-                "lambnet_pg_lock_waits",
-                "lambnet_pg_commits_total",
-                "lambnet_pg_rollbacks_total",
-            ]
-            data = prom.get_service_metrics_history(svc.id, pg_metrics, timeframe)
+
+            # Prefer postgres_exporter if installed on this guest
+            pg_target = _get_exporter_target(svc.guest_id, "postgres_exporter")
+            if pg_target:
+                data = prom.get_pg_metrics_exporter(pg_target, timeframe)
+            else:
+                pg_metrics = [
+                    "lambnet_pg_connections_total",
+                    "lambnet_pg_cache_hit_ratio",
+                    "lambnet_pg_connections_active",
+                    "lambnet_pg_lock_waits",
+                    "lambnet_pg_commits_total",
+                    "lambnet_pg_rollbacks_total",
+                ]
+                data = prom.get_service_metrics_history(svc.id, pg_metrics, timeframe)
+                # Rename keys to match the SQLite snapshot format the chart JS expects
+                _pg_key_map = {
+                    "pg_connections_total": "total_connections",
+                    "pg_cache_hit_ratio": "cache_hit_ratio",
+                    "pg_connections_active": "active_connections",
+                    "pg_lock_waits": "lock_waits",
+                    "pg_commits_total": "total_commits",
+                    "pg_rollbacks_total": "total_rollbacks",
+                }
+                for snap in data.get("snapshots", []):
+                    for old_key, new_key in _pg_key_map.items():
+                        if old_key in snap:
+                            snap[new_key] = snap.pop(old_key)
+
             if data and data.get("snapshots"):
                 return jsonify(data)
         except Exception:
@@ -559,7 +579,71 @@ def pg_metrics_history(service_id):
             d = {}
         d["captured_at"] = row.captured_at.isoformat()
         result.append(d)
-    return jsonify({"snapshots": result})
+    return jsonify({"snapshots": result, "source": "sqlite"})
+
+
+@bp.route("/<int:service_id>/redis/metrics-history")
+def redis_metrics_history(service_id):
+    from models import Setting
+
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "redis":
+        return jsonify({"error": "Not a Redis service"}), 400
+
+    timeframe = request.args.get("timeframe", "day")
+    if Setting.get("prometheus_enabled", "false") == "true" and Setting.get("prometheus_url", ""):
+        try:
+            from clients.prometheus_query import PrometheusQueryClient, _get_exporter_target
+            prom = PrometheusQueryClient()
+
+            redis_target = _get_exporter_target(svc.guest_id, "redis_exporter")
+            if redis_target:
+                data = prom.get_redis_metrics_exporter(redis_target, timeframe)
+            else:
+                redis_metrics = [
+                    "lambnet_redis_memory_used_bytes",
+                    "lambnet_redis_connected_clients",
+                    "lambnet_redis_ops_per_sec",
+                    "lambnet_redis_hit_ratio",
+                    "lambnet_redis_evicted_keys_total",
+                ]
+                data = prom.get_service_metrics_history(svc.id, redis_metrics, timeframe)
+                # Rename keys to match chart-friendly names
+                _redis_key_map = {
+                    "redis_memory_used_bytes": "used_memory_bytes",
+                    "redis_connected_clients": "connected_clients",
+                    "redis_ops_per_sec": "ops_per_sec",
+                    "redis_hit_ratio": "hit_ratio",
+                    "redis_evicted_keys_total": "evicted_keys",
+                }
+                for snap in data.get("snapshots", []):
+                    for old_key, new_key in _redis_key_map.items():
+                        if old_key in snap:
+                            snap[new_key] = snap.pop(old_key)
+
+            if data and data.get("snapshots"):
+                return jsonify(data)
+        except Exception:
+            logger.debug("Prometheus query failed for Redis metrics history, falling back to SQLite")
+
+    # Fall back to SQLite
+    limit = min(int(request.args.get("limit", 144)), 288)
+    rows = (
+        ServiceMetricSnapshot.query
+        .filter_by(service_id=svc.id)
+        .order_by(ServiceMetricSnapshot.captured_at.asc())
+        .limit(limit)
+        .all()
+    )
+    result = []
+    for row in rows:
+        try:
+            d = json.loads(row.data or "{}")
+        except (json.JSONDecodeError, TypeError):
+            d = {}
+        d["captured_at"] = row.captured_at.isoformat()
+        result.append(d)
+    return jsonify({"snapshots": result, "source": "sqlite"})
 
 
 @bp.route("/<int:service_id>/stats")
@@ -704,7 +788,7 @@ def jvb_metrics_history(service_id):
             d = {}
         d["captured_at"] = row.captured_at.isoformat()
         result.append(d)
-    return jsonify({"snapshots": result})
+    return jsonify({"snapshots": result, "source": "sqlite"})
 
 
 @bp.route("/<int:service_id>/libretranslate/packages")

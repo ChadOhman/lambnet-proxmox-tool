@@ -1,5 +1,7 @@
 """Tests for the Prometheus exporter management system."""
 
+from unittest.mock import MagicMock, patch
+
 from models import db, Guest, ExporterInstance, ProxmoxHost
 
 
@@ -520,3 +522,216 @@ class TestExporterRoutes:
             if guest:
                 db.session.delete(guest)
             db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Exporter target resolution tests
+# ---------------------------------------------------------------------------
+
+class TestExporterTargetResolution:
+
+    def test_get_exporter_target_installed(self, app):
+        from clients.prometheus_query import _get_exporter_target
+        with app.app_context():
+            guest = _create_guest(app, name="exp-target-ok", ip="10.0.0.90")
+            exp = ExporterInstance(
+                guest_id=guest.id, exporter_type="node_exporter",
+                port=9100, status="installed",
+            )
+            db.session.add(exp)
+            db.session.commit()
+
+            target = _get_exporter_target(guest.id, "node_exporter")
+            assert target == "10.0.0.90:9100"
+
+            db.session.delete(exp)
+            db.session.delete(guest)
+            db.session.commit()
+
+    def test_get_exporter_target_not_installed(self, app):
+        from clients.prometheus_query import _get_exporter_target
+        with app.app_context():
+            guest = _create_guest(app, name="exp-target-none", ip="10.0.0.91")
+            target = _get_exporter_target(guest.id, "node_exporter")
+            assert target is None
+
+            db.session.delete(guest)
+            db.session.commit()
+
+    def test_get_exporter_target_pending(self, app):
+        from clients.prometheus_query import _get_exporter_target
+        with app.app_context():
+            guest = _create_guest(app, name="exp-target-pend", ip="10.0.0.92")
+            exp = ExporterInstance(
+                guest_id=guest.id, exporter_type="node_exporter",
+                port=9100, status="pending",
+            )
+            db.session.add(exp)
+            db.session.commit()
+
+            target = _get_exporter_target(guest.id, "node_exporter")
+            assert target is None
+
+            db.session.delete(exp)
+            db.session.delete(guest)
+            db.session.commit()
+
+    def test_get_exporter_target_dhcp_ip(self, app):
+        from clients.prometheus_query import _get_exporter_target
+        with app.app_context():
+            guest = _create_guest(app, name="exp-target-dhcp", ip="dhcp")
+            exp = ExporterInstance(
+                guest_id=guest.id, exporter_type="node_exporter",
+                port=9100, status="installed",
+            )
+            db.session.add(exp)
+            db.session.commit()
+
+            target = _get_exporter_target(guest.id, "node_exporter")
+            assert target is None
+
+            db.session.delete(exp)
+            db.session.delete(guest)
+            db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Exporter-aware query method tests
+# ---------------------------------------------------------------------------
+
+class TestExporterAwareQueries:
+
+    @patch("clients.prometheus_query.requests.get")
+    def test_get_guest_rrd_uses_node_exporter(self, mock_get, app):
+        from clients.prometheus_query import PrometheusQueryClient
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {"resultType": "matrix", "result": [{
+                "metric": {},
+                "values": [[1000, "50.0"], [1060, "55.0"]],
+            }]},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        with app.app_context():
+            guest = _create_guest(app, name="exp-query-node", ip="10.0.0.93")
+            exp = ExporterInstance(
+                guest_id=guest.id, exporter_type="node_exporter",
+                port=9100, status="installed",
+            )
+            db.session.add(exp)
+            db.session.commit()
+
+            client = PrometheusQueryClient(base_url="http://localhost:9090")
+            result = client.get_guest_rrd(100, "hour", guest_id=guest.id)
+            assert result["source"] == "node_exporter"
+            assert len(result["labels"]) > 0
+
+            # Verify node_exporter queries were used (check the query param)
+            all_urls_and_params = str(mock_get.call_args_list)
+            assert "node_cpu_seconds_total" in all_urls_and_params
+
+            db.session.delete(exp)
+            db.session.delete(guest)
+            db.session.commit()
+
+    @patch("clients.prometheus_query.requests.get")
+    def test_get_guest_rrd_falls_back_to_lambnet(self, mock_get, app):
+        from clients.prometheus_query import PrometheusQueryClient
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {"resultType": "matrix", "result": [{
+                "metric": {},
+                "values": [[1000, "42.0"]],
+            }]},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        with app.app_context():
+            guest = _create_guest(app, name="exp-query-fallback", ip="10.0.0.94")
+            # No exporter installed
+
+            client = PrometheusQueryClient(base_url="http://localhost:9090")
+            result = client.get_guest_rrd(100, "hour", guest_id=guest.id)
+            assert result["source"] == "lambnet"
+
+            all_urls_and_params = str(mock_get.call_args_list)
+            assert "lambnet_guest_cpu_usage_percent" in all_urls_and_params
+
+            db.session.delete(guest)
+            db.session.commit()
+
+    @patch("clients.prometheus_query.requests.get")
+    def test_get_guest_rrd_without_guest_id(self, mock_get, app):
+        from clients.prometheus_query import PrometheusQueryClient
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {"resultType": "matrix", "result": []},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        with app.app_context():
+            client = PrometheusQueryClient(base_url="http://localhost:9090")
+            result = client.get_guest_rrd(100, "hour")
+            assert result["source"] == "lambnet"
+
+    @patch("clients.prometheus_query.requests.get")
+    def test_get_pg_metrics_exporter(self, mock_get, app):
+        from clients.prometheus_query import PrometheusQueryClient
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {"resultType": "matrix", "result": [{
+                "metric": {},
+                "values": [[1000, "10.0"], [1060, "12.0"]],
+            }]},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        with app.app_context():
+            client = PrometheusQueryClient(base_url="http://localhost:9090")
+            result = client.get_pg_metrics_exporter("10.0.0.50:9187", "hour")
+            assert result["source"] == "postgres_exporter"
+            assert len(result["snapshots"]) > 0
+            snap = result["snapshots"][0]
+            assert "total_connections" in snap
+            assert "captured_at" in snap
+
+    @patch("clients.prometheus_query.requests.get")
+    def test_get_redis_metrics_exporter(self, mock_get, app):
+        from clients.prometheus_query import PrometheusQueryClient
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {"resultType": "matrix", "result": [{
+                "metric": {},
+                "values": [[1000, "5000000.0"]],
+            }]},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        with app.app_context():
+            client = PrometheusQueryClient(base_url="http://localhost:9090")
+            result = client.get_redis_metrics_exporter("10.0.0.50:9121", "hour")
+            assert result["source"] == "redis_exporter"
+            assert len(result["snapshots"]) > 0
+            snap = result["snapshots"][0]
+            assert "used_memory_bytes" in snap

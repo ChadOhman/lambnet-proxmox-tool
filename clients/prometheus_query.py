@@ -16,6 +16,20 @@ from models import Setting
 
 logger = logging.getLogger(__name__)
 
+
+def _get_exporter_target(guest_id, exporter_type):
+    """Return 'ip:port' if the guest has an installed exporter of the given type, else None."""
+    from models import ExporterInstance, Guest
+    instance = ExporterInstance.query.filter_by(
+        guest_id=guest_id, exporter_type=exporter_type, status="installed"
+    ).first()
+    if not instance:
+        return None
+    guest = Guest.query.get(guest_id)
+    if not guest or not guest.ip_address or guest.ip_address.lower() in ("dhcp", "dhcp6", "auto"):
+        return None
+    return f"{guest.ip_address}:{instance.port}"
+
 # Map friendly timeframe names to (duration_seconds, step_seconds)
 _TIMEFRAMES = {
     "hour": (3600, 60),
@@ -82,24 +96,56 @@ class PrometheusQueryClient:
 
     # ----- Chart.js helpers -----
 
-    def get_guest_rrd(self, vmid, timeframe="day"):
+    def get_guest_rrd(self, vmid, timeframe="day", guest_id=None):
         """Query Prometheus for guest performance metrics and return Chart.js-ready JSON.
 
-        Returns a dict matching the format of the existing guest_rrd() endpoint.
+        When *guest_id* is provided and a node_exporter is installed on that guest,
+        queries standard node_exporter metrics instead of lambnet_* gauges.
         """
         dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
         end = time.time()
         start = end - dur
+        rate_interval = f"{max(step * 2, 120)}s"
 
-        vmid_str = str(vmid)
+        # Check for node_exporter
+        target = _get_exporter_target(guest_id, "node_exporter") if guest_id else None
+        source = "node_exporter" if target else "lambnet"
 
-        cpu_data = self._range_single(f'lambnet_guest_cpu_usage_percent{{vmid="{vmid_str}"}}', start, end, step)
-        mem_used = self._range_single(f'lambnet_guest_memory_used_bytes{{vmid="{vmid_str}"}}', start, end, step)
-        mem_total = self._range_single(f'lambnet_guest_memory_total_bytes{{vmid="{vmid_str}"}}', start, end, step)
-        netin = self._range_single(f'lambnet_guest_network_in_bytes_per_sec{{vmid="{vmid_str}"}}', start, end, step)
-        netout = self._range_single(f'lambnet_guest_network_out_bytes_per_sec{{vmid="{vmid_str}"}}', start, end, step)
+        if target:
+            inst = f'instance="{target}"'
+            cpu_data = self._range_single(
+                f'100 - (avg(rate(node_cpu_seconds_total{{mode="idle",{inst}}}[{rate_interval}])) * 100)',
+                start, end, step,
+            )
+            mem_used = self._range_single(
+                f'node_memory_MemTotal_bytes{{{inst}}} - node_memory_MemAvailable_bytes{{{inst}}}',
+                start, end, step,
+            )
+            mem_total = self._range_single(f'node_memory_MemTotal_bytes{{{inst}}}', start, end, step)
+            netin = self._range_single(
+                f'sum(rate(node_network_receive_bytes_total{{device!="lo",{inst}}}[{rate_interval}]))',
+                start, end, step,
+            )
+            netout = self._range_single(
+                f'sum(rate(node_network_transmit_bytes_total{{device!="lo",{inst}}}[{rate_interval}]))',
+                start, end, step,
+            )
+        else:
+            vmid_str = str(vmid)
+            cpu_data = self._range_single(f'lambnet_guest_cpu_usage_percent{{vmid="{vmid_str}"}}', start, end, step)
+            mem_used = self._range_single(f'lambnet_guest_memory_used_bytes{{vmid="{vmid_str}"}}', start, end, step)
+            mem_total = self._range_single(f'lambnet_guest_memory_total_bytes{{vmid="{vmid_str}"}}', start, end, step)
+            netin = self._range_single(
+                f'lambnet_guest_network_in_bytes_per_sec{{vmid="{vmid_str}"}}', start, end, step,
+            )
+            netout = self._range_single(
+                f'lambnet_guest_network_out_bytes_per_sec{{vmid="{vmid_str}"}}', start, end, step,
+            )
 
-        # Build labels from the first dataset that has timestamps
+        return self._build_guest_result(cpu_data, mem_used, mem_total, netin, netout, source)
+
+    def _build_guest_result(self, cpu_data, mem_used, mem_total, netin, netout, source="lambnet"):
+        """Build Chart.js-ready JSON from raw range query results."""
         timestamps = cpu_data.get("timestamps") or mem_used.get("timestamps") or []
         labels = [datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M") for ts in timestamps]
 
@@ -109,7 +155,6 @@ class PrometheusQueryClient:
         netin_vals = netin.get("values", [])
         netout_vals = netout.get("values", [])
 
-        # Compute mem_percent and mem_used_mb
         mem_total_mb = 0
         mem_percent = []
         mem_used_mb = []
@@ -123,7 +168,6 @@ class PrometheusQueryClient:
                 mem_used_mb.append(None)
                 mem_percent.append(None)
 
-        # Pick net unit
         all_net = [v for v in netin_vals + netout_vals if v is not None]
         max_net = max(all_net, default=0)
         if max_net > 1_000_000:
@@ -149,6 +193,7 @@ class PrometheusQueryClient:
             "netin": netin_vals,
             "netout": netout_vals,
             "net_unit": net_unit,
+            "source": source,
         }
 
     def get_host_rrd(self, host_id, timeframe="day"):
@@ -248,7 +293,72 @@ class PrometheusQueryClient:
                 snap[short] = values[i] if i < len(values) else None
             snapshots.append(snap)
 
-        return {"snapshots": snapshots}
+        return {"snapshots": snapshots, "source": "lambnet"}
+
+    def get_pg_metrics_exporter(self, target, timeframe="day"):
+        """Query postgres_exporter metrics and return snapshots matching PG format."""
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        inst = f'instance="{target}"'
+        rate_interval = f"{max(step * 2, 120)}s"
+
+        queries = {
+            "total_connections": f'sum(pg_stat_activity_count{{{inst}}})',
+            "active_connections": f'sum(pg_stat_activity_count{{state="active",{inst}}})',
+            "cache_hit_ratio": (
+                f'sum(rate(pg_stat_database_blks_hit{{{inst}}}[{rate_interval}])) / '
+                f'clamp_min(sum(rate(pg_stat_database_blks_hit{{{inst}}}[{rate_interval}])) + '
+                f'sum(rate(pg_stat_database_blks_read{{{inst}}}[{rate_interval}])), 1) * 100'
+            ),
+            "total_commits": f'sum(pg_stat_database_xact_commit{{{inst}}})',
+            "total_rollbacks": f'sum(pg_stat_database_xact_rollback{{{inst}}})',
+            "lock_waits": f'sum(pg_locks_count{{{inst}}}) or vector(0)',
+        }
+
+        return self._run_snapshot_queries(queries, start, end, step, source="postgres_exporter")
+
+    def get_redis_metrics_exporter(self, target, timeframe="day"):
+        """Query redis_exporter metrics and return snapshots matching Redis format."""
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        inst = f'instance="{target}"'
+        rate_interval = f"{max(step * 2, 120)}s"
+
+        queries = {
+            "used_memory_bytes": f'redis_memory_used_bytes{{{inst}}}',
+            "connected_clients": f'redis_connected_clients{{{inst}}}',
+            "ops_per_sec": f'rate(redis_commands_processed_total{{{inst}}}[{rate_interval}])',
+            "hit_ratio": (
+                f'redis_keyspace_hits_total{{{inst}}} / '
+                f'clamp_min(redis_keyspace_hits_total{{{inst}}} + '
+                f'redis_keyspace_misses_total{{{inst}}}, 1) * 100'
+            ),
+            "evicted_keys": f'redis_evicted_keys_total{{{inst}}}',
+        }
+
+        return self._run_snapshot_queries(queries, start, end, step, source="redis_exporter")
+
+    def _run_snapshot_queries(self, queries, start, end, step, source="exporter"):
+        """Run multiple range queries and build a snapshot list."""
+        all_series = {}
+        timestamps = []
+
+        for short_name, promql in queries.items():
+            result = self._range_single(promql, start, end, step)
+            all_series[short_name] = result.get("values", [])
+            if not timestamps and result.get("timestamps"):
+                timestamps = result["timestamps"]
+
+        snapshots = []
+        for i, ts in enumerate(timestamps):
+            snap = {"captured_at": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()}
+            for name, values in all_series.items():
+                snap[name] = values[i] if i < len(values) else None
+            snapshots.append(snap)
+
+        return {"snapshots": snapshots, "source": source}
 
     # ----- internal -----
 

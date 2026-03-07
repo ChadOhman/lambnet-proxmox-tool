@@ -565,7 +565,7 @@ def guest_rrd(guest_id):
         try:
             from clients.prometheus_query import PrometheusQueryClient
             prom = PrometheusQueryClient()
-            data = prom.get_guest_rrd(guest.vmid, timeframe)
+            data = prom.get_guest_rrd(guest.vmid, timeframe, guest_id=guest.id)
             if data and data.get("labels"):
                 return jsonify(data)
         except Exception:
@@ -656,6 +656,7 @@ def guest_rrd(guest_id):
         "netin": netin,
         "netout": netout,
         "net_unit": net_unit,
+        "source": "proxmox_rrd",
     })
 
 
@@ -789,6 +790,7 @@ def host_rrd(host_id):
         "netout": netout,
         "net_unit": net_unit,
         "rootfs_percent": rootfs_percent,
+        "source": "proxmox_rrd",
     })
 
 

@@ -494,6 +494,47 @@
 </div>
 {% endif %}
 
+<!-- Redis Historical Charts -->
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Historical Charts <span id="redisChartSource" class="badge bg-secondary ms-2 d-none" style="font-size: 0.65rem;"></span></h5>
+        <div class="btn-group btn-group-sm" id="redisChartTimeframe">
+            <button class="btn btn-outline-secondary active" data-tf="day">1 Day</button>
+            <button class="btn btn-outline-secondary" data-tf="3d">3 Days</button>
+            <button class="btn btn-outline-secondary" data-tf="week">7 Days</button>
+            <button class="btn btn-outline-secondary" data-tf="month">30 Days</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="redisChartLoading" class="text-center text-muted py-3">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading chart data...
+        </div>
+        <div id="redisChartError" class="text-center text-muted py-3 d-none"></div>
+        <div id="redisCharts" class="d-none">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">Memory Usage</div>
+                    <canvas id="redis-chart-memory" height="120" role="img" aria-label="Redis memory usage over time"></canvas>
+                </div>
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">Ops/sec</div>
+                    <canvas id="redis-chart-ops" height="120" role="img" aria-label="Redis operations per second over time"></canvas>
+                </div>
+            </div>
+            <div class="row g-3 mt-1">
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">Connected Clients</div>
+                    <canvas id="redis-chart-clients" height="120" role="img" aria-label="Redis connected clients over time"></canvas>
+                </div>
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">Hit Ratio %</div>
+                    <canvas id="redis-chart-hitratio" height="120" role="img" aria-label="Redis cache hit ratio over time"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% elif stats.type == 'postgresql' %}
 <div class="card bg-dark mb-4">
     <div class="card-header">
@@ -599,7 +640,11 @@
             </div>
 
             <!-- Historical charts -->
-            <div class="row g-3 mt-1" id="pg-charts-row">
+            <div class="d-flex align-items-center mt-1 mb-1">
+                <span class="text-muted small">Historical Charts</span>
+                <span id="pgChartSource" class="badge bg-secondary ms-2 d-none" style="font-size: 0.6rem;"></span>
+            </div>
+            <div class="row g-3" id="pg-charts-row">
                 <div class="col-md-6">
                     <div class="text-muted small mb-1">Connections (last 12h)</div>
                     <canvas id="pg-chart-connections" height="100" role="img" aria-label="PostgreSQL connection count over the last 12 hours"></canvas>
@@ -2698,6 +2743,12 @@ function pgLoadCharts() {
     .then(data => {
         const snaps = data.snapshots || [];
         if (!snaps.length) return;
+        var srcBadge = document.getElementById('pgChartSource');
+        if (data.source && srcBadge) {
+            var srcLabels = {postgres_exporter: 'postgres_exporter', lambnet: 'Prometheus'};
+            srcBadge.textContent = srcLabels[data.source] || data.source;
+            srcBadge.classList.remove('d-none');
+        }
         const labels = snaps.map(s => {
             const d = new Date(s.captured_at);
             return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
@@ -2746,6 +2797,98 @@ function pgLoadCharts() {
 document.addEventListener('DOMContentLoaded', pgLoadCharts);
 
 {% endif %}{# stats.type == 'postgresql' #}
+
+{% if stats.type == 'redis' %}
+let _redisMemChart = null;
+let _redisOpsChart = null;
+let _redisClientsChart = null;
+let _redisHitChart = null;
+
+function redisLoadCharts(timeframe) {
+    timeframe = timeframe || 'day';
+    if (typeof Chart === 'undefined') return;
+    document.getElementById('redisChartLoading').classList.remove('d-none');
+    document.getElementById('redisCharts').classList.add('d-none');
+    document.getElementById('redisChartError').classList.add('d-none');
+
+    fetch('/services/{{ service.id }}/redis/metrics-history?timeframe=' + timeframe, {cache: 'no-store'})
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('redisChartLoading').classList.add('d-none');
+        const snaps = data.snapshots || [];
+        if (!snaps.length) {
+            document.getElementById('redisChartError').textContent = 'No historical data available.';
+            document.getElementById('redisChartError').classList.remove('d-none');
+            return;
+        }
+        document.getElementById('redisCharts').classList.remove('d-none');
+
+        var srcBadge = document.getElementById('redisChartSource');
+        if (data.source && srcBadge) {
+            var srcLabels = {redis_exporter: 'redis_exporter', lambnet: 'Prometheus', sqlite: 'SQLite'};
+            srcBadge.textContent = srcLabels[data.source] || data.source;
+            srcBadge.classList.remove('d-none');
+        }
+
+        const labels = snaps.map(s => {
+            const d = new Date(s.captured_at);
+            return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        });
+
+        // Memory — convert bytes to MB
+        const memMB = snaps.map(s => s.used_memory_bytes != null ? +(s.used_memory_bytes / 1048576).toFixed(1) : null);
+        const ops = snaps.map(s => s.ops_per_sec != null ? +Number(s.ops_per_sec).toFixed(1) : null);
+        const clients = snaps.map(s => s.connected_clients ?? null);
+        const hitRatio = snaps.map(s => s.hit_ratio != null ? +Number(s.hit_ratio).toFixed(2) : null);
+
+        const chartOpts = {
+            type: 'line',
+            options: {
+                responsive: true,
+                animation: false,
+                plugins: {legend: {display: false}},
+                scales: {
+                    x: {ticks: {color: '#6c757d', maxTicksLimit: 8}, grid: {color: '#2d2d2d'}},
+                    y: {ticks: {color: '#6c757d'}, grid: {color: '#2d2d2d'}, beginAtZero: true},
+                },
+            },
+        };
+
+        function makeOrUpdate(chart, canvasId, label, dataArr, color, yCallback) {
+            var opts = JSON.parse(JSON.stringify(chartOpts));
+            if (yCallback) opts.options.scales.y.ticks.callback = yCallback;
+            if (chart) {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = dataArr;
+                chart.update();
+                return chart;
+            }
+            opts.data = {labels: labels, datasets: [{label: label, data: dataArr, borderColor: color, backgroundColor: color + '22', fill: true, tension: 0.3, pointRadius: 0}]};
+            return new Chart(document.getElementById(canvasId), opts);
+        }
+
+        _redisMemChart = makeOrUpdate(_redisMemChart, 'redis-chart-memory', 'Memory (MB)', memMB, '#8b5cf6', v => v + ' MB');
+        _redisOpsChart = makeOrUpdate(_redisOpsChart, 'redis-chart-ops', 'Ops/sec', ops, '#3b82f6');
+        _redisClientsChart = makeOrUpdate(_redisClientsChart, 'redis-chart-clients', 'Clients', clients, '#10b981');
+        _redisHitChart = makeOrUpdate(_redisHitChart, 'redis-chart-hitratio', 'Hit Ratio %', hitRatio, '#f59e0b', v => v + '%');
+    })
+    .catch(err => {
+        document.getElementById('redisChartLoading').classList.add('d-none');
+        document.getElementById('redisChartError').textContent = 'Failed to load chart data.';
+        document.getElementById('redisChartError').classList.remove('d-none');
+    });
+}
+
+document.querySelectorAll('#redisChartTimeframe button').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('#redisChartTimeframe button').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        redisLoadCharts(this.dataset.tf);
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function() { redisLoadCharts('day'); });
+{% endif %}{# stats.type == 'redis' #}
 
 {% if stats.type == 'jitsi-videobridge2' and not stats.rest_api_disabled %}
 let _jvbActivityChart = null;
