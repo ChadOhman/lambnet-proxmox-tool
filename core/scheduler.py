@@ -477,7 +477,7 @@ def _check_app_update(app):
         current_version = app.config.get("APP_VERSION", "0.0.0")
         update_branch = Setting.get("app_update_branch", "")
         auto_update = Setting.get("app_auto_update", "false") == "true"
-        update_script = os.path.join(BASE_DIR, "update.sh")
+        update_script = os.path.join(BASE_DIR, "scripts", "update.sh")
 
         if not repo:
             return
