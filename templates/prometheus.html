@@ -197,7 +197,7 @@
                 {% if settings.last_install_at %}
                 <hr>
                 <small class="text-muted">
-                    Last install: {{ settings.last_install_at.strftime('%Y-%m-%d %H:%M UTC') }}
+                    Last install: {{ settings.last_install_at | local_dt('%Y-%m-%d %H:%M') }}
                     <span class="badge {{ 'bg-success' if settings.last_install_status == 'success' else 'bg-danger' }}">
                         {{ settings.last_install_status }}
                     </span>
@@ -206,7 +206,7 @@
                 {% if settings.last_upgrade_at %}
                 <br>
                 <small class="text-muted">
-                    Last upgrade: {{ settings.last_upgrade_at.strftime('%Y-%m-%d %H:%M UTC') }}
+                    Last upgrade: {{ settings.last_upgrade_at | local_dt('%Y-%m-%d %H:%M') }}
                     <span class="badge {{ 'bg-success' if settings.last_upgrade_status == 'success' else 'bg-danger' }}">
                         {{ settings.last_upgrade_status }}
                     </span>

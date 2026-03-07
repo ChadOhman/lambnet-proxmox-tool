@@ -1,7 +1,7 @@
 import json
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
 from models import db, Setting
@@ -236,7 +236,7 @@ def refresh_backup_storages():
     except Exception:
         pass
 
-    cached_at = datetime.now().isoformat()
+    cached_at = datetime.now(timezone.utc).isoformat()
     Setting.set("backup_storages_cache", json.dumps(storages))
     Setting.set("backup_storages_cache_time", cached_at)
 

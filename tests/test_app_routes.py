@@ -8,6 +8,8 @@ Covers:
 
 from datetime import datetime, timezone
 
+from markupsafe import Markup
+
 
 # ---------------------------------------------------------------------------
 # POST /toggle-safety-mode
@@ -167,42 +169,46 @@ class TestTimestampToDatetimeFilter:
             filt = app.jinja_env.filters["timestamp_to_datetime"]
             return filt(value)
 
-    def test_valid_epoch_returns_formatted_string(self, app):
-        # epoch 0 → 1970-01-01 00:00 UTC
+    def test_valid_epoch_returns_span_element(self, app):
+        # epoch 0 → 1970-01-01 00:00 UTC, wrapped in <span data-utc>
         result = self._run(app, 0)
-        assert result == "1970-01-01 00:00"
+        assert isinstance(result, Markup)
+        assert "1970-01-01 00:00" in str(result)
+        assert "data-utc=" in str(result)
 
     def test_known_epoch_returns_correct_date(self, app):
-        # Compute the epoch from a known UTC datetime to avoid any DST ambiguity
         known_dt = datetime(2024, 6, 1, 12, 30, 0, tzinfo=timezone.utc)
         epoch = int(known_dt.timestamp())
         result = self._run(app, epoch)
-        assert result == "2024-06-01 12:30"
+        assert isinstance(result, Markup)
+        assert "2024-06-01 12:30" in str(result)
+        assert "data-utc=" in str(result)
 
     def test_string_epoch_is_accepted(self, app):
         """The filter should handle string-form epoch values (e.g. from JSON)."""
         result = self._run(app, "0")
-        assert result == "1970-01-01 00:00"
+        assert isinstance(result, Markup)
+        assert "1970-01-01 00:00" in str(result)
 
-    def test_none_returns_empty_string(self, app):
+    def test_none_returns_empty_markup(self, app):
         result = self._run(app, None)
-        assert result == ""
+        assert result == Markup("")
 
-    def test_invalid_string_returns_empty_string(self, app):
+    def test_invalid_string_returns_empty_markup(self, app):
         result = self._run(app, "not-a-number")
-        assert result == ""
+        assert result == Markup("")
 
-    def test_negative_epoch_returns_empty_string_or_valid_date(self, app):
+    def test_negative_epoch_returns_markup(self, app):
         """Negative epochs may be valid (pre-1970) or raise OSError on some platforms.
         Either way the filter must not propagate exceptions."""
         result = self._run(app, -1)
-        # Accept either an empty string (error path) or a valid date string
-        assert isinstance(result, str)
+        assert isinstance(result, (str, Markup))
 
     def test_float_epoch_truncated(self, app):
         """The filter casts to int so fractional seconds should be ignored."""
         result = self._run(app, 0.9)
-        assert result == "1970-01-01 00:00"
+        assert isinstance(result, Markup)
+        assert "1970-01-01 00:00" in str(result)
 
 
 class TestLocalDtFilter:

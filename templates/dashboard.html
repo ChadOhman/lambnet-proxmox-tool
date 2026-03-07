@@ -358,7 +358,8 @@
     }
 
     function nowStr() {
-        return new Date().toLocaleTimeString();
+        const tz = window.USER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
+        return new Date().toLocaleTimeString([], {timeZone: tz});
     }
 
     // ── Host Performance ─────────────────────────────────────────────────────

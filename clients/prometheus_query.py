@@ -8,11 +8,23 @@ gracefully when Prometheus is unreachable.
 
 import logging
 import time
+import zoneinfo
 from datetime import datetime, timezone
 
 import requests
 
 from models import Setting
+
+
+def _user_tz():
+    """Return the current user's ZoneInfo or UTC as fallback."""
+    try:
+        from flask_login import current_user
+        if current_user.is_authenticated and current_user.timezone:
+            return zoneinfo.ZoneInfo(current_user.timezone)
+    except Exception:
+        pass
+    return timezone.utc
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +159,8 @@ class PrometheusQueryClient:
     def _build_guest_result(self, cpu_data, mem_used, mem_total, netin, netout, source="lambnet"):
         """Build Chart.js-ready JSON from raw range query results."""
         timestamps = cpu_data.get("timestamps") or mem_used.get("timestamps") or []
-        labels = [datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M") for ts in timestamps]
+        utz = _user_tz()
+        labels = [datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M") for ts in timestamps]
 
         cpu_vals = cpu_data.get("values", [])
         mem_used_vals = mem_used.get("values", [])
@@ -212,7 +225,8 @@ class PrometheusQueryClient:
         rootfs = self._range_single(f'lambnet_host_rootfs_used_percent{{host_id="{hid}"}}', start, end, step)
 
         timestamps = cpu_data.get("timestamps") or mem_used.get("timestamps") or []
-        labels = [datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M") for ts in timestamps]
+        utz = _user_tz()
+        labels = [datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M") for ts in timestamps]
 
         cpu_vals = cpu_data.get("values", [])
         mem_used_vals = mem_used.get("values", [])

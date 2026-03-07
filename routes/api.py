@@ -2,6 +2,7 @@ import queue
 import time
 import threading
 import logging
+import zoneinfo
 from datetime import datetime, timezone
 from flask import Blueprint, redirect, url_for, flash, request, render_template, jsonify, Response, stream_with_context
 from flask_login import login_required, current_user
@@ -11,6 +12,16 @@ from core.notifier import send_update_notification
 from auth.audit import log_action
 
 logger = logging.getLogger(__name__)
+
+
+def _user_tz():
+    """Return the current user's ZoneInfo or UTC as fallback."""
+    try:
+        if current_user.is_authenticated and current_user.timezone:
+            return zoneinfo.ZoneInfo(current_user.timezone)
+    except Exception:
+        pass
+    return timezone.utc
 
 bp = Blueprint("api", __name__)
 
@@ -604,7 +615,7 @@ def guest_rrd(guest_id):
         if ts is None:
             continue
 
-        labels.append(datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M"))
+        labels.append(datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(_user_tz()).strftime("%Y-%m-%d %H:%M"))
 
         # CPU: fraction (0.0–N where N = num cores) → percentage of allocated cores
         cpu_val = point.get("cpu")
@@ -722,7 +733,7 @@ def host_rrd(host_id):
         if ts is None:
             continue
 
-        labels.append(datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M"))
+        labels.append(datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(_user_tz()).strftime("%Y-%m-%d %H:%M"))
 
         # CPU: fraction (0.0–1.0) → percentage
         cpu_val = point.get("cpu")
