@@ -285,10 +285,12 @@
                         <div class="col-md-3">
                             <label class="form-label">Exporter</label>
                             <select class="form-select" name="exporter_type" id="exporterTypeSelect" required
-                                    onchange="updateExporterPort()">
+                                    onchange="updateExporterForm()">
                                 <option value="">-- Select --</option>
                                 {% for key, info in known_exporters.items() %}
-                                <option value="{{ key }}" data-port="{{ info.default_port }}">{{ info.display_name }}</option>
+                                <option value="{{ key }}" data-port="{{ info.default_port }}"
+                                        data-requires-config="{{ info.requires_config|lower }}"
+                                        data-env-vars="{{ info.get('env_vars', [])|join(',') }}">{{ info.display_name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -299,6 +301,15 @@
                         </div>
                         <div class="col-md-3">
                             <button type="submit" class="btn btn-success"><i class="bi bi-plus-lg"></i> Add</button>
+                        </div>
+                        <!-- Dynamic config fields for exporters that require env vars -->
+                        <div class="col-12 d-none" id="exporterConfigFields">
+                            <div class="card bg-dark border-secondary mt-2">
+                                <div class="card-body py-2">
+                                    <small class="text-muted d-block mb-2">Environment configuration (written to <code>/etc/default/</code> on the guest)</small>
+                                    <div id="exporterEnvVarInputs"></div>
+                                </div>
+                            </div>
                         </div>
                     </form>
                     <hr class="border-secondary mt-3">
@@ -313,6 +324,7 @@
                                 <th>Guest</th>
                                 <th>Exporter</th>
                                 <th>Port</th>
+                                <th>Config</th>
                                 <th>Version</th>
                                 <th>Status</th>
                                 <th>Actions</th>
@@ -324,6 +336,20 @@
                                 <td>{{ exp.guest.name }}</td>
                                 <td>{{ known_exporters[exp.exporter_type].display_name if exp.exporter_type in known_exporters else exp.exporter_type }}</td>
                                 <td class="font-monospace">{{ exp.port }}</td>
+                                <td>
+                                    {% set exp_info = known_exporters.get(exp.exporter_type, {}) %}
+                                    {% if exp_info.get('requires_config') %}
+                                        {% if exp.config %}
+                                        <span class="badge bg-success" title="{% for k, v in exp.config.items() %}{{ k }}={{ v }}{% if not loop.last %}&#10;{% endif %}{% endfor %}">
+                                            <i class="bi bi-check-circle"></i> Set
+                                        </span>
+                                        {% else %}
+                                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Missing</span>
+                                        {% endif %}
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
                                 <td>{{ exp.version or '—' }}</td>
                                 <td>
                                     {% if exp.status == 'installed' %}
@@ -340,6 +366,12 @@
                                 </td>
                                 <td>
                                     {% if exp.status in ('pending', 'failed') %}
+                                    {% if exp_info.get('requires_config') %}
+                                    <button type="button" class="btn btn-sm btn-outline-info"
+                                            data-bs-toggle="collapse" data-bs-target="#configRow{{ exp.id }}">
+                                        <i class="bi bi-gear"></i> Configure
+                                    </button>
+                                    {% endif %}
                                     <button type="button" class="btn btn-sm btn-outline-success"
                                             onclick="exporterInstall({{ exp.id }})">
                                         <i class="bi bi-download"></i> Install
@@ -365,6 +397,25 @@
                                     {% endif %}
                                 </td>
                             </tr>
+                            {% if exp.status in ('pending', 'failed') and exp_info.get('requires_config') %}
+                            <tr class="collapse" id="configRow{{ exp.id }}">
+                                <td colspan="7" class="border-0 pt-0">
+                                    <form method="post" action="/prometheus/exporters/{{ exp.id }}/config" class="row g-2 align-items-end p-2 bg-dark rounded">
+                                        {% for var in exp_info.get('env_vars', []) %}
+                                        <div class="col-md-5">
+                                            <label class="form-label"><code>{{ var }}</code></label>
+                                            <input type="text" class="form-control form-control-sm font-monospace" name="config_{{ var }}"
+                                                   value="{{ exp.config[var] if exp.config and var in exp.config else '' }}"
+                                                   placeholder="{{ 'postgresql://user:pass@localhost/db?sslmode=disable' if var == 'DATA_SOURCE_NAME' else 'redis://localhost:6379' }}">
+                                        </div>
+                                        {% endfor %}
+                                        <div class="col-md-2">
+                                            <button type="submit" class="btn btn-sm btn-info"><i class="bi bi-check-lg"></i> Save</button>
+                                        </div>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endif %}
                             {% endfor %}
                         </tbody>
                     </table>
@@ -560,12 +611,39 @@ fetch('/prometheus/preflight/status').then(r => r.json()).then(data => {
 
 // --- Exporter Management ---
 
-function updateExporterPort() {
+var _envVarPlaceholders = {
+    'DATA_SOURCE_NAME': 'postgresql://user:pass@localhost/db?sslmode=disable',
+    'REDIS_ADDR': 'redis://localhost:6379'
+};
+
+function updateExporterForm() {
     const sel = document.getElementById('exporterTypeSelect');
     const portInput = document.getElementById('exporterPortInput');
+    const configDiv = document.getElementById('exporterConfigFields');
+    const inputsDiv = document.getElementById('exporterEnvVarInputs');
     const opt = sel.options[sel.selectedIndex];
+
     if (opt && opt.dataset.port) {
         portInput.value = opt.dataset.port;
+    }
+
+    // Show/hide config fields
+    inputsDiv.innerHTML = '';
+    if (opt && opt.dataset.requiresConfig === 'true' && opt.dataset.envVars) {
+        var vars = opt.dataset.envVars.split(',');
+        for (var i = 0; i < vars.length; i++) {
+            var v = vars[i].trim();
+            if (!v) continue;
+            var ph = _envVarPlaceholders[v] || '';
+            inputsDiv.innerHTML +=
+                '<div class="row g-2 mb-1 align-items-center">' +
+                '<div class="col-md-3"><code>' + v + '</code></div>' +
+                '<div class="col-md-9"><input type="text" class="form-control form-control-sm font-monospace" ' +
+                'name="config_' + v + '" placeholder="' + ph + '"></div></div>';
+        }
+        configDiv.classList.remove('d-none');
+    } else {
+        configDiv.classList.add('d-none');
     }
 }
 
