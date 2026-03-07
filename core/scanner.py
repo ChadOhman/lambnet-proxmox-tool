@@ -2378,25 +2378,25 @@ def _stats_prometheus(guest, service):
     stats = {}
     port = service.port or 9090
 
+    # Helper: fetch a URL using curl or wget (guest may not have curl)
+    def _prom_fetch(url, timeout=10):
+        cmd = (
+            f"(curl -sf '{url}' 2>/dev/null "
+            f"|| wget -qO- '{url}' 2>/dev/null)"
+        )
+        out, _ = _execute_command(guest, cmd, timeout=timeout)
+        return (out or "").strip()
+
     # Health check
-    hc_out, _ = _execute_command(
-        guest,
-        f"curl -sf -o /dev/null -w '%{{http_code}}' http://localhost:{port}/-/healthy 2>/dev/null || echo 000",
-        timeout=10,
-    )
-    http_code = (hc_out or "").strip()
-    if http_code == "000":
+    hc_out = _prom_fetch(f"http://localhost:{port}/-/healthy")
+    if not hc_out:
         stats["prom_api_disabled"] = True
         return stats
 
-    stats["prom_healthy"] = http_code == "200"
+    stats["prom_healthy"] = "Healthy" in hc_out or "OK" in hc_out
 
     # Runtime info — version, retention, start time
-    out, _ = _execute_command(
-        guest,
-        f"curl -sf http://localhost:{port}/api/v1/status/runtimeinfo 2>/dev/null",
-        timeout=10,
-    )
+    out = _prom_fetch(f"http://localhost:{port}/api/v1/status/runtimeinfo")
     if out:
         try:
             data = _json.loads(out)
@@ -2410,11 +2410,7 @@ def _stats_prometheus(guest, service):
             pass
 
     # Get version from build info (more reliable)
-    out, _ = _execute_command(
-        guest,
-        f"curl -sf http://localhost:{port}/api/v1/status/buildinfo 2>/dev/null",
-        timeout=10,
-    )
+    out = _prom_fetch(f"http://localhost:{port}/api/v1/status/buildinfo")
     if out:
         try:
             data = _json.loads(out)
@@ -2425,11 +2421,7 @@ def _stats_prometheus(guest, service):
             pass
 
     # TSDB stats — series, chunks, storage size
-    out, _ = _execute_command(
-        guest,
-        f"curl -sf http://localhost:{port}/api/v1/status/tsdb 2>/dev/null",
-        timeout=10,
-    )
+    out = _prom_fetch(f"http://localhost:{port}/api/v1/status/tsdb")
     if out:
         try:
             data = _json.loads(out)
@@ -2466,11 +2458,7 @@ def _stats_prometheus(guest, service):
         stats["wal_human"] = _human_bytes(wal_bytes)
 
     # Scrape targets
-    out, _ = _execute_command(
-        guest,
-        f"curl -sf http://localhost:{port}/api/v1/targets 2>/dev/null",
-        timeout=15,
-    )
+    out = _prom_fetch(f"http://localhost:{port}/api/v1/targets", timeout=15)
     if out:
         try:
             data = _json.loads(out)
