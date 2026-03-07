@@ -1,0 +1,559 @@
+"""
+Prometheus install and upgrade automation.
+
+Installs Prometheus from GitHub binary releases onto a target VM/CT via SSH.
+Creates a dedicated user, systemd service, and generates a prometheus.yml
+config that scrapes the lambnet app's /metrics endpoint.
+"""
+
+import json
+import logging
+import re
+import time
+import urllib.request
+from datetime import datetime
+
+from models import Guest, Setting
+from clients.proxmox_api import ProxmoxClient
+from clients.ssh_client import SSHClient
+from apps.utils import _log_cmd_output, _validate_shell_param, _version_gt
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Version check
+# ---------------------------------------------------------------------------
+
+def check_prometheus_release():
+    """Check GitHub for the latest Prometheus release.
+
+    Returns (update_available, latest_version, release_url).
+    """
+    try:
+        url = "https://api.github.com/repos/prometheus/prometheus/releases/latest"
+        req = urllib.request.Request(url, headers={"User-Agent": "lambnet-proxmox-tool"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            latest = data.get("tag_name", "").lstrip("v")
+            release_url = data.get("html_url", "")
+
+        if not latest:
+            return False, "", ""
+
+        Setting.set("prometheus_latest_version", latest)
+
+        current = Setting.get("prometheus_current_version", "")
+        update_available = bool(current and _version_gt(latest, current))
+        Setting.set("prometheus_update_available", "true" if update_available else "false")
+
+        return update_available, latest, release_url
+    except Exception as e:
+        logger.error("Failed to check Prometheus releases: %s", e)
+        return False, "", ""
+
+
+def detect_prometheus_version(guest):
+    """Detect the installed Prometheus version on a guest via SSH.
+
+    Returns (version_string, error_string).
+    """
+    from models import Credential
+
+    credential = guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        return None, "No SSH credential configured"
+
+    has_ip = guest.ip_address and guest.ip_address.lower() not in ("dhcp", "dhcp6", "auto")
+    if not has_ip:
+        return None, "Guest has no usable IP address"
+
+    try:
+        with SSHClient.from_credential(guest.ip_address, credential) as ssh:
+            stdout, stderr, code = ssh.execute_sudo(
+                "/usr/local/bin/prometheus --version 2>&1 | head -1", timeout=10
+            )
+            if code == 0 and stdout:
+                m = re.search(r"prometheus.*?version (\d+\.\d+\.\d+)", stdout)
+                if m:
+                    return m.group(1), None
+            return None, f"Prometheus not found (exit code {code})"
+    except Exception as e:
+        return None, str(e)
+
+
+# ---------------------------------------------------------------------------
+# Proxmox protection (snapshot/backup)
+# ---------------------------------------------------------------------------
+
+def _snapshot_guest(guest):
+    """Create a Proxmox snapshot before install/upgrade."""
+    if not guest.proxmox_host:
+        return False, f"Guest '{guest.name}' has no Proxmox host configured"
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = client.find_guest_node(guest.vmid)
+    if not node:
+        return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    snapname = f"pre-prometheus-{timestamp}"
+    description = f"Auto-snapshot before Prometheus install/upgrade at {timestamp}"
+
+    ok, upid = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+    if not ok:
+        return False, f"Failed to start snapshot: {upid}"
+
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        time.sleep(2)
+        try:
+            status = client.get_task_status(node, upid)
+            if status.get("status") == "stopped":
+                exit_status = status.get("exitstatus", "")
+                if exit_status == "OK":
+                    return True, f"Snapshot {snapname} completed"
+                return False, f"Snapshot task failed: {exit_status}"
+        except Exception as e:
+            logger.debug("Error polling snapshot task: %s", e)
+
+    return False, "Snapshot timed out after 5 minutes"
+
+
+def _backup_guest(guest, storage, mode="snapshot"):
+    """Create a vzdump backup before install/upgrade."""
+    if not guest.proxmox_host:
+        return False, f"Guest '{guest.name}' has no Proxmox host configured"
+
+    client = ProxmoxClient(guest.proxmox_host)
+    node = client.find_guest_node(guest.vmid)
+    if not node:
+        return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
+
+    _validate_shell_param(storage, "Backup storage")
+    ok, upid = client.create_backup(node, guest.vmid, guest.guest_type, storage, mode=mode)
+    if not ok:
+        return False, f"Failed to start backup: {upid}"
+
+    deadline = time.time() + 600
+    while time.time() < deadline:
+        time.sleep(5)
+        try:
+            status = client.get_task_status(node, upid)
+            if status.get("status") == "stopped":
+                exit_status = status.get("exitstatus", "")
+                if exit_status == "OK":
+                    return True, "Backup completed"
+                return False, f"Backup failed: {exit_status}"
+        except Exception as e:
+            logger.debug("Error polling backup task: %s", e)
+
+    return False, "Backup timed out after 10 minutes"
+
+
+# ---------------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------------
+
+def run_prometheus_install(log_callback=None):
+    """Install Prometheus on the configured target guest via SSH.
+
+    Returns (success, log_lines).
+    """
+    from models import Credential, db
+
+    log = log_callback or (lambda msg: None)
+    log_lines = []
+
+    def _log(msg):
+        log_lines.append(msg)
+        log(msg)
+
+    config = _get_config()
+    guest_id = config.get("guest_id", "")
+    if not guest_id:
+        _log("ERROR: Prometheus guest is not configured.")
+        return False, log_lines
+
+    try:
+        guest = Guest.query.get(int(guest_id))
+    except (TypeError, ValueError):
+        _log("ERROR: Invalid guest ID.")
+        return False, log_lines
+
+    if not guest:
+        _log("ERROR: Guest not found.")
+        return False, log_lines
+
+    credential = guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        _log("ERROR: No SSH credential configured for this guest.")
+        return False, log_lines
+
+    has_ip = guest.ip_address and guest.ip_address.lower() not in ("dhcp", "dhcp6", "auto")
+    if not has_ip:
+        _log("ERROR: Guest has no usable IP address.")
+        return False, log_lines
+
+    # Get version to install
+    latest = config.get("latest_version") or Setting.get("prometheus_latest_version", "")
+    if not latest:
+        _log("Checking for latest Prometheus version...")
+        _, latest, _ = check_prometheus_release()
+    if not latest:
+        _log("ERROR: Could not determine latest Prometheus version.")
+        return False, log_lines
+
+    _log(f"Installing Prometheus v{latest} on {guest.name} ({guest.ip_address})...")
+
+    # Protection (snapshot)
+    protection_type = config.get("protection_type", "snapshot")
+    _log(f"Creating {protection_type} protection...")
+    if protection_type == "backup":
+        storage = config.get("backup_storage", "")
+        mode = config.get("backup_mode", "snapshot")
+        ok, msg = _backup_guest(guest, storage, mode)
+    else:
+        ok, msg = _snapshot_guest(guest)
+    _log(msg)
+    if not ok:
+        _log("ERROR: Protection failed, aborting install.")
+        return False, log_lines
+
+    # Determine architecture
+    try:
+        with SSHClient.from_credential(guest.ip_address, credential) as ssh:
+            arch_out, _, _ = ssh.execute_sudo("dpkg --print-architecture", timeout=10)
+            arch = (arch_out or "amd64").strip()
+            prom_arch = "arm64" if arch == "arm64" else "amd64"
+
+            # Create prometheus user
+            _log("Creating prometheus user...")
+            stdout, stderr, code = ssh.execute_sudo(
+                "id prometheus >/dev/null 2>&1 || useradd --no-create-home --shell /bin/false prometheus",
+                timeout=15,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+
+            # Create directories
+            _log("Creating directories...")
+            stdout, stderr, code = ssh.execute_sudo(
+                "mkdir -p /etc/prometheus /var/lib/prometheus && "
+                "chown prometheus:prometheus /var/lib/prometheus",
+                timeout=15,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to create directories.")
+                return False, log_lines
+
+            # Download and extract Prometheus
+            dl_url = (
+                f"https://github.com/prometheus/prometheus/releases/download/v{latest}/"
+                f"prometheus-{latest}.linux-{prom_arch}.tar.gz"
+            )
+            _log(f"Downloading Prometheus v{latest} ({prom_arch})...")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cd /tmp && curl -sSL -o prometheus.tar.gz '{dl_url}' && "
+                f"tar xzf prometheus.tar.gz",
+                timeout=120,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to download Prometheus.")
+                return False, log_lines
+
+            # Install binaries
+            extract_dir = f"prometheus-{latest}.linux-{prom_arch}"
+            _log("Installing binaries...")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cp /tmp/{extract_dir}/prometheus /usr/local/bin/ && "
+                f"cp /tmp/{extract_dir}/promtool /usr/local/bin/ && "
+                "chown prometheus:prometheus /usr/local/bin/prometheus /usr/local/bin/promtool",
+                timeout=30,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to install binaries.")
+                return False, log_lines
+
+            # Copy console files
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cp -r /tmp/{extract_dir}/consoles /etc/prometheus/ && "
+                f"cp -r /tmp/{extract_dir}/console_libraries /etc/prometheus/ && "
+                "chown -R prometheus:prometheus /etc/prometheus",
+                timeout=15,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+
+            # Generate prometheus.yml
+            lambnet_url = config.get("lambnet_metrics_url", "")
+            auth_token = Setting.get("prometheus_auth_token", "")
+            retention_days = config.get("retention_days", "365")
+
+            _log("Generating prometheus.yml...")
+            yml = _generate_prometheus_yml(lambnet_url, auth_token)
+            # Write via heredoc to avoid shell escaping issues
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cat > /etc/prometheus/prometheus.yml << 'PROMEOF'\n{yml}\nPROMEOF",
+                timeout=15,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to write prometheus.yml.")
+                return False, log_lines
+
+            # Create systemd service
+            _log("Creating systemd service...")
+            service_content = _generate_systemd_unit(retention_days)
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cat > /etc/systemd/system/prometheus.service << 'SVCEOF'\n{service_content}\nSVCEOF",
+                timeout=15,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to create systemd service.")
+                return False, log_lines
+
+            # Enable and start
+            _log("Starting Prometheus...")
+            stdout, stderr, code = ssh.execute_sudo(
+                "systemctl daemon-reload && systemctl enable prometheus && systemctl start prometheus",
+                timeout=30,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to start Prometheus.")
+                return False, log_lines
+
+            # Verify it's running
+            time.sleep(3)
+            stdout, stderr, code = ssh.execute_sudo(
+                "systemctl is-active prometheus", timeout=10
+            )
+            if code != 0 or (stdout or "").strip() != "active":
+                _log("WARNING: Prometheus may not be running. Check logs with: journalctl -u prometheus")
+
+            # Clean up
+            ssh.execute_sudo(f"rm -rf /tmp/prometheus.tar.gz /tmp/{extract_dir}", timeout=15)
+
+            _log(f"Prometheus v{latest} installed successfully.")
+
+            # Update settings
+            Setting.set("prometheus_installed", "true")
+            Setting.set("prometheus_current_version", latest)
+            Setting.set("prometheus_update_available", "false")
+            db.session.commit()
+
+            return True, log_lines
+
+    except Exception as e:
+        _log(f"FATAL ERROR: {e}")
+        logger.exception("Prometheus install failed")
+        return False, log_lines
+
+
+# ---------------------------------------------------------------------------
+# Upgrade
+# ---------------------------------------------------------------------------
+
+def run_prometheus_upgrade(log_callback=None):
+    """Upgrade Prometheus on the configured target guest."""
+    from models import Credential, db
+
+    log = log_callback or (lambda msg: None)
+    log_lines = []
+
+    def _log(msg):
+        log_lines.append(msg)
+        log(msg)
+
+    config = _get_config()
+    guest_id = config.get("guest_id", "")
+    if not guest_id:
+        _log("ERROR: Prometheus guest is not configured.")
+        return False, log_lines
+
+    try:
+        guest = Guest.query.get(int(guest_id))
+    except (TypeError, ValueError):
+        _log("ERROR: Invalid guest ID.")
+        return False, log_lines
+
+    if not guest:
+        _log("ERROR: Guest not found.")
+        return False, log_lines
+
+    credential = guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        _log("ERROR: No SSH credential configured.")
+        return False, log_lines
+
+    has_ip = guest.ip_address and guest.ip_address.lower() not in ("dhcp", "dhcp6", "auto")
+    if not has_ip:
+        _log("ERROR: Guest has no usable IP address.")
+        return False, log_lines
+
+    latest = Setting.get("prometheus_latest_version", "")
+    current = Setting.get("prometheus_current_version", "")
+    if not latest:
+        _log("ERROR: No target version available.")
+        return False, log_lines
+
+    _log(f"Upgrading Prometheus from v{current} to v{latest} on {guest.name}...")
+
+    # Protection
+    protection_type = config.get("protection_type", "snapshot")
+    _log(f"Creating {protection_type} protection...")
+    if protection_type == "backup":
+        ok, msg = _backup_guest(guest, config.get("backup_storage", ""), config.get("backup_mode", "snapshot"))
+    else:
+        ok, msg = _snapshot_guest(guest)
+    _log(msg)
+    if not ok:
+        _log("ERROR: Protection failed, aborting upgrade.")
+        return False, log_lines
+
+    try:
+        with SSHClient.from_credential(guest.ip_address, credential) as ssh:
+            arch_out, _, _ = ssh.execute_sudo("dpkg --print-architecture", timeout=10)
+            arch = (arch_out or "amd64").strip()
+            prom_arch = "arm64" if arch == "arm64" else "amd64"
+
+            # Download new version
+            dl_url = (
+                f"https://github.com/prometheus/prometheus/releases/download/v{latest}/"
+                f"prometheus-{latest}.linux-{prom_arch}.tar.gz"
+            )
+            _log(f"Downloading Prometheus v{latest}...")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cd /tmp && curl -sSL -o prometheus.tar.gz '{dl_url}' && tar xzf prometheus.tar.gz",
+                timeout=120,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to download new version.")
+                return False, log_lines
+
+            # Stop service
+            _log("Stopping Prometheus...")
+            ssh.execute_sudo("systemctl stop prometheus", timeout=30)
+
+            # Replace binaries
+            extract_dir = f"prometheus-{latest}.linux-{prom_arch}"
+            _log("Replacing binaries...")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cp /tmp/{extract_dir}/prometheus /usr/local/bin/ && "
+                f"cp /tmp/{extract_dir}/promtool /usr/local/bin/ && "
+                "chown prometheus:prometheus /usr/local/bin/prometheus /usr/local/bin/promtool",
+                timeout=30,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to replace binaries.")
+                return False, log_lines
+
+            # Start service
+            _log("Starting Prometheus...")
+            stdout, stderr, code = ssh.execute_sudo("systemctl start prometheus", timeout=30)
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to start Prometheus after upgrade.")
+                return False, log_lines
+
+            # Clean up
+            ssh.execute_sudo(f"rm -rf /tmp/prometheus.tar.gz /tmp/{extract_dir}", timeout=15)
+
+            _log(f"Prometheus upgraded to v{latest} successfully.")
+            Setting.set("prometheus_current_version", latest)
+            Setting.set("prometheus_update_available", "false")
+            db.session.commit()
+
+            return True, log_lines
+
+    except Exception as e:
+        _log(f"FATAL ERROR: {e}")
+        logger.exception("Prometheus upgrade failed")
+        return False, log_lines
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _get_config():
+    """Read all Prometheus settings into a dict."""
+    return {
+        "guest_id": Setting.get("prometheus_guest_id", ""),
+        "url": Setting.get("prometheus_url", ""),
+        "retention_days": Setting.get("prometheus_retention_days", "365"),
+        "protection_type": Setting.get("prometheus_protection_type", "snapshot"),
+        "backup_storage": Setting.get("prometheus_backup_storage", ""),
+        "backup_mode": Setting.get("prometheus_backup_mode", "snapshot"),
+        "lambnet_metrics_url": Setting.get("prometheus_lambnet_metrics_url", ""),
+        "latest_version": Setting.get("prometheus_latest_version", ""),
+    }
+
+
+def _generate_prometheus_yml(lambnet_metrics_url, auth_token=""):
+    """Generate a prometheus.yml config file."""
+    scrape_configs = """  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]"""
+
+    if lambnet_metrics_url:
+        auth_section = ""
+        if auth_token:
+            auth_section = f"""
+    authorization:
+      type: Bearer
+      credentials: "{auth_token}" """
+
+        scrape_configs += f"""
+
+  - job_name: "lambnet"
+    scrape_interval: 60s
+    static_configs:
+      - targets: ["{lambnet_metrics_url}"]{auth_section}"""
+
+    return f"""global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+{scrape_configs}
+"""
+
+
+def _generate_systemd_unit(retention_days="365"):
+    """Generate the Prometheus systemd service unit."""
+    return f"""[Unit]
+Description=Prometheus Monitoring System
+Documentation=https://prometheus.io/docs/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=prometheus
+Group=prometheus
+Type=simple
+ExecStart=/usr/local/bin/prometheus \\
+  --config.file=/etc/prometheus/prometheus.yml \\
+  --storage.tsdb.path=/var/lib/prometheus/ \\
+  --storage.tsdb.retention.time={retention_days}d \\
+  --web.console.templates=/etc/prometheus/consoles \\
+  --web.console.libraries=/etc/prometheus/console_libraries \\
+  --web.listen-address=0.0.0.0:9090
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+"""

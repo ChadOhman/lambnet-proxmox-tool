@@ -516,9 +516,33 @@ def pg_settings(service_id):
 
 @bp.route("/<int:service_id>/pg/metrics-history")
 def pg_metrics_history(service_id):
+    from models import Setting
+
     svc = GuestService.query.get_or_404(service_id)
     if svc.service_name != "postgresql":
         return jsonify({"error": "Not a PostgreSQL service"}), 400
+
+    # Try Prometheus first if enabled
+    timeframe = request.args.get("timeframe", "day")
+    if Setting.get("prometheus_enabled", "false") == "true" and Setting.get("prometheus_url", ""):
+        try:
+            from clients.prometheus_query import PrometheusQueryClient
+            prom = PrometheusQueryClient()
+            pg_metrics = [
+                "lambnet_pg_connections_total",
+                "lambnet_pg_cache_hit_ratio",
+                "lambnet_pg_connections_active",
+                "lambnet_pg_lock_waits",
+                "lambnet_pg_commits_total",
+                "lambnet_pg_rollbacks_total",
+            ]
+            data = prom.get_service_metrics_history(svc.id, pg_metrics, timeframe)
+            if data and data.get("snapshots"):
+                return jsonify(data)
+        except Exception:
+            logger.debug("Prometheus query failed for PG metrics history, falling back to SQLite")
+
+    # Fall back to SQLite
     limit = min(int(request.args.get("limit", 144)), 288)  # default 12h at 5-min
     rows = (
         ServiceMetricSnapshot.query
@@ -609,14 +633,58 @@ def stats(service_id):
             db.session.rollback()
             logger.exception("Failed to save JVB metric snapshot for service %s", svc.id)
 
+    # Feed Prometheus exporter with service-specific metrics
+    _update_prometheus_service_stats(svc, guest, data)
+
     return jsonify(data)
+
+
+def _update_prometheus_service_stats(svc, guest, data):
+    """Push service stats to the Prometheus exporter."""
+    try:
+        if svc.service_name == "postgresql" and data.get("type") == "postgresql":
+            from clients.prometheus_exporter import update_pg_metrics
+            update_pg_metrics(svc.id, guest.name, data)
+        elif svc.service_name == "redis" and data.get("type") == "redis":
+            from clients.prometheus_exporter import update_redis_metrics
+            update_redis_metrics(svc.id, guest.name, data)
+        elif svc.service_name == "elasticsearch" and data.get("type") == "elasticsearch":
+            from clients.prometheus_exporter import update_es_metrics
+            update_es_metrics(svc.id, guest.name, data)
+        elif svc.service_name == "jitsi-videobridge2" and not data.get("rest_api_disabled"):
+            from clients.prometheus_exporter import update_jitsi_metrics
+            update_jitsi_metrics(svc.id, guest.name, data)
+    except Exception:
+        logger.debug("Failed to update Prometheus metrics for service %s", svc.id, exc_info=True)
 
 
 @bp.route("/<int:service_id>/jvb/metrics-history")
 def jvb_metrics_history(service_id):
+    from models import Setting
+
     svc = GuestService.query.get_or_404(service_id)
     if svc.service_name != "jitsi-videobridge2":
         return jsonify({"error": "Not a Jitsi Videobridge service"}), 400
+
+    # Try Prometheus first if enabled
+    timeframe = request.args.get("timeframe", "day")
+    if Setting.get("prometheus_enabled", "false") == "true" and Setting.get("prometheus_url", ""):
+        try:
+            from clients.prometheus_query import PrometheusQueryClient
+            prom = PrometheusQueryClient()
+            jvb_metrics = [
+                "lambnet_jitsi_conferences",
+                "lambnet_jitsi_participants",
+                "lambnet_jitsi_stress_level",
+                "lambnet_jitsi_bitrate_download_bps",
+            ]
+            data = prom.get_service_metrics_history(svc.id, jvb_metrics, timeframe)
+            if data and data.get("snapshots"):
+                return jsonify(data)
+        except Exception:
+            logger.debug("Prometheus query failed for JVB metrics history, falling back to SQLite")
+
+    # Fall back to SQLite
     limit = min(int(request.args.get("limit", 144)), 288)
     rows = (
         ServiceMetricSnapshot.query

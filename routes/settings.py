@@ -553,7 +553,7 @@ def check_update():
 
 @bp.route("/apply-update", methods=["POST"])
 def apply_update():
-    update_script = os.path.join(BASE_DIR, "scripts", "update.sh")
+    update_script = os.path.join(BASE_DIR, "update.sh")
     if not os.path.exists(update_script):
         flash("Update script not found.", "error")
         return redirect(url_for("settings.index"))
