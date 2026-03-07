@@ -565,7 +565,7 @@ def guest_rrd(guest_id):
         try:
             from clients.prometheus_query import PrometheusQueryClient
             prom = PrometheusQueryClient()
-            data = prom.get_guest_rrd(guest.vmid, timeframe)
+            data = prom.get_guest_rrd(guest.vmid, timeframe, guest_id=guest.id)
             if data and data.get("labels"):
                 return jsonify(data)
         except Exception:
