@@ -156,36 +156,5 @@
             </div>
         </div>
     </div>
-    <div class="col-sm-6 col-lg-4">
-        <div class="card bg-dark h-100">
-            <div class="card-body d-flex flex-column">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                    <h5 class="card-title mb-0"><i class="bi bi-graph-up"></i> Prometheus</h5>
-                    {% if not apps.prometheus.installed %}
-                    <span class="badge bg-secondary">Not installed</span>
-                    {% elif apps.prometheus.update_available %}
-                    <span class="badge bg-warning text-dark">Update available</span>
-                    {% elif apps.prometheus.current_version %}
-                    <span class="badge bg-success"><i class="bi bi-check-lg"></i> Up to date</span>
-                    {% endif %}
-                </div>
-                <div class="mb-3">
-                    {% if apps.prometheus.current_version %}
-                    <small class="text-muted">
-                        {{ apps.prometheus.current_version }}
-                        {% if apps.prometheus.latest_version and apps.prometheus.update_available %}
-                        &rarr; {{ apps.prometheus.latest_version }}
-                        {% endif %}
-                    </small><br>
-                    {% endif %}
-                    <small>
-                        <i class="bi bi-arrow-repeat {% if apps.prometheus.auto_upgrade %}text-success{% else %}text-muted{% endif %}"></i>
-                        Auto-upgrade: <span class="{% if apps.prometheus.auto_upgrade %}text-success{% else %}text-muted{% endif %}">{{ 'On' if apps.prometheus.auto_upgrade else 'Off' }}</span>
-                    </small>
-                </div>
-                <a href="/prometheus/manage" class="btn btn-outline-light mt-auto">Go to Prometheus</a>
-            </div>
-        </div>
-    </div>
 </div>
 {% endblock %}

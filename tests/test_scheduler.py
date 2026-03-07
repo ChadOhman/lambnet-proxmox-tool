@@ -205,8 +205,6 @@ class TestInitScheduler:
             "jitsi_check",
             "unifi_event_poll",
             "unifi_log_purge",
-            "prometheus_collect",
-            "prometheus_check",
         }
         assert expected_ids == registered_ids
 

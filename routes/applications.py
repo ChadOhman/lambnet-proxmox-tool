@@ -49,12 +49,5 @@ def index():
             "latest_version": Setting.get("jitsi_latest_version", ""),
             "installed": Setting.get("jitsi_installed", "false") == "true",
         },
-        "prometheus": {
-            "auto_upgrade": Setting.get("prometheus_auto_upgrade", "false") == "true",
-            "update_available": Setting.get("prometheus_update_available", "false") == "true",
-            "current_version": Setting.get("prometheus_current_version", ""),
-            "latest_version": Setting.get("prometheus_latest_version", ""),
-            "installed": Setting.get("prometheus_installed", "false") == "true",
-        },
     }
     return render_template("applications.html", apps=apps)
