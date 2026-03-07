@@ -430,22 +430,10 @@ def exporter_add():
         flash(f"{info['display_name']} already exists on {guest.name}.", "warning")
         return redirect(url_for("prometheus_app.manage"))
 
-    # Parse env var config for exporters that require it
-    config = None
-    if info.get("requires_config") and info.get("env_vars"):
-        config = {}
-        for var in info["env_vars"]:
-            val = data.get(f"config_{var}", "").strip()
-            if val:
-                config[var] = val
-        if not config:
-            config = None
-
     instance = ExporterInstance(
         guest_id=guest.id,
         exporter_type=exporter_type,
         port=port_int,
-        config=config,
         status="pending",
     )
     db.session.add(instance)
@@ -571,35 +559,4 @@ def exporter_delete(instance_id):
     db.session.delete(instance)
     db.session.commit()
     flash(f"Exporter entry removed for {guest_name}.", "success")
-    return redirect(url_for("prometheus_app.manage"))
-
-
-@bp.route("/exporters/<int:instance_id>/config", methods=["POST"])
-def exporter_update_config(instance_id):
-    from apps.exporters import KNOWN_EXPORTERS
-
-    instance = ExporterInstance.query.get_or_404(instance_id)
-    if instance.status == "installed":
-        flash("Uninstall the exporter before changing its configuration.", "error")
-        return redirect(url_for("prometheus_app.manage"))
-
-    info = KNOWN_EXPORTERS.get(instance.exporter_type, {})
-    env_vars = info.get("env_vars", [])
-    if not env_vars:
-        flash("This exporter does not require configuration.", "warning")
-        return redirect(url_for("prometheus_app.manage"))
-
-    data = request.form if request.form else (request.get_json(silent=True) or {})
-    config = {}
-    for var in env_vars:
-        val = data.get(f"config_{var}", "").strip()
-        if val:
-            config[var] = val
-
-    instance.config = config if config else None
-    log_action("exporter_config", "guest", resource_id=instance.guest_id,
-               resource_name=instance.guest.name,
-               details={"exporter_type": instance.exporter_type, "config_set": bool(config)})
-    db.session.commit()
-    flash(f"Configuration updated for {info.get('display_name', instance.exporter_type)}.", "success")
     return redirect(url_for("prometheus_app.manage"))
