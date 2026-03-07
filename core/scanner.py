@@ -2420,6 +2420,17 @@ def _stats_prometheus(guest, service):
         except _json.JSONDecodeError:
             pass
 
+    # Runtime flags — detect lifecycle / admin API availability
+    out = _prom_fetch(f"http://localhost:{port}/api/v1/status/flags")
+    if out:
+        try:
+            data = _json.loads(out)
+            flags = data.get("data", {})
+            stats["prom_lifecycle_enabled"] = flags.get("web.enable-lifecycle", "false") == "true"
+            stats["prom_admin_api_enabled"] = flags.get("web.enable-admin-api", "false") == "true"
+        except _json.JSONDecodeError:
+            pass
+
     # TSDB stats — series, chunks, storage size
     out = _prom_fetch(f"http://localhost:{port}/api/v1/status/tsdb")
     if out:

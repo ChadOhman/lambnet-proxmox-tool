@@ -818,3 +818,163 @@ def lt_update_stream(service_id):
         content_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Prometheus management routes
+# ---------------------------------------------------------------------------
+
+def _prom_guard(service_id):
+    """Return (svc, guest) or (None, None). Also checks service type."""
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "prometheus":
+        return None, None
+    return svc, svc.guest
+
+
+def _prom_api(guest, port, path, method="GET", timeout=10):
+    """Fetch a Prometheus API endpoint on the guest via SSH."""
+    from core.scanner import _execute_command
+    url = f"http://localhost:{port}{path}"
+    if method == "POST":
+        cmd = f"(curl -sf -X POST '{url}' 2>/dev/null || wget -qO- --post-data='' '{url}' 2>/dev/null)"
+    else:
+        cmd = f"(curl -sf '{url}' 2>/dev/null || wget -qO- '{url}' 2>/dev/null)"
+    stdout, error = _execute_command(guest, cmd, timeout=timeout)
+    if error:
+        return None, f"SSH error: {error[:200]}"
+    return (stdout or "").strip(), None
+
+
+@bp.route("/<int:service_id>/prometheus/config")
+def prom_config(service_id):
+    svc, guest = _prom_guard(service_id)
+    if svc is None:
+        return jsonify({"error": "Not a Prometheus service"}), 400
+    port = svc.port or 9090
+    out, err = _prom_api(guest, port, "/api/v1/status/config")
+    if err:
+        return jsonify({"error": err}), 500
+    if not out:
+        return jsonify({"error": "No response from Prometheus API"}), 502
+    try:
+        data = json.loads(out)
+        yaml_text = data.get("data", {}).get("yaml", "")
+        return jsonify({"config": yaml_text})
+    except json.JSONDecodeError:
+        return jsonify({"error": "Invalid JSON from Prometheus"}), 502
+
+
+@bp.route("/<int:service_id>/prometheus/flags")
+def prom_flags(service_id):
+    svc, guest = _prom_guard(service_id)
+    if svc is None:
+        return jsonify({"error": "Not a Prometheus service"}), 400
+    port = svc.port or 9090
+    out, err = _prom_api(guest, port, "/api/v1/status/flags")
+    if err:
+        return jsonify({"error": err}), 500
+    if not out:
+        return jsonify({"error": "No response from Prometheus API"}), 502
+    try:
+        data = json.loads(out)
+        return jsonify({"flags": data.get("data", {})})
+    except json.JSONDecodeError:
+        return jsonify({"error": "Invalid JSON from Prometheus"}), 502
+
+
+@bp.route("/<int:service_id>/prometheus/rules")
+def prom_rules(service_id):
+    svc, guest = _prom_guard(service_id)
+    if svc is None:
+        return jsonify({"error": "Not a Prometheus service"}), 400
+    port = svc.port or 9090
+
+    # Fetch rules
+    groups = []
+    out, err = _prom_api(guest, port, "/api/v1/rules")
+    if not err and out:
+        try:
+            data = json.loads(out)
+            groups = data.get("data", {}).get("groups", [])
+        except json.JSONDecodeError:
+            pass
+
+    # Fetch active alerts
+    alerts = []
+    out, err = _prom_api(guest, port, "/api/v1/alerts")
+    if not err and out:
+        try:
+            data = json.loads(out)
+            alerts = data.get("data", {}).get("alerts", [])
+        except json.JSONDecodeError:
+            pass
+
+    return jsonify({"groups": groups, "alerts": alerts})
+
+
+@bp.route("/<int:service_id>/prometheus/reload", methods=["POST"])
+def prom_reload(service_id):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
+    svc, guest = _prom_guard(service_id)
+    if svc is None:
+        return jsonify({"ok": False, "message": "Not a Prometheus service"}), 400
+    port = svc.port or 9090
+
+    # Check lifecycle API is enabled
+    out, err = _prom_api(guest, port, "/api/v1/status/flags")
+    if err:
+        return jsonify({"ok": False, "message": f"Cannot check flags: {err}"})
+    try:
+        flags = json.loads(out).get("data", {})
+    except (json.JSONDecodeError, TypeError):
+        flags = {}
+    if flags.get("web.enable-lifecycle", "false") != "true":
+        return jsonify({"ok": False, "message": "Lifecycle API not enabled. Start Prometheus with --web.enable-lifecycle."})
+
+    out, err = _prom_api(guest, port, "/-/reload", method="POST")
+    if err:
+        return jsonify({"ok": False, "message": err})
+
+    log_action("prom_reload_config", "guest", resource_id=guest.id, resource_name=guest.name,
+               details={"service": svc.service_name})
+    db.session.commit()
+    return jsonify({"ok": True, "message": "Configuration reloaded successfully."})
+
+
+@bp.route("/<int:service_id>/prometheus/snapshot", methods=["POST"])
+def prom_snapshot(service_id):
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
+    svc, guest = _prom_guard(service_id)
+    if svc is None:
+        return jsonify({"ok": False, "message": "Not a Prometheus service"}), 400
+    port = svc.port or 9090
+
+    # Check admin API is enabled
+    out, err = _prom_api(guest, port, "/api/v1/status/flags")
+    if err:
+        return jsonify({"ok": False, "message": f"Cannot check flags: {err}"})
+    try:
+        flags = json.loads(out).get("data", {})
+    except (json.JSONDecodeError, TypeError):
+        flags = {}
+    if flags.get("web.enable-admin-api", "false") != "true":
+        return jsonify({"ok": False, "message": "Admin API not enabled. Start Prometheus with --web.enable-admin-api."})
+
+    out, err = _prom_api(guest, port, "/api/v1/admin/tsdb/snapshot", method="POST", timeout=60)
+    if err:
+        return jsonify({"ok": False, "message": err})
+
+    snapshot_name = ""
+    if out:
+        try:
+            snapshot_name = json.loads(out).get("data", {}).get("name", "")
+        except json.JSONDecodeError:
+            pass
+
+    log_action("prom_snapshot", "guest", resource_id=guest.id, resource_name=guest.name,
+               details={"service": svc.service_name, "snapshot": snapshot_name})
+    db.session.commit()
+    return jsonify({"ok": True, "message": f"Snapshot created: {snapshot_name}" if snapshot_name else "Snapshot created."})

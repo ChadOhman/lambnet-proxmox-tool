@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from models import db, Guest, GuestService
+
 
 # ---------------------------------------------------------------------------
 # Exporter tests
@@ -320,3 +322,148 @@ class TestApplicationsPage:
         assert resp.status_code == 200
         assert b"Prometheus" in resp.data
         assert b"/prometheus/manage" in resp.data
+
+
+# ---------------------------------------------------------------------------
+# Prometheus management route tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def prom_service(app):
+    """Create a Prometheus GuestService and return its ID. Cleaned up after the test."""
+    with app.app_context():
+        guest = Guest(name="_test-prom-mgmt", guest_type="ct", enabled=True)
+        db.session.add(guest)
+        db.session.flush()
+        svc = GuestService(
+            guest_id=guest.id,
+            service_name="prometheus",
+            unit_name="prometheus.service",
+            port=9090,
+        )
+        db.session.add(svc)
+        db.session.commit()
+        svc_id = svc.id
+        guest_id = guest.id
+
+    yield svc_id, guest_id
+
+    with app.app_context():
+        GuestService.query.filter_by(guest_id=guest_id).delete()
+        Guest.query.filter_by(id=guest_id).delete()
+        db.session.commit()
+
+
+@pytest.fixture()
+def pg_service_for_prom(app):
+    """Create a non-Prometheus (PostgreSQL) service for wrong-type validation tests."""
+    with app.app_context():
+        guest = Guest(name="_test-pg-wrong", guest_type="ct", enabled=True)
+        db.session.add(guest)
+        db.session.flush()
+        svc = GuestService(
+            guest_id=guest.id,
+            service_name="postgresql",
+            unit_name="postgresql.service",
+            port=5432,
+        )
+        db.session.add(svc)
+        db.session.commit()
+        svc_id = svc.id
+        guest_id = guest.id
+
+    yield svc_id, guest_id
+
+    with app.app_context():
+        GuestService.query.filter_by(guest_id=guest_id).delete()
+        Guest.query.filter_by(id=guest_id).delete()
+        db.session.commit()
+
+
+class TestPrometheusManagementRoutes:
+    """Test the Prometheus management routes (config, flags, rules, reload, snapshot)."""
+
+    # --- Read-only routes ---
+
+    def test_config_requires_login(self, client, prom_service):
+        svc_id, _ = prom_service
+        resp = client.get(f"/services/{svc_id}/prometheus/config")
+        assert resp.status_code in (302, 401)
+
+    def test_config_wrong_service_type(self, auth_client, pg_service_for_prom):
+        svc_id, _ = pg_service_for_prom
+        resp = auth_client.get(f"/services/{svc_id}/prometheus/config")
+        assert resp.status_code == 400
+
+    def test_config_returns_json(self, auth_client, prom_service):
+        svc_id, _ = prom_service
+        resp = auth_client.get(f"/services/{svc_id}/prometheus/config")
+        # SSH will fail but route validation should pass (not 400)
+        assert resp.status_code != 400
+
+    def test_flags_requires_login(self, client, prom_service):
+        svc_id, _ = prom_service
+        resp = client.get(f"/services/{svc_id}/prometheus/flags")
+        assert resp.status_code in (302, 401)
+
+    def test_flags_wrong_service_type(self, auth_client, pg_service_for_prom):
+        svc_id, _ = pg_service_for_prom
+        resp = auth_client.get(f"/services/{svc_id}/prometheus/flags")
+        assert resp.status_code == 400
+
+    def test_flags_returns_json(self, auth_client, prom_service):
+        svc_id, _ = prom_service
+        resp = auth_client.get(f"/services/{svc_id}/prometheus/flags")
+        assert resp.status_code != 400
+
+    def test_rules_requires_login(self, client, prom_service):
+        svc_id, _ = prom_service
+        resp = client.get(f"/services/{svc_id}/prometheus/rules")
+        assert resp.status_code in (302, 401)
+
+    def test_rules_wrong_service_type(self, auth_client, pg_service_for_prom):
+        svc_id, _ = pg_service_for_prom
+        resp = auth_client.get(f"/services/{svc_id}/prometheus/rules")
+        assert resp.status_code == 400
+
+    def test_rules_returns_json(self, auth_client, prom_service):
+        svc_id, _ = prom_service
+        resp = auth_client.get(f"/services/{svc_id}/prometheus/rules")
+        assert resp.status_code != 400
+
+    # --- Write routes ---
+
+    def test_reload_requires_login(self, client, prom_service):
+        svc_id, _ = prom_service
+        resp = client.post(f"/services/{svc_id}/prometheus/reload")
+        assert resp.status_code in (302, 401)
+
+    def test_reload_wrong_service_type(self, auth_client, pg_service_for_prom):
+        svc_id, _ = pg_service_for_prom
+        resp = auth_client.post(f"/services/{svc_id}/prometheus/reload")
+        assert resp.status_code == 400
+
+    def test_reload_returns_json(self, auth_client, prom_service):
+        svc_id, _ = prom_service
+        resp = auth_client.post(f"/services/{svc_id}/prometheus/reload")
+        data = json.loads(resp.data)
+        # Will fail at SSH level but should not be a 400 validation error
+        assert resp.status_code != 400
+        assert "ok" in data
+
+    def test_snapshot_requires_login(self, client, prom_service):
+        svc_id, _ = prom_service
+        resp = client.post(f"/services/{svc_id}/prometheus/snapshot")
+        assert resp.status_code in (302, 401)
+
+    def test_snapshot_wrong_service_type(self, auth_client, pg_service_for_prom):
+        svc_id, _ = pg_service_for_prom
+        resp = auth_client.post(f"/services/{svc_id}/prometheus/snapshot")
+        assert resp.status_code == 400
+
+    def test_snapshot_returns_json(self, auth_client, prom_service):
+        svc_id, _ = prom_service
+        resp = auth_client.post(f"/services/{svc_id}/prometheus/snapshot")
+        data = json.loads(resp.data)
+        assert resp.status_code != 400
+        assert "ok" in data

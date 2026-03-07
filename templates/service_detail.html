@@ -1493,6 +1493,72 @@
 </div>
 {% endif %}
 
+<!-- Configuration & Flags -->
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-file-earmark-code"></i> Configuration & Flags</h5></div>
+    <div class="card-body">
+        <h6 class="text-muted mb-2"><i class="bi bi-filetype-yml"></i> Running Configuration
+            <button class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="promLoadConfig()" id="promConfigLoadBtn">Load</button>
+        </h6>
+        <div id="prom-config-container"></div>
+
+        <h6 class="text-muted mb-2 mt-4"><i class="bi bi-flag"></i> Runtime Flags
+            <button class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="promLoadFlags()" id="promFlagsLoadBtn">Load</button>
+        </h6>
+        <div id="prom-flags-container"></div>
+    </div>
+</div>
+
+<!-- Alerting Rules & Alerts -->
+<div class="card bg-dark mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-bell"></i> Alerting Rules & Alerts
+            <button class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="promLoadRules()" id="promRulesLoadBtn">Load</button>
+        </h5>
+    </div>
+    <div class="card-body" id="prom-rules-container"></div>
+</div>
+
+<!-- Management -->
+{% if current_user.can_edit_services %}
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-gear"></i> Management</h5></div>
+    <div class="card-body">
+        <div class="mb-4">
+            <h6 class="text-muted mb-2"><i class="bi bi-arrow-clockwise"></i> Reload Configuration</h6>
+            <p class="small text-muted">Reload prometheus.yml without restarting the service.</p>
+            {% if stats.prom_lifecycle_enabled %}
+            <button class="btn btn-sm btn-outline-warning" onclick="promReload()" id="promReloadBtn" type="button">
+                <i class="bi bi-arrow-clockwise"></i> Reload Config
+            </button>
+            {% else %}
+            <button class="btn btn-sm btn-outline-secondary" disabled type="button">
+                <i class="bi bi-arrow-clockwise"></i> Reload Config
+            </button>
+            <span class="small text-muted ms-2">Requires <code>--web.enable-lifecycle</code></span>
+            {% endif %}
+            <div id="promReloadResult" class="mt-2 font-monospace small" style="display:none"></div>
+        </div>
+
+        <div class="mb-2">
+            <h6 class="text-muted mb-2"><i class="bi bi-camera"></i> TSDB Snapshot</h6>
+            <p class="small text-muted">Create a snapshot of the current TSDB data for backup.</p>
+            {% if stats.prom_admin_api_enabled %}
+            <button class="btn btn-sm btn-outline-info" onclick="promSnapshot()" id="promSnapshotBtn" type="button">
+                <i class="bi bi-camera"></i> Create Snapshot
+            </button>
+            {% else %}
+            <button class="btn btn-sm btn-outline-secondary" disabled type="button">
+                <i class="bi bi-camera"></i> Create Snapshot
+            </button>
+            <span class="small text-muted ms-2">Requires <code>--web.enable-admin-api</code></span>
+            {% endif %}
+            <div id="promSnapshotResult" class="mt-2 font-monospace small" style="display:none"></div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% endif %}{# prom_api_disabled #}
 
 {% endif %}
@@ -2728,6 +2794,162 @@ function jvbLoadChart() {
 
 document.addEventListener('DOMContentLoaded', jvbLoadChart);
 {% endif %}{# stats.type == 'jitsi-videobridge2' #}
+
+{% if stats.type == 'prometheus' and not stats.prom_api_disabled %}
+// --- Prometheus: Load Config ---
+let _promConfigLoaded = false;
+function promLoadConfig() {
+    if (_promConfigLoaded) return;
+    const container = document.getElementById('prom-config-container');
+    container.innerHTML = '<span class="spinner-border spinner-border-sm text-secondary"></span>';
+    fetch('/services/{{ service.id }}/prometheus/config', {cache: 'no-store'})
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) { container.innerHTML = `<div class="text-danger small">${escHtml(data.error)}</div>`; return; }
+        const cfg = data.config || '';
+        if (!cfg) { container.innerHTML = '<p class="text-muted small">No configuration returned.</p>'; return; }
+        container.innerHTML = `<pre class="bg-black text-light p-3 rounded small" style="max-height:400px;overflow:auto">${escHtml(cfg)}</pre>`;
+        _promConfigLoaded = true;
+        document.getElementById('promConfigLoadBtn').style.display = 'none';
+    })
+    .catch(e => { container.innerHTML = `<div class="text-danger small">Failed: ${escHtml(String(e))}</div>`; });
+}
+
+// --- Prometheus: Load Flags ---
+let _promFlagsLoaded = false;
+function promLoadFlags() {
+    if (_promFlagsLoaded) return;
+    const container = document.getElementById('prom-flags-container');
+    container.innerHTML = '<span class="spinner-border spinner-border-sm text-secondary"></span>';
+    fetch('/services/{{ service.id }}/prometheus/flags', {cache: 'no-store'})
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) { container.innerHTML = `<div class="text-danger small">${escHtml(data.error)}</div>`; return; }
+        const flags = data.flags || {};
+        const keys = Object.keys(flags).sort();
+        if (!keys.length) { container.innerHTML = '<p class="text-muted small">No flags returned.</p>'; return; }
+        const rows = keys.map(k => `<tr><td class="font-monospace small">${escHtml(k)}</td><td class="font-monospace small">${escHtml(flags[k])}</td></tr>`).join('');
+        container.innerHTML = `<div class="table-responsive"><table class="table table-dark table-sm mb-0">
+            <thead><tr><th>Flag</th><th>Value</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>`;
+        _promFlagsLoaded = true;
+        document.getElementById('promFlagsLoadBtn').style.display = 'none';
+    })
+    .catch(e => { container.innerHTML = `<div class="text-danger small">Failed: ${escHtml(String(e))}</div>`; });
+}
+
+// --- Prometheus: Load Rules & Alerts ---
+let _promRulesLoaded = false;
+function promLoadRules() {
+    if (_promRulesLoaded) return;
+    const container = document.getElementById('prom-rules-container');
+    container.innerHTML = '<span class="spinner-border spinner-border-sm text-secondary"></span>';
+    fetch('/services/{{ service.id }}/prometheus/rules', {cache: 'no-store'})
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) { container.innerHTML = `<div class="text-danger small">${escHtml(data.error)}</div>`; return; }
+        let html = '';
+
+        // Active alerts
+        const alerts = data.alerts || [];
+        if (alerts.length) {
+            html += '<h6 class="text-muted mb-2">Active Alerts</h6>';
+            alerts.forEach(a => {
+                const badge = a.state === 'firing' ? 'bg-danger' : 'bg-warning text-dark';
+                const name = (a.labels && a.labels.alertname) || 'unknown';
+                const summary = (a.annotations && (a.annotations.summary || a.annotations.description)) || '';
+                html += `<div class="mb-2"><span class="badge ${badge}">${escHtml(a.state)}</span> <strong>${escHtml(name)}</strong>`;
+                if (summary) html += ` <span class="text-muted small">— ${escHtml(summary)}</span>`;
+                html += `</div>`;
+            });
+            html += '<hr class="border-secondary">';
+        }
+
+        // Rule groups
+        const groups = data.groups || [];
+        if (!groups.length && !alerts.length) {
+            container.innerHTML = '<p class="text-muted small">No alerting rules or active alerts configured.</p>';
+            _promRulesLoaded = true;
+            document.getElementById('promRulesLoadBtn').style.display = 'none';
+            return;
+        }
+        groups.forEach(g => {
+            html += `<h6 class="text-muted mt-3 mb-1">${escHtml(g.name)}</h6>`;
+            const rules = g.rules || [];
+            if (!rules.length) { html += '<p class="text-muted small ms-2">No rules in group.</p>'; return; }
+            const rows = rules.map(r => {
+                const stBadge = r.state === 'firing' ? 'bg-danger' : r.state === 'pending' ? 'bg-warning text-dark' : 'bg-secondary';
+                const rType = r.type === 'recording' ? '<span class="badge bg-info text-dark">recording</span>' : '<span class="badge bg-primary">alerting</span>';
+                return `<tr>
+                    <td class="font-monospace small">${escHtml(r.name)}</td>
+                    <td>${rType}</td>
+                    <td><span class="badge ${stBadge}">${escHtml(r.state || 'inactive')}</span></td>
+                    <td class="font-monospace small text-muted">${escHtml(r.query || '')}</td>
+                </tr>`;
+            }).join('');
+            html += `<div class="table-responsive"><table class="table table-dark table-sm mb-0">
+                <thead><tr><th>Name</th><th>Type</th><th>State</th><th>Expression</th></tr></thead>
+                <tbody>${rows}</tbody></table></div>`;
+        });
+        container.innerHTML = html;
+        _promRulesLoaded = true;
+        document.getElementById('promRulesLoadBtn').style.display = 'none';
+    })
+    .catch(e => { container.innerHTML = `<div class="text-danger small">Failed: ${escHtml(String(e))}</div>`; });
+}
+
+// --- Prometheus: Reload Config ---
+function promReload() {
+    if (!confirm('Reload Prometheus configuration?')) return;
+    const btn = document.getElementById('promReloadBtn');
+    const result = document.getElementById('promReloadResult');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Reloading…';
+    result.style.display = 'none';
+    fetch('/services/{{ service.id }}/prometheus/reload', {method: 'POST', headers: {'Content-Type': 'application/json'}})
+    .then(r => r.json())
+    .then(data => {
+        result.style.display = 'block';
+        result.className = 'mt-2 font-monospace small ' + (data.ok ? 'text-success' : 'text-danger');
+        result.textContent = data.message || (data.ok ? 'Done.' : 'Failed.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Reload Config';
+    })
+    .catch(e => {
+        result.style.display = 'block';
+        result.className = 'mt-2 font-monospace small text-danger';
+        result.textContent = 'Request failed: ' + e;
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Reload Config';
+    });
+}
+
+// --- Prometheus: TSDB Snapshot ---
+function promSnapshot() {
+    if (!confirm('Create a TSDB snapshot? This may use additional disk space.')) return;
+    const btn = document.getElementById('promSnapshotBtn');
+    const result = document.getElementById('promSnapshotResult');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating…';
+    result.style.display = 'none';
+    fetch('/services/{{ service.id }}/prometheus/snapshot', {method: 'POST', headers: {'Content-Type': 'application/json'}})
+    .then(r => r.json())
+    .then(data => {
+        result.style.display = 'block';
+        result.className = 'mt-2 font-monospace small ' + (data.ok ? 'text-success' : 'text-danger');
+        result.textContent = data.message || (data.ok ? 'Done.' : 'Failed.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-camera"></i> Create Snapshot';
+    })
+    .catch(e => {
+        result.style.display = 'block';
+        result.className = 'mt-2 font-monospace small text-danger';
+        result.textContent = 'Request failed: ' + e;
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-camera"></i> Create Snapshot';
+    });
+}
+{% endif %}{# stats.type == 'prometheus' #}
 
 </script>
 {% endblock %}
