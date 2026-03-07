@@ -656,6 +656,7 @@ def guest_rrd(guest_id):
         "netin": netin,
         "netout": netout,
         "net_unit": net_unit,
+        "source": "proxmox_rrd",
     })
 
 
@@ -789,6 +790,7 @@ def host_rrd(host_id):
         "netout": netout,
         "net_unit": net_unit,
         "rootfs_percent": rootfs_percent,
+        "source": "proxmox_rrd",
     })
 
 

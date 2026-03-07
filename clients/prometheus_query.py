@@ -293,7 +293,7 @@ class PrometheusQueryClient:
                 snap[short] = values[i] if i < len(values) else None
             snapshots.append(snap)
 
-        return {"snapshots": snapshots}
+        return {"snapshots": snapshots, "source": "lambnet"}
 
     def get_pg_metrics_exporter(self, target, timeframe="day"):
         """Query postgres_exporter metrics and return snapshots matching PG format."""

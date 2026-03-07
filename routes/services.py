@@ -566,7 +566,7 @@ def pg_metrics_history(service_id):
             d = {}
         d["captured_at"] = row.captured_at.isoformat()
         result.append(d)
-    return jsonify({"snapshots": result})
+    return jsonify({"snapshots": result, "source": "sqlite"})
 
 
 @bp.route("/<int:service_id>/stats")
@@ -711,7 +711,7 @@ def jvb_metrics_history(service_id):
             d = {}
         d["captured_at"] = row.captured_at.isoformat()
         result.append(d)
-    return jsonify({"snapshots": result})
+    return jsonify({"snapshots": result, "source": "sqlite"})
 
 
 @bp.route("/<int:service_id>/libretranslate/packages")

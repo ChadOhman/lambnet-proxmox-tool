@@ -218,7 +218,7 @@
 {% if guest.proxmox_host and guest.vmid %}
 <div class="card bg-dark mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Performance</h5>
+        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Performance <span id="perfSource" class="badge bg-secondary ms-2 d-none" style="font-size: 0.65rem;"></span></h5>
         <div class="btn-group btn-group-sm" id="perfTimeframe">
             <button class="btn btn-outline-secondary active" data-tf="day">1 Day</button>
             <button class="btn btn-outline-secondary" data-tf="3d">3 Days</button>
@@ -1079,6 +1079,16 @@
                     return;
                 }
                 document.getElementById('perfCharts').classList.remove('d-none');
+
+                // Show data source badge
+                var srcBadge = document.getElementById('perfSource');
+                if (data.source) {
+                    var srcLabels = {node_exporter: 'node_exporter', lambnet: 'Prometheus', proxmox_rrd: 'Proxmox RRD'};
+                    srcBadge.textContent = srcLabels[data.source] || data.source;
+                    srcBadge.classList.remove('d-none');
+                } else {
+                    srcBadge.classList.add('d-none');
+                }
 
                 // Shorten labels for display
                 const labels = data.labels.map(l => {

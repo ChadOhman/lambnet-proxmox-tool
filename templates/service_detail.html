@@ -599,7 +599,11 @@
             </div>
 
             <!-- Historical charts -->
-            <div class="row g-3 mt-1" id="pg-charts-row">
+            <div class="d-flex align-items-center mt-1 mb-1">
+                <span class="text-muted small">Historical Charts</span>
+                <span id="pgChartSource" class="badge bg-secondary ms-2 d-none" style="font-size: 0.6rem;"></span>
+            </div>
+            <div class="row g-3" id="pg-charts-row">
                 <div class="col-md-6">
                     <div class="text-muted small mb-1">Connections (last 12h)</div>
                     <canvas id="pg-chart-connections" height="100" role="img" aria-label="PostgreSQL connection count over the last 12 hours"></canvas>
@@ -2698,6 +2702,12 @@ function pgLoadCharts() {
     .then(data => {
         const snaps = data.snapshots || [];
         if (!snaps.length) return;
+        var srcBadge = document.getElementById('pgChartSource');
+        if (data.source && srcBadge) {
+            var srcLabels = {postgres_exporter: 'postgres_exporter', lambnet: 'Prometheus'};
+            srcBadge.textContent = srcLabels[data.source] || data.source;
+            srcBadge.classList.remove('d-none');
+        }
         const labels = snaps.map(s => {
             const d = new Date(s.captured_at);
             return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
