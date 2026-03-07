@@ -26,6 +26,7 @@ def _parse_iso(value):
 
 _install_job = {"running": False, "success": None, "log": []}
 _upgrade_job = {"running": False, "success": None, "log": []}
+_preflight_job = {"running": False, "success": None, "log": []}
 
 logger = logging.getLogger(__name__)
 
@@ -224,12 +225,58 @@ def upgrade_status():
     })
 
 
+@bp.route("/preflight/status")
+def preflight_status():
+    return jsonify({
+        "running": _preflight_job["running"],
+        "success": _preflight_job["success"],
+        "log": _preflight_job["log"],
+    })
+
+
+@bp.route("/preflight", methods=["POST"])
+def preflight():
+    from apps.prometheus_app import run_prometheus_preflight
+    from flask import current_app
+
+    if _install_job["running"] or _upgrade_job["running"]:
+        return jsonify({"error": "An operation is already in progress"}), 409
+    if _preflight_job["running"]:
+        return jsonify({"error": "A pre-flight check is already in progress"}), 409
+
+    _preflight_job.update({"running": True, "success": None, "log": []})
+
+    def _cb(msg):
+        _preflight_job["log"].append(msg)
+
+    _app = current_app._get_current_object()
+
+    def _bg():
+        ok = False
+        try:
+            with _app.app_context():
+                ok, _ = run_prometheus_preflight(log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _preflight_job["running"] = False
+        _preflight_job["success"] = ok
+
+    try:
+        import gevent as _gevent
+        _gevent.spawn(_bg)
+    except ImportError:
+        _threading.Thread(target=_bg, daemon=True).start()
+
+    return jsonify({"started": True})
+
+
 @bp.route("/install", methods=["POST"])
 def install():
     from apps.prometheus_app import run_prometheus_install
     from flask import current_app
 
-    if _install_job["running"] or _upgrade_job["running"]:
+    if _install_job["running"] or _upgrade_job["running"] or _preflight_job["running"]:
         flash("An operation is already in progress.", "warning")
         return redirect(url_for("prometheus_app.manage"))
 
@@ -275,7 +322,7 @@ def upgrade():
     from apps.prometheus_app import run_prometheus_upgrade
     from flask import current_app
 
-    if _install_job["running"] or _upgrade_job["running"]:
+    if _install_job["running"] or _upgrade_job["running"] or _preflight_job["running"]:
         flash("An operation is already in progress.", "warning")
         return redirect(url_for("prometheus_app.manage"))
 

@@ -216,8 +216,15 @@
                 <h5 class="mb-0"><i class="bi bi-lightning"></i> Actions</h5>
             </div>
             <div class="card-body">
+                {% if settings.guest_id %}
+                <button type="button" class="btn btn-outline-secondary me-2" id="preflightBtn"
+                        onclick="startPreflight()">
+                    <i class="bi bi-clipboard2-check"></i> Pre-flight Check
+                </button>
+                {% endif %}
                 {% if not settings.installed %}
-                <form method="post" action="/prometheus/install" data-confirm="Install Prometheus on the selected guest? A snapshot/backup will be taken first.">
+                <form method="post" action="/prometheus/install" class="d-inline"
+                      data-confirm="Install Prometheus on the selected guest? A snapshot/backup will be taken first.">
                     <button type="submit" class="btn btn-success" id="installBtn">
                         <i class="bi bi-download"></i> Install Prometheus
                     </button>
@@ -233,6 +240,8 @@
                     </button>
                 </form>
                 {% endif %}
+
+                <div class="mt-2" id="preflightStatusBadge"></div>
 
                 <!-- Operation log output -->
                 <div id="operationLog" class="mt-3 d-none">
@@ -275,6 +284,73 @@ function testConnection() {
             btn.disabled = false;
         });
 }
+
+// Pre-flight check
+let _preflightPoll = null;
+
+function _setPreflightBadge(success) {
+    const badge = document.getElementById('preflightStatusBadge');
+    if (!badge) return;
+    if (success === true) {
+        badge.innerHTML = '<span class="badge bg-info">Ready to proceed</span>';
+    } else if (success === false) {
+        badge.innerHTML = '<span class="badge bg-warning text-dark">Not ready</span>';
+    }
+}
+
+function _pollPreflightStatus() {
+    const logDiv = document.getElementById('operationLog');
+    const logOutput = document.getElementById('logOutput');
+    logDiv.classList.remove('d-none');
+
+    _preflightPoll = setInterval(function() {
+        fetch('/prometheus/preflight/status')
+            .then(r => r.json())
+            .then(data => {
+                logOutput.textContent = (data.log || []).join('\n');
+                logOutput.scrollTop = logOutput.scrollHeight;
+                if (!data.running) {
+                    clearInterval(_preflightPoll);
+                    _preflightPoll = null;
+                    _setPreflightBadge(data.success);
+                    const btn = document.getElementById('preflightBtn');
+                    if (btn) btn.disabled = false;
+                }
+            });
+    }, 1500);
+}
+
+function startPreflight() {
+    const btn = document.getElementById('preflightBtn');
+    if (btn) btn.disabled = true;
+    const badge = document.getElementById('preflightStatusBadge');
+    if (badge) badge.textContent = '';
+    const logOutput = document.getElementById('logOutput');
+    if (logOutput) logOutput.textContent = '';
+
+    fetch('/prometheus/preflight', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.started) {
+                _pollPreflightStatus();
+            } else if (data.error) {
+                if (btn) btn.disabled = false;
+                alert(data.error);
+            }
+        })
+        .catch(() => { if (btn) btn.disabled = false; });
+}
+
+// Check if preflight is running on page load
+fetch('/prometheus/preflight/status').then(r => r.json()).then(data => {
+    if (data.running) {
+        const btn = document.getElementById('preflightBtn');
+        if (btn) btn.disabled = true;
+        _pollPreflightStatus();
+    } else if (data.success !== null) {
+        _setPreflightBadge(data.success);
+    }
+});
 
 // Poll for install/upgrade status
 (function() {

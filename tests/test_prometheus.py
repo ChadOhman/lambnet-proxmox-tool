@@ -267,6 +267,22 @@ class TestPrometheusAppRoutes:
         data = json.loads(resp.data)
         assert "running" in data
 
+    def test_preflight_requires_login(self, client):
+        resp = client.post("/prometheus/preflight", follow_redirects=False)
+        assert resp.status_code in (302, 401)
+
+    def test_preflight_status_requires_login(self, client):
+        resp = client.get("/prometheus/preflight/status", follow_redirects=False)
+        assert resp.status_code in (302, 401)
+
+    def test_preflight_status_returns_json(self, auth_client):
+        resp = auth_client.get("/prometheus/preflight/status")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert "running" in data
+        assert "success" in data
+        assert "log" in data
+
     def test_test_connection_no_url(self, auth_client, app):
         with app.app_context():
             from models import Setting, db

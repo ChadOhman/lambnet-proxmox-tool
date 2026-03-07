@@ -484,6 +484,209 @@ def run_prometheus_upgrade(log_callback=None):
 
 
 # ---------------------------------------------------------------------------
+# Pre-flight check
+# ---------------------------------------------------------------------------
+
+def run_prometheus_preflight(log_callback=None):
+    """Run read-only pre-flight checks before Prometheus install or upgrade.
+
+    Validates configuration, Proxmox guest status, SSH connectivity,
+    and Prometheus-specific prerequisites.
+
+    Returns (all_pass: bool, log_output: str).
+    """
+    from models import Credential
+
+    config = _get_config()
+    log_lines = []
+    checks_passed = 0
+    checks_total = 0
+    checks_failed = 0
+
+    def log(msg):
+        logger.info(msg)
+        log_lines.append(msg)
+        if log_callback:
+            log_callback(msg)
+
+    def check(label, passed, fail_msg=None):
+        nonlocal checks_passed, checks_total, checks_failed
+        checks_total += 1
+        if passed:
+            checks_passed += 1
+            log(f"  [PASS] {label}")
+        else:
+            checks_failed += 1
+            msg = f"  [FAIL] {label}"
+            if fail_msg:
+                msg += f" — {fail_msg}"
+            log(msg)
+
+    log("=== Prometheus Pre-flight Check ===")
+    log("")
+
+    # ── A. Configuration ──────────────────────────────────────────────────────
+    log("--- A. Configuration ---")
+
+    config_ok = True
+    guest_id = config.get("guest_id", "")
+    if guest_id:
+        check("Prometheus guest configured", True)
+    else:
+        check("Prometheus guest configured", False, "not set in settings")
+        config_ok = False
+
+    protection_type = config.get("protection_type", "snapshot")
+    backup_storage = config.get("backup_storage", "")
+    if protection_type == "backup":
+        if backup_storage:
+            check("Backup storage configured", True)
+        else:
+            check("Backup storage configured", False,
+                  "backup protection selected but no storage configured")
+            config_ok = False
+
+    if not config_ok:
+        log("")
+        log(f"=== Pre-flight complete: {checks_passed}/{checks_total} checks passed — "
+            f"{checks_failed} failure(s), blocked ===")
+        return False, "\n".join(log_lines)
+
+    # ── B. Proxmox guest status ───────────────────────────────────────────────
+    log("")
+    log("--- B. Proxmox guest ---")
+
+    app_guest = Guest.query.get(int(config["guest_id"]))
+    check("Prometheus guest in database", app_guest is not None,
+          f"guest ID {config['guest_id']} not found")
+
+    if not app_guest:
+        log("")
+        log(f"=== Pre-flight complete: {checks_passed}/{checks_total} checks passed — "
+            f"{checks_failed} failure(s), blocked ===")
+        return False, "\n".join(log_lines)
+
+    if app_guest.proxmox_host:
+        try:
+            client = ProxmoxClient(app_guest.proxmox_host)
+            node = client.find_guest_node(app_guest.vmid)
+            if not node:
+                check(f"{app_guest.name} found on Proxmox", False, "not found on any PVE node")
+            else:
+                check(f"{app_guest.name} found on Proxmox", True)
+                status = client.get_guest_status(node, app_guest.vmid, app_guest.guest_type)
+                check(f"{app_guest.name} running", status == "running",
+                      f"current status: {status}")
+                if protection_type == "snapshot":
+                    supports_snap = client.guest_supports_snapshot(
+                        node, app_guest.vmid, app_guest.guest_type
+                    )
+                    check(f"{app_guest.name} supports snapshots", supports_snap,
+                          "storage does not support snapshots — switch to Backup protection")
+        except Exception as e:
+            check(f"{app_guest.name} Proxmox reachable", False, str(e))
+    else:
+        log(f"  [WARN] {app_guest.name} has no Proxmox host configured — skipping Proxmox checks")
+
+    # ── C. SSH checks ─────────────────────────────────────────────────────────
+    log("")
+    log(f"--- C. SSH checks on {app_guest.name} ---")
+
+    credential = app_guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+
+    if not credential:
+        check("SSH credential available", False,
+              "no credential configured for guest or as default")
+    elif not app_guest.ip_address or app_guest.ip_address.lower() in ("dhcp", "dhcp6", "auto"):
+        check("SSH credential available", True)
+        check("Guest IP configured", False, "no usable IP address set on guest")
+    else:
+        check("SSH credential available", True)
+        check("Guest IP configured", True)
+        try:
+            with SSHClient.from_credential(app_guest.ip_address, credential) as ssh:
+                check("SSH connection established", True)
+
+                # Check if prometheus binary exists
+                stdout, stderr, code = ssh.execute_sudo(
+                    "test -f /usr/local/bin/prometheus && echo ok", timeout=10
+                )
+                prom_installed = code == 0 and "ok" in (stdout or "")
+                if prom_installed:
+                    log("  [INFO] Prometheus binary found at /usr/local/bin/prometheus")
+                else:
+                    log("  [INFO] Prometheus binary not found — fresh install expected")
+
+                # Check prometheus user
+                stdout, stderr, code = ssh.execute_sudo("id prometheus 2>/dev/null", timeout=10)
+                if code == 0:
+                    log("  [INFO] prometheus user exists")
+                else:
+                    log("  [INFO] prometheus user does not exist — will be created on install")
+
+                # Check directories
+                stdout, stderr, code = ssh.execute_sudo(
+                    "test -d /etc/prometheus && echo ok", timeout=10
+                )
+                if code == 0 and "ok" in (stdout or ""):
+                    log("  [INFO] /etc/prometheus exists")
+                else:
+                    log("  [INFO] /etc/prometheus does not exist — will be created on install")
+
+                stdout, stderr, code = ssh.execute_sudo(
+                    "test -d /var/lib/prometheus && echo ok", timeout=10
+                )
+                if code == 0 and "ok" in (stdout or ""):
+                    log("  [INFO] /var/lib/prometheus exists")
+                else:
+                    log("  [INFO] /var/lib/prometheus does not exist — will be created on install")
+
+                # Systemd service status (informational)
+                if prom_installed:
+                    stdout, stderr, code = ssh.execute_sudo(
+                        "systemctl is-active prometheus 2>/dev/null", timeout=10
+                    )
+                    svc_status = (stdout or "").strip()
+                    if svc_status == "active":
+                        log("  [INFO] prometheus service is active")
+                    elif svc_status:
+                        log(f"  [WARN] prometheus service status: {svc_status}")
+
+                    # Current version (informational)
+                    stdout, stderr, code = ssh.execute_sudo(
+                        "/usr/local/bin/prometheus --version 2>&1 | head -1", timeout=10
+                    )
+                    if code == 0 and stdout:
+                        m = re.search(r"prometheus.*?version (\d+\.\d+\.\d+)", stdout)
+                        if m:
+                            log(f"  [INFO] Current version: {m.group(1)}")
+
+                # Disk space on /var/lib/prometheus (informational)
+                stdout, stderr, code = ssh.execute_sudo(
+                    "df -h /var/lib/prometheus 2>/dev/null | tail -1", timeout=10
+                )
+                if code == 0 and stdout and stdout.strip():
+                    parts = stdout.strip().split()
+                    if len(parts) >= 4:
+                        log(f"  [INFO] Disk space: {parts[3]} available on {parts[0]}")
+
+        except Exception as e:
+            check("SSH connection established", False, str(e))
+
+    log("")
+    all_pass = checks_failed == 0
+    if all_pass:
+        log(f"=== Pre-flight complete: {checks_passed}/{checks_total} checks passed — all clear ===")
+    else:
+        log(f"=== Pre-flight complete: {checks_passed}/{checks_total} checks passed — "
+            f"{checks_failed} failure(s) ===")
+
+    return all_pass, "\n".join(log_lines)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
