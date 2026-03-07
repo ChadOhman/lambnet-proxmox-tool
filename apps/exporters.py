@@ -49,6 +49,7 @@ KNOWN_EXPORTERS = {
         "requires_config": True,
         "env_vars": ["REDIS_ADDR"],
         "job_name": "redis",
+        "asset_version_prefix": "v",
     },
 }
 
@@ -223,9 +224,10 @@ def run_exporter_install(instance_id, log_callback=None):
             _log_cmd_output(_log, stdout, stderr, code)
 
             # Download and extract
+            vprefix = info.get("asset_version_prefix", "")
             dl_url = (
                 f"https://github.com/{info['github_repo']}/releases/download/v{latest}/"
-                f"{binary}-{latest}.linux-{dl_arch}.tar.gz"
+                f"{binary}-{vprefix}{latest}.linux-{dl_arch}.tar.gz"
             )
             _log(f"Downloading {info['display_name']} v{latest} ({dl_arch})...")
             dl_cmd = (
@@ -243,7 +245,7 @@ def run_exporter_install(instance_id, log_callback=None):
                 return False, log_lines
 
             # Install binary
-            extract_dir = f"{binary}-{latest}.linux-{dl_arch}"
+            extract_dir = f"{binary}-{vprefix}{latest}.linux-{dl_arch}"
             _log("Installing binary...")
             stdout, stderr, code = ssh.execute_sudo(
                 f"cp /tmp/{extract_dir}/{binary} /usr/local/bin/ && "
