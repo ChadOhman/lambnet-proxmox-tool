@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from models import db, Guest, ExporterInstance, GuestService, ProxmoxHost, Setting
+from models import db, Guest, Credential, ExporterInstance, GuestService, ProxmoxHost, Setting
 
 
 # ---------------------------------------------------------------------------
@@ -19,11 +19,31 @@ def _create_host(app):
     return host
 
 
-def _create_guest(app, name="masto-test", ip="10.0.0.80"):
+def _get_or_create_credential():
+    from auth import credential_store
+    cred = Credential.query.filter_by(name="test-masto-cred").first()
+    if cred:
+        return cred
+    cred = Credential(
+        name="test-masto-cred", username="root", auth_type="password",
+        encrypted_value=credential_store.encrypt("testpass"),
+        is_default=True,
+    )
+    db.session.add(cred)
+    db.session.commit()
+    return cred
+
+
+def _create_guest(app, name="masto-test", ip="10.0.0.80", with_credential=False):
     host = _create_host(app)
+    credential_id = None
+    if with_credential:
+        cred = _get_or_create_credential()
+        credential_id = cred.id
     guest = Guest(
         name=name, vmid=200, guest_type="lxc",
         proxmox_host_id=host.id, ip_address=ip,
+        credential_id=credential_id,
     )
     db.session.add(guest)
     db.session.commit()
@@ -37,12 +57,14 @@ def _create_guest(app, name="masto-test", ip="10.0.0.80"):
 class TestBuiltinExportersRegistry:
 
     def test_mastodon_in_builtin_exporters(self):
-        from apps.exporters import BUILTIN_EXPORTERS
+        from apps.exporters import BUILTIN_EXPORTERS, _build_mastodon_env_vars
         assert "mastodon" in BUILTIN_EXPORTERS
         info = BUILTIN_EXPORTERS["mastodon"]
         assert info["default_port"] == 9394
         assert info["job_name"] == "mastodon"
-        assert "MASTODON_PROMETHEUS_EXPORTER_ENABLED" in info["env_vars"]
+        # env_vars are now built dynamically via _build_mastodon_env_vars()
+        env = _build_mastodon_env_vars()
+        assert "MASTODON_PROMETHEUS_EXPORTER_ENABLED" in env
 
     def test_builtin_not_in_known(self):
         from apps.exporters import KNOWN_EXPORTERS
@@ -88,6 +110,10 @@ class TestEnableMastodonExporter:
         from apps.exporters import enable_mastodon_exporter
         with app.app_context():
             guest = _create_guest(app, name="masto-nocred", ip="10.0.0.82")
+            # Ensure no default credential exists
+            Credential.query.filter_by(is_default=True).update({"is_default": False})
+            db.session.commit()
+
             logs = []
             result = enable_mastodon_exporter(guest.id, log_callback=logs.append)
             assert result is False
@@ -99,7 +125,7 @@ class TestEnableMastodonExporter:
     def test_enable_no_ip(self, app):
         from apps.exporters import enable_mastodon_exporter
         with app.app_context():
-            guest = _create_guest(app, name="masto-noip", ip="dhcp")
+            guest = _create_guest(app, name="masto-noip", ip="dhcp", with_credential=True)
             logs = []
             result = enable_mastodon_exporter(guest.id, log_callback=logs.append)
             assert result is False
@@ -112,18 +138,9 @@ class TestEnableMastodonExporter:
     @patch("apps.exporters._regenerate_prometheus_config")
     def test_enable_success(self, mock_regen, mock_ssh_class, app):
         from apps.exporters import enable_mastodon_exporter
-        from models import Credential
-        from auth.credential_store import encrypt
 
         with app.app_context():
-            guest = _create_guest(app, name="masto-enable-ok", ip="10.0.0.83")
-            cred = Credential(
-                name="test-cred", username="root",
-                encrypted_password=encrypt("pass"),
-                is_default=True,
-            )
-            db.session.add(cred)
-            db.session.commit()
+            guest = _create_guest(app, name="masto-enable-ok", ip="10.0.0.83", with_credential=True)
 
             mock_ssh = MagicMock()
             mock_ssh.__enter__ = MagicMock(return_value=mock_ssh)
@@ -170,7 +187,6 @@ class TestEnableMastodonExporter:
 
             # cleanup
             db.session.delete(exp)
-            db.session.delete(cred)
             db.session.delete(guest)
             db.session.commit()
 
@@ -192,18 +208,9 @@ class TestDisableMastodonExporter:
     @patch("apps.exporters._regenerate_prometheus_config")
     def test_disable_success(self, mock_regen, mock_ssh_class, app):
         from apps.exporters import disable_mastodon_exporter
-        from models import Credential
-        from auth.credential_store import encrypt
 
         with app.app_context():
-            guest = _create_guest(app, name="masto-disable-ok", ip="10.0.0.84")
-            cred = Credential(
-                name="test-cred-dis", username="root",
-                encrypted_password=encrypt("pass"),
-                is_default=True,
-            )
-            db.session.add(cred)
-            db.session.commit()
+            guest = _create_guest(app, name="masto-disable-ok", ip="10.0.0.84", with_credential=True)
 
             # Pre-create an installed exporter instance
             exp = ExporterInstance(
@@ -239,7 +246,6 @@ class TestDisableMastodonExporter:
             mock_regen.assert_called_once()
 
             # cleanup
-            db.session.delete(cred)
             db.session.delete(guest)
             db.session.commit()
 
@@ -353,18 +359,21 @@ class TestMastodonMetricsHistoryRoute:
             guest = _create_guest(app, name="masto-route-test", ip="10.0.0.86")
             svc = GuestService(
                 guest_id=guest.id, service_name="nginx",
-                display_name="Nginx", status="running",
+                unit_name="nginx.service", status="running",
             )
             db.session.add(svc)
             db.session.commit()
+            svc_id = svc.id
+            guest_id = guest.id
 
-            resp = auth_client.get(f"/services/{svc.id}/mastodon/metrics-history")
-            assert resp.status_code == 400
-            data = resp.get_json()
-            assert "Not a Mastodon service" in data["error"]
+        resp = auth_client.get(f"/services/{svc_id}/mastodon/metrics-history")
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "Not a Mastodon service" in data["error"]
 
-            db.session.delete(svc)
-            db.session.delete(guest)
+        with app.app_context():
+            db.session.delete(GuestService.query.get(svc_id))
+            db.session.delete(Guest.query.get(guest_id))
             db.session.commit()
 
     def test_mastodon_service_no_data(self, app, auth_client):
@@ -372,19 +381,22 @@ class TestMastodonMetricsHistoryRoute:
             guest = _create_guest(app, name="masto-route-nodata", ip="10.0.0.87")
             svc = GuestService(
                 guest_id=guest.id, service_name="mastodon-web (puma)",
-                display_name="Mastodon Web", status="running",
+                unit_name="mastodon-web.service", status="running",
             )
             db.session.add(svc)
             db.session.commit()
+            svc_id = svc.id
+            guest_id = guest.id
 
-            resp = auth_client.get(f"/services/{svc.id}/mastodon/metrics-history")
-            assert resp.status_code == 200
-            data = resp.get_json()
-            assert data["snapshots"] == []
-            assert data["source"] == "none"
+        resp = auth_client.get(f"/services/{svc_id}/mastodon/metrics-history")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["snapshots"] == []
+        assert data["source"] == "none"
 
-            db.session.delete(svc)
-            db.session.delete(guest)
+        with app.app_context():
+            db.session.delete(GuestService.query.get(svc_id))
+            db.session.delete(Guest.query.get(guest_id))
             db.session.commit()
 
     @patch("clients.prometheus_query.PrometheusQueryClient.query_range")
@@ -393,12 +405,11 @@ class TestMastodonMetricsHistoryRoute:
             guest = _create_guest(app, name="masto-route-data", ip="10.0.0.88")
             svc = GuestService(
                 guest_id=guest.id, service_name="mastodon-web (puma)",
-                display_name="Mastodon Web", status="running",
+                unit_name="mastodon-web.service", status="running",
             )
             db.session.add(svc)
             db.session.commit()
 
-            # Set up exporter instance and prometheus settings
             exp = ExporterInstance(
                 guest_id=guest.id, exporter_type="mastodon",
                 port=9394, status="installed",
@@ -407,21 +418,24 @@ class TestMastodonMetricsHistoryRoute:
             Setting.set("prometheus_enabled", "true")
             Setting.set("prometheus_url", "http://10.0.0.5:9090")
             db.session.commit()
+            svc_id = svc.id
+            exp_id = exp.id
+            guest_id = guest.id
 
-            mock_query_range.return_value = [
-                {"values": [[1700000000, "3.14"], [1700000300, "2.72"]]}
-            ]
+        mock_query_range.return_value = [
+            {"values": [[1700000000, "3.14"], [1700000300, "2.72"]]}
+        ]
 
-            resp = auth_client.get(f"/services/{svc.id}/mastodon/metrics-history?timeframe=day")
-            assert resp.status_code == 200
-            data = resp.get_json()
-            assert data["source"] == "mastodon_exporter"
-            assert len(data["snapshots"]) == 2
+        resp = auth_client.get(f"/services/{svc_id}/mastodon/metrics-history?timeframe=day")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["source"] == "mastodon_exporter"
+        assert len(data["snapshots"]) == 2
 
-            # cleanup
-            db.session.delete(exp)
-            db.session.delete(svc)
-            db.session.delete(guest)
+        with app.app_context():
+            db.session.delete(ExporterInstance.query.get(exp_id))
+            db.session.delete(GuestService.query.get(svc_id))
+            db.session.delete(Guest.query.get(guest_id))
             db.session.commit()
 
     def test_sidekiq_service_accepted(self, app, auth_client):
@@ -430,16 +444,19 @@ class TestMastodonMetricsHistoryRoute:
             guest = _create_guest(app, name="masto-route-sq", ip="10.0.0.89")
             svc = GuestService(
                 guest_id=guest.id, service_name="mastodon-sidekiq",
-                display_name="Mastodon Sidekiq", status="running",
+                unit_name="mastodon-sidekiq.service", status="running",
             )
             db.session.add(svc)
             db.session.commit()
+            svc_id = svc.id
+            guest_id = guest.id
 
-            resp = auth_client.get(f"/services/{svc.id}/mastodon/metrics-history")
-            assert resp.status_code == 200
-            data = resp.get_json()
-            assert data["source"] == "none"
+        resp = auth_client.get(f"/services/{svc_id}/mastodon/metrics-history")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["source"] == "none"
 
-            db.session.delete(svc)
-            db.session.delete(guest)
+        with app.app_context():
+            db.session.delete(GuestService.query.get(svc_id))
+            db.session.delete(Guest.query.get(guest_id))
             db.session.commit()

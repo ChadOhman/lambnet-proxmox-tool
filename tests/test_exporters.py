@@ -1,8 +1,8 @@
 """Tests for the Prometheus exporter management system."""
 
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
-from models import db, Guest, ExporterInstance, ProxmoxHost, Setting
+from models import db, Guest, Credential, ExporterInstance, ProxmoxHost, Setting
 
 
 # ---------------------------------------------------------------------------
@@ -24,19 +24,42 @@ def _create_host(app):
     return host
 
 
-def _create_guest(app, name="test-guest", ip="10.0.0.50"):
+def _create_guest(app, name="test-guest", ip="10.0.0.50", with_credential=False):
     """Create a minimal guest for exporter tests."""
     host = _create_host(app)
+    credential_id = None
+    if with_credential:
+        cred = _get_or_create_credential()
+        credential_id = cred.id
     guest = Guest(
         name=name,
         vmid=100,
         guest_type="lxc",
         proxmox_host_id=host.id,
         ip_address=ip,
+        credential_id=credential_id,
     )
     db.session.add(guest)
     db.session.commit()
     return guest
+
+
+def _get_or_create_credential():
+    """Get or create a test credential for SSH tests."""
+    from auth import credential_store
+    cred = Credential.query.filter_by(name="test-exporter-cred").first()
+    if cred:
+        return cred
+    cred = Credential(
+        name="test-exporter-cred",
+        username="root",
+        auth_type="password",
+        encrypted_value=credential_store.encrypt("testpass"),
+        is_default=True,
+    )
+    db.session.add(cred)
+    db.session.commit()
+    return cred
 
 
 # ---------------------------------------------------------------------------
@@ -847,13 +870,14 @@ class TestEnableMastodonExporter:
         from apps.exporters import enable_mastodon_exporter
 
         with app.app_context():
+            # Guest without credential, and no default credential exists
             guest = _create_guest(app, name="masto-nocred", ip="10.0.0.80")
+            # Ensure no default credential
+            Credential.query.filter_by(is_default=True).update({"is_default": False})
+            db.session.commit()
+
             log = []
-            with patch("apps.exporters.Credential") as MockCred:
-                MockCred.query.filter_by.return_value.first.return_value = None
-                # Also patch guest.credential to be None
-                with patch.object(type(guest), "credential", new_callable=PropertyMock, return_value=None):
-                    result = enable_mastodon_exporter(guest.id, log_callback=log.append)
+            result = enable_mastodon_exporter(guest.id, log_callback=log.append)
             assert result is False
             assert any("No SSH credential" in m for m in log)
 
@@ -864,7 +888,7 @@ class TestEnableMastodonExporter:
         from apps.exporters import enable_mastodon_exporter
 
         with app.app_context():
-            guest = _create_guest(app, name="masto-noip", ip="dhcp")
+            guest = _create_guest(app, name="masto-noip", ip="dhcp", with_credential=True)
             log = []
             result = enable_mastodon_exporter(guest.id, log_callback=log.append)
             assert result is False
@@ -908,7 +932,7 @@ class TestEnableMastodonExporter:
         MockSSH.from_credential.return_value = mock_ssh
 
         with app.app_context():
-            guest = _create_guest(app, name="masto-enable-ok", ip="10.0.0.82")
+            guest = _create_guest(app, name="masto-enable-ok", ip="10.0.0.82", with_credential=True)
             log = []
             with patch("apps.exporters._regenerate_prometheus_config"):
                 result = enable_mastodon_exporter(guest.id, log_callback=log.append)
@@ -944,7 +968,7 @@ class TestEnableMastodonExporter:
         }
 
         with app.app_context():
-            guest = _create_guest(app, name="masto-enable-cfg", ip="10.0.0.83")
+            guest = _create_guest(app, name="masto-enable-cfg", ip="10.0.0.83", with_credential=True)
             log = []
             with patch("apps.exporters._regenerate_prometheus_config"):
                 result = enable_mastodon_exporter(guest.id, config=config, log_callback=log.append)
@@ -985,7 +1009,7 @@ class TestDisableMastodonExporter:
         MockSSH.from_credential.return_value = mock_ssh
 
         with app.app_context():
-            guest = _create_guest(app, name="masto-disable-ok", ip="10.0.0.84")
+            guest = _create_guest(app, name="masto-disable-ok", ip="10.0.0.84", with_credential=True)
             exp = ExporterInstance(
                 guest_id=guest.id,
                 exporter_type="mastodon",
@@ -1021,7 +1045,7 @@ class TestDisableMastodonExporter:
         MockSSH.from_credential.return_value = mock_ssh
 
         with app.app_context():
-            guest = _create_guest(app, name="masto-disable-sed", ip="10.0.0.85")
+            guest = _create_guest(app, name="masto-disable-sed", ip="10.0.0.85", with_credential=True)
             exp = ExporterInstance(
                 guest_id=guest.id,
                 exporter_type="mastodon",
@@ -1083,7 +1107,7 @@ class TestReconfigureMastodonExporter:
         MockSSH.from_credential.return_value = mock_ssh
 
         with app.app_context():
-            guest = _create_guest(app, name="masto-reconf-ok", ip="10.0.0.87")
+            guest = _create_guest(app, name="masto-reconf-ok", ip="10.0.0.87", with_credential=True)
             exp = ExporterInstance(
                 guest_id=guest.id,
                 exporter_type="mastodon",
