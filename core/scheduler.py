@@ -681,6 +681,142 @@ def _run_service_health_checks(app):
 
         logger.info(f"Service health checks complete: {checked}/{len(guests)} guests checked.")
 
+        # Feed Prometheus exporter with service health data
+        _update_prometheus_service_health(guests)
+
+
+def _update_prometheus_service_health(guests):
+    """Push service health data to the Prometheus exporter."""
+    try:
+        from clients.prometheus_exporter import update_service_health
+        for guest in guests:
+            for svc in guest.services:
+                update_service_health(
+                    svc.id, svc.service_name, guest.name,
+                    svc.unit_name or svc.service_name,
+                    svc.status or "unknown",
+                )
+    except Exception:
+        logger.debug("Failed to update Prometheus service health metrics", exc_info=True)
+
+
+def _collect_prometheus_metrics(app):
+    """Collect host and guest metrics from Proxmox and feed the Prometheus exporter.
+
+    Runs on a short interval (default 60s) to keep gauges fresh for scraping.
+    """
+    with app.app_context():
+        from models import Setting, ProxmoxHost, Guest
+        from clients.proxmox_api import ProxmoxClient
+        from clients.prometheus_exporter import (
+            update_host_metrics, update_guest_metrics, update_apt_metrics,
+            update_app_version_info,
+        )
+
+        if Setting.get("prometheus_enabled", "false") != "true":
+            return
+
+        hosts = ProxmoxHost.query.all()
+        for host in hosts:
+            try:
+                client = ProxmoxClient(host)
+                node_name = client.get_local_node_name()
+                if not node_name:
+                    continue
+
+                # Host-level metrics
+                status = client.get_node_status(node_name)
+                if status:
+                    update_host_metrics(host.id, host.name, host.host_type, status)
+
+                # Guest-level metrics — get status for all guests on this host
+                guests = Guest.query.filter_by(proxmox_host_id=host.id, enabled=True).all()
+                for guest in guests:
+                    if not guest.vmid:
+                        continue
+                    try:
+                        gstatus = client.get_guest_status(node_name, guest.vmid, guest.guest_type)
+                        if gstatus:
+                            update_guest_metrics(
+                                guest.id, guest.name, guest.guest_type,
+                                host.name, guest.vmid, gstatus,
+                            )
+                    except Exception:
+                        logger.debug("Failed to get status for guest %s", guest.name, exc_info=True)
+
+            except Exception:
+                logger.debug("Failed to collect Prometheus metrics for host %s", host.name, exc_info=True)
+
+        # APT update counts from DB
+        guests_all = Guest.query.filter_by(enabled=True).all()
+        for guest in guests_all:
+            try:
+                pending = guest.pending_update_count if hasattr(guest, "pending_update_count") else 0
+                security = guest.security_update_count if hasattr(guest, "security_update_count") else 0
+                reboot = guest.reboot_required if hasattr(guest, "reboot_required") else False
+                # Use the pending_updates method if available
+                if hasattr(guest, "pending_updates"):
+                    pkgs = guest.pending_updates()
+                    pending = len(pkgs) if pkgs else 0
+                    security = sum(1 for p in (pkgs or []) if getattr(p, "severity", "") in ("critical", "important"))
+                update_apt_metrics(guest.id, guest.name, pending, security, reboot)
+            except Exception:
+                logger.debug("Failed to update APT metrics for %s", guest.name, exc_info=True)
+
+        # Application version info
+        for app_name in ("mastodon", "ghost", "peertube", "elk", "jitsi", "prometheus"):
+            current = Setting.get(f"{app_name}_current_version", "")
+            latest = Setting.get(f"{app_name}_latest_version", "")
+            update_avail = Setting.get(f"{app_name}_update_available", "false") == "true"
+            if current or latest:
+                update_app_version_info(app_name, current, latest, update_avail)
+
+
+def _check_prometheus_release(app):
+    """Check for new Prometheus releases on GitHub."""
+    with app.app_context():
+        from models import Setting
+        import urllib.request
+        import json
+
+        if not Setting.get("prometheus_guest_id"):
+            return
+        if Setting.get("prometheus_installed", "false") != "true":
+            return
+
+        try:
+            url = "https://api.github.com/repos/prometheus/prometheus/releases/latest"
+            req = urllib.request.Request(url, headers={"User-Agent": "lambnet-proxmox-tool"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                latest = data.get("tag_name", "").lstrip("v")
+                if not latest:
+                    return
+
+            Setting.set("prometheus_latest_version", latest)
+            current = Setting.get("prometheus_current_version", "")
+
+            from apps.utils import _version_gt
+            update_available = bool(current and _version_gt(latest, current))
+            Setting.set("prometheus_update_available", "true" if update_available else "false")
+
+            if update_available:
+                logger.info("Prometheus update available: v%s -> v%s", current, latest)
+
+                # Auto-upgrade if enabled
+                if Setting.get("prometheus_auto_upgrade", "false") == "true":
+                    logger.info("Auto-upgrade enabled, starting Prometheus upgrade...")
+                    from apps.prometheus_app import run_prometheus_upgrade
+                    from auth.audit import log_action
+                    from models import db
+                    ok, _ = run_prometheus_upgrade()
+                    log_action("prometheus_upgrade", "settings", resource_name="prometheus",
+                               details={"status": "success" if ok else "error", "trigger": "auto"})
+                    db.session.commit()
+
+        except Exception as e:
+            logger.error("Failed to check Prometheus releases: %s", e)
+
 
 def init_scheduler(app):
     global _scheduler
@@ -696,6 +832,7 @@ def init_scheduler(app):
         discovery_hours = int(Setting.get("discovery_interval", "4") or 4)
         service_check_minutes = int(Setting.get("service_check_interval", "5") or 5)
         unifi_poll_minutes = int(Setting.get("unifi_api_poll_interval", "5") or 5)
+        prometheus_collect_seconds = int(Setting.get("prometheus_collect_interval", "60") or 60)
 
     # Discovery job - refresh hosts periodically
     _scheduler.add_job(
@@ -848,6 +985,28 @@ def init_scheduler(app):
         args=[app],
         id="unifi_log_purge",
         name="Purge UniFi log entries past retention period",
+        replace_existing=True,
+        max_instances=1,
+    )
+
+    # Prometheus metric collection - runs every 60s to keep gauges fresh
+    _scheduler.add_job(
+        _collect_prometheus_metrics,
+        trigger=IntervalTrigger(seconds=prometheus_collect_seconds),
+        args=[app],
+        id="prometheus_collect",
+        name="Collect metrics for Prometheus exporter",
+        replace_existing=True,
+        max_instances=1,
+    )
+
+    # Prometheus release check - runs alongside other release checks
+    _scheduler.add_job(
+        _check_prometheus_release,
+        trigger=IntervalTrigger(hours=interval_hours),
+        args=[app],
+        id="prometheus_check",
+        name="Check for Prometheus releases",
         replace_existing=True,
         max_instances=1,
     )
