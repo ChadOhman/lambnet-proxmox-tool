@@ -163,28 +163,11 @@ def create_app(test_config=None):
     from markupsafe import Markup
     import zoneinfo
 
-    @app.template_filter("timestamp_to_datetime")
-    def timestamp_to_datetime(epoch):
-        """Convert a Unix epoch timestamp to a formatted datetime string."""
-        try:
-            return datetime.fromtimestamp(int(epoch), tz=tz.utc).strftime("%Y-%m-%d %H:%M")
-        except (ValueError, TypeError, OSError):
-            return ""
-
-    @app.template_filter("local_dt")
-    def local_dt_filter(dt, fmt="%m/%d %H:%M"):
-        """Render a datetime as a <span data-utc="ISO"> element.
-
-        Server-side conversion uses zoneinfo (IANA/eggert tz database) when
-        the user has a saved timezone.  The data-utc attribute is kept so
-        client-side JS can refine or handle users without a saved timezone.
-        """
-        if dt is None:
-            return Markup("")
+    def _tz_span(dt, fmt):
+        """Return a Markup <span data-utc="ISO"> with server-side tz conversion."""
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=tz.utc)
         iso = dt.isoformat()
-        # Server-side tz conversion via zoneinfo (IANA tz data)
         user_tz = None
         try:
             from flask_login import current_user
@@ -197,6 +180,27 @@ def create_app(test_config=None):
         else:
             display = dt.strftime(fmt)
         return Markup('<span data-utc="{}">{}</span>').format(iso, display)
+
+    @app.template_filter("timestamp_to_datetime")
+    def timestamp_to_datetime(epoch):
+        """Convert a Unix epoch to a timezone-aware <span data-utc> element."""
+        try:
+            dt = datetime.fromtimestamp(int(epoch), tz=tz.utc)
+            return _tz_span(dt, "%Y-%m-%d %H:%M")
+        except (ValueError, TypeError, OSError):
+            return Markup("")
+
+    @app.template_filter("local_dt")
+    def local_dt_filter(dt, fmt="%m/%d %H:%M"):
+        """Render a datetime as a <span data-utc="ISO"> element.
+
+        Server-side conversion uses zoneinfo (IANA/eggert tz database) when
+        the user has a saved timezone.  The data-utc attribute is kept so
+        client-side JS can refine or handle users without a saved timezone.
+        """
+        if dt is None:
+            return Markup("")
+        return _tz_span(dt, fmt)
 
     # Security headers
     @app.before_request

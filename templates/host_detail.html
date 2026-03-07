@@ -521,7 +521,7 @@
             <table class="table table-dark table-sm table-hover mb-0" aria-label="Recent host activity">
                 <thead>
                     <tr>
-                        <th scope="col">Time (UTC)</th>
+                        <th scope="col">Time</th>
                         <th scope="col">User</th>
                         <th scope="col">Action</th>
                         <th scope="col">Details</th>
@@ -714,7 +714,8 @@
     }
 
     function applyStats(stats) {
-        document.getElementById('guestStatsUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+        const _tz = window.USER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
+        document.getElementById('guestStatsUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString([], {timeZone: _tz});
         table.querySelectorAll('tr[data-vmid]').forEach(row => {
             const vmid = parseInt(row.dataset.vmid, 10);
             const s = stats[vmid];

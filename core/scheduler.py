@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -491,7 +491,7 @@ def _check_app_update(app):
                 latest = data.get("tag_name", "").lstrip("v")
                 if latest:
                     Setting.set("latest_app_version", latest)
-                    Setting.set("latest_app_check", datetime.now().isoformat())
+                    Setting.set("latest_app_check", datetime.now(tz=timezone.utc).isoformat())
         except Exception as e:
             logger.error(f"Failed to check for app updates: {e}")
             return
@@ -540,7 +540,6 @@ def _purge_old_audit_logs(app):
     """Delete audit log entries older than 90 days."""
     with app.app_context():
         from models import db, AuditLog
-        from datetime import timezone
         cutoff = datetime.now(timezone.utc) - timedelta(days=90)
         deleted = AuditLog.query.filter(AuditLog.timestamp < cutoff).delete()
         db.session.commit()
@@ -552,7 +551,6 @@ def _poll_unifi_events(app):
     """Poll UniFi controller API for events and alarms and persist them."""
     with app.app_context():
         from models import Setting, db, UnifiLogEntry
-        from datetime import timezone
 
         if Setting.get("unifi_api_poll_enabled", "true") == "false":
             return
@@ -645,7 +643,6 @@ def _purge_old_unifi_logs(app):
     """Delete UniFi log entries older than the configured retention period."""
     with app.app_context():
         from models import db, Setting, UnifiLogEntry
-        from datetime import timezone
         try:
             days = int(Setting.get("unifi_log_retention_days", "60") or 60)
         except ValueError:
