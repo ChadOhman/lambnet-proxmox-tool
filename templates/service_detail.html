@@ -1009,6 +1009,37 @@
     </div>
 </div>
 
+<!-- Puma Historical Charts -->
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Historical Charts <span id="pumaChartSource" class="badge bg-secondary ms-2 d-none" style="font-size: 0.65rem;"></span></h5>
+        <div class="btn-group btn-group-sm" id="pumaChartTimeframe">
+            <button class="btn btn-outline-secondary active" data-tf="day">1 Day</button>
+            <button class="btn btn-outline-secondary" data-tf="3d">3 Days</button>
+            <button class="btn btn-outline-secondary" data-tf="week">7 Days</button>
+            <button class="btn btn-outline-secondary" data-tf="month">30 Days</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="pumaChartLoading" class="text-center text-muted py-3">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading chart data...
+        </div>
+        <div id="pumaChartError" class="text-center text-muted py-3 d-none"></div>
+        <div id="pumaCharts" class="d-none">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">Request Rate (req/sec)</div>
+                    <canvas id="puma-chart-reqrate" height="120" role="img" aria-label="Puma request rate over time"></canvas>
+                </div>
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">Response Time P95 (seconds)</div>
+                    <canvas id="puma-chart-latency" height="120" role="img" aria-label="Puma P95 response time over time"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% elif stats.type == 'sidekiq' %}
 <div class="card bg-dark mb-4">
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-list-task"></i> Sidekiq</h5></div>
@@ -1194,6 +1225,41 @@
             </table>
         </div>
         {% endif %}
+    </div>
+</div>
+
+<!-- Sidekiq Historical Charts -->
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Historical Charts <span id="sidekiqChartSource" class="badge bg-secondary ms-2 d-none" style="font-size: 0.65rem;"></span></h5>
+        <div class="btn-group btn-group-sm" id="sidekiqChartTimeframe">
+            <button class="btn btn-outline-secondary active" data-tf="day">1 Day</button>
+            <button class="btn btn-outline-secondary" data-tf="3d">3 Days</button>
+            <button class="btn btn-outline-secondary" data-tf="week">7 Days</button>
+            <button class="btn btn-outline-secondary" data-tf="month">30 Days</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="sidekiqChartLoading" class="text-center text-muted py-3">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading chart data...
+        </div>
+        <div id="sidekiqChartError" class="text-center text-muted py-3 d-none"></div>
+        <div id="sidekiqCharts" class="d-none">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="text-muted small mb-1">Job Throughput (jobs/sec)</div>
+                    <canvas id="sidekiq-chart-throughput" height="120" role="img" aria-label="Sidekiq job throughput over time"></canvas>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-muted small mb-1">Queue Latency (seconds)</div>
+                    <canvas id="sidekiq-chart-latency" height="120" role="img" aria-label="Sidekiq queue latency over time"></canvas>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-muted small mb-1">Queue Size</div>
+                    <canvas id="sidekiq-chart-qsize" height="120" role="img" aria-label="Sidekiq queue size over time"></canvas>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -2893,6 +2959,181 @@ document.querySelectorAll('#redisChartTimeframe button').forEach(btn => {
 
 document.addEventListener('DOMContentLoaded', function() { redisLoadCharts('day'); });
 {% endif %}{# stats.type == 'redis' #}
+
+{% if stats.type == 'puma' %}
+let _pumaReqChart = null;
+let _pumaLatChart = null;
+
+function pumaLoadCharts(timeframe) {
+    timeframe = timeframe || 'day';
+    if (typeof Chart === 'undefined') return;
+    document.getElementById('pumaChartLoading').classList.remove('d-none');
+    document.getElementById('pumaCharts').classList.add('d-none');
+    document.getElementById('pumaChartError').classList.add('d-none');
+
+    fetch('/services/{{ service.id }}/mastodon/metrics-history?timeframe=' + timeframe, {cache: 'no-store'})
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('pumaChartLoading').classList.add('d-none');
+        const snaps = data.snapshots || [];
+        if (!snaps.length) {
+            document.getElementById('pumaChartError').textContent = 'No historical data available.';
+            document.getElementById('pumaChartError').classList.remove('d-none');
+            return;
+        }
+        document.getElementById('pumaCharts').classList.remove('d-none');
+
+        var srcBadge = document.getElementById('pumaChartSource');
+        if (data.source && srcBadge) {
+            var srcLabels = {mastodon: 'mastodon (prometheus_exporter)', lambnet: 'Prometheus', none: 'None'};
+            srcBadge.textContent = srcLabels[data.source] || data.source;
+            srcBadge.classList.remove('d-none');
+        }
+
+        const labels = snaps.map(s => {
+            const d = new Date(s.captured_at);
+            const _ctz = window.USER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
+            return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', timeZone: _ctz});
+        });
+
+        const reqRate = snaps.map(s => s.request_rate != null ? +Number(s.request_rate).toFixed(2) : null);
+        const latP95 = snaps.map(s => s.request_duration_p95 != null ? +Number(s.request_duration_p95).toFixed(4) : null);
+
+        const chartOpts = {
+            type: 'line',
+            options: {
+                responsive: true,
+                animation: false,
+                plugins: {legend: {display: false}},
+                scales: {
+                    x: {ticks: {color: '#6c757d', maxTicksLimit: 8}, grid: {color: '#2d2d2d'}},
+                    y: {ticks: {color: '#6c757d'}, grid: {color: '#2d2d2d'}, beginAtZero: true},
+                },
+            },
+        };
+
+        function makeOrUpdate(chart, canvasId, label, dataArr, color, yCallback) {
+            var opts = JSON.parse(JSON.stringify(chartOpts));
+            if (yCallback) opts.options.scales.y.ticks.callback = yCallback;
+            if (chart) {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = dataArr;
+                chart.update();
+                return chart;
+            }
+            opts.data = {labels: labels, datasets: [{label: label, data: dataArr, borderColor: color, backgroundColor: color + '22', fill: true, tension: 0.3, pointRadius: 0}]};
+            return new Chart(document.getElementById(canvasId), opts);
+        }
+
+        _pumaReqChart = makeOrUpdate(_pumaReqChart, 'puma-chart-reqrate', 'Req/sec', reqRate, '#3b82f6');
+        _pumaLatChart = makeOrUpdate(_pumaLatChart, 'puma-chart-latency', 'P95 (s)', latP95, '#f59e0b', v => v + 's');
+    })
+    .catch(err => {
+        document.getElementById('pumaChartLoading').classList.add('d-none');
+        document.getElementById('pumaChartError').textContent = 'Failed to load chart data.';
+        document.getElementById('pumaChartError').classList.remove('d-none');
+    });
+}
+
+document.querySelectorAll('#pumaChartTimeframe button').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('#pumaChartTimeframe button').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        pumaLoadCharts(this.dataset.tf);
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function() { pumaLoadCharts('day'); });
+{% endif %}{# stats.type == 'puma' #}
+
+{% if stats.type == 'sidekiq' %}
+let _sqThroughputChart = null;
+let _sqLatencyChart = null;
+let _sqQsizeChart = null;
+
+function sidekiqLoadCharts(timeframe) {
+    timeframe = timeframe || 'day';
+    if (typeof Chart === 'undefined') return;
+    document.getElementById('sidekiqChartLoading').classList.remove('d-none');
+    document.getElementById('sidekiqCharts').classList.add('d-none');
+    document.getElementById('sidekiqChartError').classList.add('d-none');
+
+    fetch('/services/{{ service.id }}/mastodon/metrics-history?timeframe=' + timeframe, {cache: 'no-store'})
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('sidekiqChartLoading').classList.add('d-none');
+        const snaps = data.snapshots || [];
+        if (!snaps.length) {
+            document.getElementById('sidekiqChartError').textContent = 'No historical data available.';
+            document.getElementById('sidekiqChartError').classList.remove('d-none');
+            return;
+        }
+        document.getElementById('sidekiqCharts').classList.remove('d-none');
+
+        var srcBadge = document.getElementById('sidekiqChartSource');
+        if (data.source && srcBadge) {
+            var srcLabels = {mastodon: 'mastodon (prometheus_exporter)', lambnet: 'Prometheus', none: 'None'};
+            srcBadge.textContent = srcLabels[data.source] || data.source;
+            srcBadge.classList.remove('d-none');
+        }
+
+        const labels = snaps.map(s => {
+            const d = new Date(s.captured_at);
+            const _ctz = window.USER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
+            return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', timeZone: _ctz});
+        });
+
+        const throughput = snaps.map(s => s.sidekiq_throughput != null ? +Number(s.sidekiq_throughput).toFixed(2) : null);
+        const latency = snaps.map(s => s.sidekiq_queue_latency != null ? +Number(s.sidekiq_queue_latency).toFixed(2) : null);
+        const qsize = snaps.map(s => s.sidekiq_queue_size ?? null);
+
+        const chartOpts = {
+            type: 'line',
+            options: {
+                responsive: true,
+                animation: false,
+                plugins: {legend: {display: false}},
+                scales: {
+                    x: {ticks: {color: '#6c757d', maxTicksLimit: 8}, grid: {color: '#2d2d2d'}},
+                    y: {ticks: {color: '#6c757d'}, grid: {color: '#2d2d2d'}, beginAtZero: true},
+                },
+            },
+        };
+
+        function makeOrUpdate(chart, canvasId, label, dataArr, color, yCallback) {
+            var opts = JSON.parse(JSON.stringify(chartOpts));
+            if (yCallback) opts.options.scales.y.ticks.callback = yCallback;
+            if (chart) {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = dataArr;
+                chart.update();
+                return chart;
+            }
+            opts.data = {labels: labels, datasets: [{label: label, data: dataArr, borderColor: color, backgroundColor: color + '22', fill: true, tension: 0.3, pointRadius: 0}]};
+            return new Chart(document.getElementById(canvasId), opts);
+        }
+
+        _sqThroughputChart = makeOrUpdate(_sqThroughputChart, 'sidekiq-chart-throughput', 'Jobs/sec', throughput, '#3b82f6');
+        _sqLatencyChart = makeOrUpdate(_sqLatencyChart, 'sidekiq-chart-latency', 'Latency (s)', latency, '#f59e0b', v => v + 's');
+        _sqQsizeChart = makeOrUpdate(_sqQsizeChart, 'sidekiq-chart-qsize', 'Queue Size', qsize, '#ef4444');
+    })
+    .catch(err => {
+        document.getElementById('sidekiqChartLoading').classList.add('d-none');
+        document.getElementById('sidekiqChartError').textContent = 'Failed to load chart data.';
+        document.getElementById('sidekiqChartError').classList.remove('d-none');
+    });
+}
+
+document.querySelectorAll('#sidekiqChartTimeframe button').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('#sidekiqChartTimeframe button').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        sidekiqLoadCharts(this.dataset.tf);
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function() { sidekiqLoadCharts('day'); });
+{% endif %}{# stats.type == 'sidekiq' #}
 
 {% if stats.type == 'jitsi-videobridge2' and not stats.rest_api_disabled %}
 let _jvbActivityChart = null;
