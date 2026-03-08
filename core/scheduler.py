@@ -815,6 +815,25 @@ def _check_prometheus_release(app):
             logger.error("Failed to check Prometheus releases: %s", e)
 
 
+def _run_moderation_check(app):
+    """Cross-check PeerTube user emails against Mastodon registered emails."""
+    with app.app_context():
+        from models import Setting
+
+        if Setting.get("moderation_auto_ban_enabled", "false") == "false":
+            return
+        if not Setting.get("moderation_peertube_api_url"):
+            return
+
+        from core.moderation import run_moderation_check
+        ok, result = run_moderation_check()
+        if ok:
+            logger.info("Scheduled moderation check complete: %d unmatched users",
+                        len(result.get("unmatched", [])))
+        else:
+            logger.error("Scheduled moderation check failed")
+
+
 def init_scheduler(app):
     global _scheduler
 
@@ -830,6 +849,7 @@ def init_scheduler(app):
         service_check_minutes = int(Setting.get("service_check_interval", "5") or 5)
         unifi_poll_minutes = int(Setting.get("unifi_api_poll_interval", "5") or 5)
         prometheus_collect_seconds = int(Setting.get("prometheus_collect_interval", "60") or 60)
+        moderation_hours = int(Setting.get("moderation_check_interval_hours", "24") or 24)
 
     # Discovery job - refresh hosts periodically
     _scheduler.add_job(
@@ -1004,6 +1024,17 @@ def init_scheduler(app):
         args=[app],
         id="prometheus_check",
         name="Check for Prometheus releases",
+        replace_existing=True,
+        max_instances=1,
+    )
+
+    # Moderation check - cross-check PeerTube users against Mastodon emails
+    _scheduler.add_job(
+        _run_moderation_check,
+        trigger=IntervalTrigger(hours=moderation_hours),
+        args=[app],
+        id="moderation_check",
+        name="Cross-check PeerTube users against Mastodon emails",
         replace_existing=True,
         max_instances=1,
     )
