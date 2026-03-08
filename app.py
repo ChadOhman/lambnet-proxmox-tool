@@ -106,6 +106,7 @@ def create_app(test_config=None):
     from routes.services import bp as services_bp
     from routes.unifi import bp as unifi_bp
     from routes.applications import bp as applications_bp
+    from routes.moderation import bp as moderation_bp
     from routes.prometheus_metrics import bp as prometheus_metrics_bp
     from routes.prometheus_app import bp as prometheus_app_bp
 
@@ -127,6 +128,7 @@ def create_app(test_config=None):
     app.register_blueprint(unifi_bp, url_prefix="/unifi")
     app.register_blueprint(api_bp, url_prefix="/api")
     app.register_blueprint(applications_bp, url_prefix="/applications")
+    app.register_blueprint(moderation_bp, url_prefix="/moderation")
     app.register_blueprint(prometheus_metrics_bp)
     app.register_blueprint(prometheus_app_bp, url_prefix="/prometheus")
 
@@ -362,6 +364,11 @@ def _migrate_schema():
             logger.info("Adding can_view_unifi column to roles table...")
             db.session.execute(text("ALTER TABLE roles ADD COLUMN can_view_unifi BOOLEAN DEFAULT 0"))
             db.session.execute(text("UPDATE roles SET can_view_unifi = 1 WHERE name IN ('super_admin', 'admin')"))
+            db.session.commit()
+        if "can_moderate" not in role_columns:
+            logger.info("Adding can_moderate column to roles table...")
+            db.session.execute(text("ALTER TABLE roles ADD COLUMN can_moderate BOOLEAN DEFAULT 0"))
+            db.session.execute(text("UPDATE roles SET can_moderate = 1 WHERE name IN ('super_admin', 'admin')"))
             db.session.commit()
 
     if "credentials" in table_names:
