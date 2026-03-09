@@ -646,6 +646,31 @@ def redis_metrics_history(service_id):
     return jsonify({"snapshots": result, "source": "sqlite"})
 
 
+@bp.route("/<int:service_id>/mastodon/metrics-history")
+def mastodon_metrics_history(service_id):
+    from models import Setting
+
+    svc = GuestService.query.get_or_404(service_id)
+    # Accept both puma (mastodon-web) and sidekiq services
+    if not any(name in svc.service_name for name in ("mastodon", "puma", "sidekiq")):
+        return jsonify({"error": "Not a Mastodon service"}), 400
+
+    timeframe = request.args.get("timeframe", "day")
+    if Setting.get("prometheus_enabled", "false") == "true" and Setting.get("prometheus_url", ""):
+        try:
+            from clients.prometheus_query import PrometheusQueryClient, _get_exporter_target
+            prom = PrometheusQueryClient()
+            mastodon_target = _get_exporter_target(svc.guest_id, "mastodon")
+            if mastodon_target:
+                data = prom.get_mastodon_metrics(mastodon_target, timeframe)
+                if data and data.get("snapshots"):
+                    return jsonify(data)
+        except Exception:
+            logger.debug("Prometheus query failed for Mastodon metrics history")
+
+    return jsonify({"snapshots": [], "source": "none"})
+
+
 @bp.route("/<int:service_id>/stats")
 def stats(service_id):
     svc = GuestService.query.get_or_404(service_id)

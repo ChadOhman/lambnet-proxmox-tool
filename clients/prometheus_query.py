@@ -372,6 +372,30 @@ class PrometheusQueryClient:
 
         return self._run_snapshot_queries(queries, start, end, step, source="redis_exporter")
 
+    def get_mastodon_metrics(self, target, timeframe="day"):
+        """Query Mastodon built-in Prometheus exporter metrics and return snapshots."""
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        inst = f'instance="{target}"'
+        rate_interval = f"{max(step * 2, 120)}s"
+
+        queries = {
+            "request_rate": f'sum(rate(http_server_requests_total{{{inst}}}[{rate_interval}]))',
+            "request_duration_p95": (
+                f'histogram_quantile(0.95, sum(rate('
+                f'http_server_request_duration_seconds_bucket{{{inst}}}[{rate_interval}])) by (le))'
+            ),
+            "error_rate": f'sum(rate(http_server_exceptions_total{{{inst}}}[{rate_interval}]))',
+            "sidekiq_throughput": f'sum(rate(sidekiq_jobs_executed_total{{{inst}}}[{rate_interval}]))',
+            "sidekiq_failure_rate": f'sum(rate(sidekiq_jobs_failed_total{{{inst}}}[{rate_interval}]))',
+            "sidekiq_queue_latency": f'max(sidekiq_queue_latency_seconds{{{inst}}})',
+            "sidekiq_queue_size": f'sum(sidekiq_queue_size{{{inst}}})',
+            "sidekiq_active_workers": f'sum(sidekiq_active_workers{{{inst}}})',
+        }
+
+        return self._run_snapshot_queries(queries, start, end, step, source="mastodon_exporter")
+
     def get_jvb_metrics_exporter(self, target, timeframe="day"):
         """Query native JVB Prometheus metrics and return snapshots."""
         dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])

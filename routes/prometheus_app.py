@@ -91,8 +91,20 @@ def manage():
         except Exception as e:
             logger.warning("Could not check snapshot/backup support: %s", e)
 
-    from apps.exporters import KNOWN_EXPORTERS
+    from apps.exporters import KNOWN_EXPORTERS, BUILTIN_EXPORTERS
     exporter_instances = ExporterInstance.query.join(Guest).order_by(Guest.name).all()
+
+    # Check Mastodon built-in exporter status and current config
+    mastodon_guest_id = Setting.get("mastodon_guest_id", "")
+    mastodon_exporter_status = "not_configured"
+    mastodon_exporter_config = {}
+    if mastodon_guest_id:
+        masto_exp = ExporterInstance.query.filter_by(
+            guest_id=int(mastodon_guest_id), exporter_type="mastodon", status="installed"
+        ).first()
+        mastodon_exporter_status = "enabled" if masto_exp else "disabled"
+        if masto_exp and masto_exp.config:
+            mastodon_exporter_config = masto_exp.config
 
     return render_template(
         "prometheus.html",
@@ -102,6 +114,9 @@ def manage():
         snapshots_supported=snapshots_supported,
         exporter_instances=exporter_instances,
         known_exporters=KNOWN_EXPORTERS,
+        builtin_exporters=BUILTIN_EXPORTERS,
+        mastodon_exporter_status=mastodon_exporter_status,
+        mastodon_exporter_config=mastodon_exporter_config,
     )
 
 
@@ -603,3 +618,157 @@ def exporter_update_config(instance_id):
     db.session.commit()
     flash(f"Configuration updated for {info.get('display_name', instance.exporter_type)}.", "success")
     return redirect(url_for("prometheus_app.manage"))
+
+
+# ---------------------------------------------------------------------------
+# Mastodon built-in exporter
+# ---------------------------------------------------------------------------
+
+_mastodon_exporter_job = {"running": False, "success": None, "log": []}
+
+
+def _parse_mastodon_exporter_config():
+    """Parse Mastodon exporter configuration from form data."""
+    return {
+        "web_detailed_metrics": request.form.get("web_detailed_metrics") == "on",
+        "sidekiq_detailed_metrics": request.form.get("sidekiq_detailed_metrics") == "on",
+        "mode": request.form.get("mode", "external"),
+        "host": (request.form.get("host", "localhost").strip() or "localhost"),
+        "port": int(request.form.get("port", 9394) or 9394),
+    }
+
+
+@bp.route("/mastodon-exporter/enable", methods=["POST"])
+def mastodon_exporter_enable():
+    from apps.exporters import enable_mastodon_exporter
+
+    mastodon_guest_id = Setting.get("mastodon_guest_id", "")
+    if not mastodon_guest_id:
+        flash("Mastodon guest not configured. Set it in the Mastodon management page first.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    if _mastodon_exporter_job["running"]:
+        flash("A Mastodon exporter operation is already in progress.", "warning")
+        return redirect(url_for("prometheus_app.manage"))
+
+    _mastodon_exporter_job["running"] = True
+    _mastodon_exporter_job["success"] = None
+    _mastodon_exporter_job["log"] = []
+
+    guest_id = int(mastodon_guest_id)
+    config = _parse_mastodon_exporter_config()
+
+    def _run():
+        from app import create_app
+        app = create_app()
+        with app.app_context():
+            def _log(msg):
+                _mastodon_exporter_job["log"].append(msg)
+
+            try:
+                ok = enable_mastodon_exporter(guest_id, config=config, log_callback=_log)
+                _mastodon_exporter_job["success"] = ok
+            except Exception as e:
+                _mastodon_exporter_job["log"].append(f"ERROR: {e}")
+                _mastodon_exporter_job["success"] = False
+            finally:
+                _mastodon_exporter_job["running"] = False
+
+    _threading.Thread(target=_run, daemon=True).start()
+    log_action("mastodon_exporter_enable", "guest", resource_id=guest_id,
+               details={"config": config})
+    db.session.commit()
+    return redirect(url_for("prometheus_app.manage"))
+
+
+@bp.route("/mastodon-exporter/disable", methods=["POST"])
+def mastodon_exporter_disable():
+    from apps.exporters import disable_mastodon_exporter
+
+    mastodon_guest_id = Setting.get("mastodon_guest_id", "")
+    if not mastodon_guest_id:
+        flash("Mastodon guest not configured.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    if _mastodon_exporter_job["running"]:
+        flash("A Mastodon exporter operation is already in progress.", "warning")
+        return redirect(url_for("prometheus_app.manage"))
+
+    _mastodon_exporter_job["running"] = True
+    _mastodon_exporter_job["success"] = None
+    _mastodon_exporter_job["log"] = []
+
+    guest_id = int(mastodon_guest_id)
+
+    def _run():
+        from app import create_app
+        app = create_app()
+        with app.app_context():
+            def _log(msg):
+                _mastodon_exporter_job["log"].append(msg)
+
+            try:
+                ok = disable_mastodon_exporter(guest_id, _log)
+                _mastodon_exporter_job["success"] = ok
+            except Exception as e:
+                _mastodon_exporter_job["log"].append(f"ERROR: {e}")
+                _mastodon_exporter_job["success"] = False
+            finally:
+                _mastodon_exporter_job["running"] = False
+
+    _threading.Thread(target=_run, daemon=True).start()
+    log_action("mastodon_exporter_disable", "guest", resource_id=guest_id)
+    db.session.commit()
+    return redirect(url_for("prometheus_app.manage"))
+
+
+@bp.route("/mastodon-exporter/reconfigure", methods=["POST"])
+def mastodon_exporter_reconfigure():
+    from apps.exporters import reconfigure_mastodon_exporter
+
+    mastodon_guest_id = Setting.get("mastodon_guest_id", "")
+    if not mastodon_guest_id:
+        flash("Mastodon guest not configured.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    if _mastodon_exporter_job["running"]:
+        flash("A Mastodon exporter operation is already in progress.", "warning")
+        return redirect(url_for("prometheus_app.manage"))
+
+    _mastodon_exporter_job["running"] = True
+    _mastodon_exporter_job["success"] = None
+    _mastodon_exporter_job["log"] = []
+
+    guest_id = int(mastodon_guest_id)
+    config = _parse_mastodon_exporter_config()
+
+    def _run():
+        from app import create_app
+        app = create_app()
+        with app.app_context():
+            def _log(msg):
+                _mastodon_exporter_job["log"].append(msg)
+
+            try:
+                ok = reconfigure_mastodon_exporter(guest_id, config, _log)
+                _mastodon_exporter_job["success"] = ok
+            except Exception as e:
+                _mastodon_exporter_job["log"].append(f"ERROR: {e}")
+                _mastodon_exporter_job["success"] = False
+            finally:
+                _mastodon_exporter_job["running"] = False
+
+    _threading.Thread(target=_run, daemon=True).start()
+    log_action("mastodon_exporter_reconfigure", "guest", resource_id=guest_id,
+               details={"config": config})
+    db.session.commit()
+    return redirect(url_for("prometheus_app.manage"))
+
+
+@bp.route("/mastodon-exporter/status")
+def mastodon_exporter_status():
+    return jsonify({
+        "running": _mastodon_exporter_job["running"],
+        "success": _mastodon_exporter_job["success"],
+        "log": _mastodon_exporter_job["log"],
+    })
