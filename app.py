@@ -106,6 +106,7 @@ def create_app(test_config=None):
     from routes.settings import bp as settings_bp
     from routes.terminal import bp as terminal_bp
     from routes.unifi import bp as unifi_bp
+    from routes.unpoller import bp as unpoller_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -127,6 +128,7 @@ def create_app(test_config=None):
     app.register_blueprint(applications_bp, url_prefix="/applications")
     app.register_blueprint(prometheus_metrics_bp)
     app.register_blueprint(prometheus_app_bp, url_prefix="/prometheus")
+    app.register_blueprint(unpoller_bp, url_prefix="/unpoller")
 
     # Initialize WebSocket for terminal
     from routes.terminal import init_websocket

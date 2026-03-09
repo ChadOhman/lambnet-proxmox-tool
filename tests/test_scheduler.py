@@ -206,6 +206,7 @@ class TestInitScheduler:
             "unifi_log_purge",
             "prometheus_collect",
             "prometheus_check",
+            "unpoller_check",
         }
         assert expected_ids == registered_ids
 

@@ -1,9 +1,9 @@
 """
-Prometheus install and upgrade automation.
+Unpoller install and upgrade automation.
 
-Installs Prometheus from GitHub binary releases onto a target VM/CT via SSH.
-Creates a dedicated user, systemd service, and generates a prometheus.yml
-config that scrapes the mstdnca app's /metrics endpoint.
+Installs unpoller from GitHub binary releases onto the Prometheus guest via SSH.
+Creates a dedicated user, systemd service, and generates an up.conf config file
+that connects to the UniFi controller using credentials from app settings.
 """
 
 import json
@@ -20,18 +20,21 @@ from models import Guest, Setting
 
 logger = logging.getLogger(__name__)
 
+GITHUB_REPO = "unpoller/unpoller"
+DEFAULT_PORT = 9130
+
 
 # ---------------------------------------------------------------------------
 # Version check
 # ---------------------------------------------------------------------------
 
-def check_prometheus_release():
-    """Check GitHub for the latest Prometheus release.
+def check_unpoller_release():
+    """Check GitHub for the latest unpoller release.
 
     Returns (update_available, latest_version, release_url).
     """
     try:
-        url = "https://api.github.com/repos/prometheus/prometheus/releases/latest"
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
         req = urllib.request.Request(url, headers={"User-Agent": "mstdnca-proxmox-tool"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
@@ -41,20 +44,20 @@ def check_prometheus_release():
         if not latest:
             return False, "", ""
 
-        Setting.set("prometheus_latest_version", latest)
+        Setting.set("unpoller_latest_version", latest)
 
-        current = Setting.get("prometheus_current_version", "")
+        current = Setting.get("unpoller_current_version", "")
         update_available = bool(current and _version_gt(latest, current))
-        Setting.set("prometheus_update_available", "true" if update_available else "false")
+        Setting.set("unpoller_update_available", "true" if update_available else "false")
 
         return update_available, latest, release_url
     except Exception as e:
-        logger.error("Failed to check Prometheus releases: %s", e)
+        logger.error("Failed to check unpoller releases: %s", e)
         return False, "", ""
 
 
-def detect_prometheus_version(guest):
-    """Detect the installed Prometheus version on a guest via SSH.
+def detect_unpoller_version(guest):
+    """Detect the installed unpoller version on a guest via SSH.
 
     Returns (version_string, error_string).
     """
@@ -73,19 +76,19 @@ def detect_prometheus_version(guest):
     try:
         with SSHClient.from_credential(guest.ip_address, credential) as ssh:
             stdout, stderr, code = ssh.execute_sudo(
-                "/usr/local/bin/prometheus --version 2>&1 | head -1", timeout=10
+                "/usr/local/bin/unpoller --version 2>&1 | head -1", timeout=10
             )
             if code == 0 and stdout:
-                m = re.search(r"prometheus.*?version (\d+\.\d+\.\d+)", stdout)
+                m = re.search(r"(\d+\.\d+\.\d+)", stdout)
                 if m:
                     return m.group(1), None
-            return None, f"Prometheus not found (exit code {code})"
+            return None, f"Unpoller not found (exit code {code})"
     except Exception as e:
         return None, str(e)
 
 
 # ---------------------------------------------------------------------------
-# Proxmox protection (snapshot/backup)
+# Proxmox protection (snapshot/backup) — reuse from prometheus_app
 # ---------------------------------------------------------------------------
 
 def _snapshot_guest(guest):
@@ -99,8 +102,8 @@ def _snapshot_guest(guest):
         return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    snapname = f"pre-prometheus-{timestamp}"
-    description = f"Auto-snapshot before Prometheus install/upgrade at {timestamp}"
+    snapname = f"pre-unpoller-{timestamp}"
+    description = f"Auto-snapshot before unpoller install/upgrade at {timestamp}"
 
     ok, upid = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
     if not ok:
@@ -157,8 +160,8 @@ def _backup_guest(guest, storage, mode="snapshot"):
 # Install
 # ---------------------------------------------------------------------------
 
-def run_prometheus_install(log_callback=None):
-    """Install Prometheus on the configured target guest via SSH.
+def run_unpoller_install(log_callback=None):
+    """Install unpoller on the Prometheus guest via SSH.
 
     Returns (success, log_lines).
     """
@@ -174,7 +177,7 @@ def run_prometheus_install(log_callback=None):
     config = _get_config()
     guest_id = config.get("guest_id", "")
     if not guest_id:
-        _log("ERROR: Prometheus guest is not configured.")
+        _log("ERROR: Prometheus guest is not configured (unpoller installs on the same guest).")
         return False, log_lines
 
     try:
@@ -199,23 +202,32 @@ def run_prometheus_install(log_callback=None):
         _log("ERROR: Guest has no usable IP address.")
         return False, log_lines
 
-    # Get version to install
-    latest = config.get("latest_version") or Setting.get("prometheus_latest_version", "")
-    if not latest:
-        _log("Checking for latest Prometheus version...")
-        _, latest, _ = check_prometheus_release()
-    if not latest:
-        _log("ERROR: Could not determine latest Prometheus version.")
+    # Validate UniFi controller settings
+    unifi_url = config.get("unifi_url", "")
+    unifi_user = config.get("unifi_user", "")
+    unifi_pass = config.get("unifi_pass", "")
+    if not unifi_url or not unifi_user or not unifi_pass:
+        _log("ERROR: UniFi controller URL, username, and password are required.")
+        _log("Configure them in Settings > UniFi Controller.")
         return False, log_lines
 
-    _log(f"Installing Prometheus v{latest} on {guest.name} ({guest.ip_address})...")
+    # Get version to install
+    latest = Setting.get("unpoller_latest_version", "")
+    if not latest:
+        _log("Checking for latest unpoller version...")
+        _, latest, _ = check_unpoller_release()
+    if not latest:
+        _log("ERROR: Could not determine latest unpoller version.")
+        return False, log_lines
 
-    # Protection (snapshot)
-    protection_type = config.get("protection_type", "snapshot")
+    _log(f"Installing unpoller v{latest} on {guest.name} ({guest.ip_address})...")
+
+    # Protection (snapshot) — use Prometheus protection settings
+    protection_type = Setting.get("prometheus_protection_type", "snapshot")
     _log(f"Creating {protection_type} protection...")
     if protection_type == "backup":
-        storage = config.get("backup_storage", "")
-        mode = config.get("backup_mode", "snapshot")
+        storage = Setting.get("prometheus_backup_storage", "")
+        mode = Setting.get("prometheus_backup_mode", "snapshot")
         ok, msg = _backup_guest(guest, storage, mode)
     else:
         ok, msg = _snapshot_guest(guest)
@@ -224,17 +236,16 @@ def run_prometheus_install(log_callback=None):
         _log("ERROR: Protection failed, aborting install.")
         return False, log_lines
 
-    # Determine architecture
     try:
         with SSHClient.from_credential(guest.ip_address, credential) as ssh:
             arch_out, _, _ = ssh.execute_sudo("dpkg --print-architecture", timeout=10)
             arch = (arch_out or "amd64").strip()
-            prom_arch = "arm64" if arch == "arm64" else "amd64"
+            up_arch = "arm64" if arch == "arm64" else "amd64"
 
-            # Create prometheus user
-            _log("Creating prometheus user...")
+            # Create unpoller user
+            _log("Creating unpoller user...")
             stdout, stderr, code = ssh.execute_sudo(
-                "id prometheus >/dev/null 2>&1 || useradd --no-create-home --shell /bin/false prometheus",
+                "id unpoller >/dev/null 2>&1 || useradd --no-create-home --shell /bin/false unpoller",
                 timeout=15,
             )
             _log_cmd_output(_log, stdout, stderr, code)
@@ -242,8 +253,7 @@ def run_prometheus_install(log_callback=None):
             # Create directories
             _log("Creating directories...")
             stdout, stderr, code = ssh.execute_sudo(
-                "mkdir -p /etc/prometheus /var/lib/prometheus && "
-                "chown prometheus:prometheus /var/lib/prometheus",
+                "mkdir -p /etc/unpoller",
                 timeout=15,
             )
             _log_cmd_output(_log, stdout, stderr, code)
@@ -251,73 +261,56 @@ def run_prometheus_install(log_callback=None):
                 _log("ERROR: Failed to create directories.")
                 return False, log_lines
 
-            # Download and extract Prometheus
+            # Download and extract unpoller
             dl_url = (
-                f"https://github.com/prometheus/prometheus/releases/download/v{latest}/"
-                f"prometheus-{latest}.linux-{prom_arch}.tar.gz"
+                f"https://github.com/{GITHUB_REPO}/releases/download/v{latest}/"
+                f"unpoller.{up_arch}.linux.gz"
             )
-            _log(f"Downloading Prometheus v{latest} ({prom_arch})...")
+            _log(f"Downloading unpoller v{latest} ({up_arch})...")
             dl_cmd = (
                 f"cd /tmp && "
-                f"(curl -sSL -o prometheus.tar.gz '{dl_url}' 2>/dev/null "
-                f"|| wget -q -O prometheus.tar.gz '{dl_url}') && "
-                f"tar xzf prometheus.tar.gz"
+                f"(curl -sSL -o unpoller.gz '{dl_url}' 2>/dev/null "
+                f"|| wget -q -O unpoller.gz '{dl_url}') && "
+                f"gunzip -f unpoller.gz && chmod +x unpoller"
             )
             stdout, stderr, code = ssh.execute_sudo(dl_cmd, timeout=120)
             _log_cmd_output(_log, stdout, stderr, code)
             if code != 0:
-                _log("ERROR: Failed to download Prometheus.")
+                _log("ERROR: Failed to download unpoller.")
                 return False, log_lines
 
-            # Install binaries
-            extract_dir = f"prometheus-{latest}.linux-{prom_arch}"
-            _log("Installing binaries...")
+            # Install binary
+            _log("Installing binary...")
             stdout, stderr, code = ssh.execute_sudo(
-                f"cp /tmp/{extract_dir}/prometheus /usr/local/bin/ && "
-                f"cp /tmp/{extract_dir}/promtool /usr/local/bin/ && "
-                "chown prometheus:prometheus /usr/local/bin/prometheus /usr/local/bin/promtool",
+                "cp /tmp/unpoller /usr/local/bin/unpoller && "
+                "chown root:root /usr/local/bin/unpoller",
                 timeout=30,
             )
             _log_cmd_output(_log, stdout, stderr, code)
             if code != 0:
-                _log("ERROR: Failed to install binaries.")
+                _log("ERROR: Failed to install binary.")
                 return False, log_lines
 
-            # Copy console files
+            # Generate config
+            _log("Generating unpoller config...")
+            conf = _generate_unpoller_config(config)
             stdout, stderr, code = ssh.execute_sudo(
-                f"cp -r /tmp/{extract_dir}/consoles /etc/prometheus/ && "
-                f"cp -r /tmp/{extract_dir}/console_libraries /etc/prometheus/ && "
-                "chown -R prometheus:prometheus /etc/prometheus",
-                timeout=15,
-            )
-            _log_cmd_output(_log, stdout, stderr, code)
-
-            # Generate prometheus.yml
-            mstdnca_url = config.get("mstdnca_metrics_url", "")
-            auth_token = Setting.get("prometheus_auth_token", "")
-            retention_days = config.get("retention_days", "365")
-
-            _log("Generating prometheus.yml...")
-            extra_scrape = ""
-            if Setting.get("unpoller_installed", "false") == "true":
-                from apps.unpoller import get_unpoller_scrape_config
-                extra_scrape = get_unpoller_scrape_config(guest.ip_address)
-            yml = _generate_prometheus_yml(mstdnca_url, auth_token, extra_scrape_configs=extra_scrape)
-            # Write via heredoc to avoid shell escaping issues
-            stdout, stderr, code = ssh.execute_sudo(
-                f"cat > /etc/prometheus/prometheus.yml << 'PROMEOF'\n{yml}\nPROMEOF",
+                f"cat > /etc/unpoller/up.conf << 'UPEOF'\n{conf}\nUPEOF",
                 timeout=15,
             )
             _log_cmd_output(_log, stdout, stderr, code)
             if code != 0:
-                _log("ERROR: Failed to write prometheus.yml.")
+                _log("ERROR: Failed to write config.")
                 return False, log_lines
+
+            # Secure the config file (contains credentials)
+            ssh.execute_sudo("chmod 640 /etc/unpoller/up.conf && chown root:unpoller /etc/unpoller/up.conf", timeout=10)
 
             # Create systemd service
             _log("Creating systemd service...")
-            service_content = _generate_systemd_unit(retention_days)
+            service_content = _generate_systemd_unit()
             stdout, stderr, code = ssh.execute_sudo(
-                f"cat > /etc/systemd/system/prometheus.service << 'SVCEOF'\n{service_content}\nSVCEOF",
+                f"cat > /etc/systemd/system/unpoller.service << 'SVCEOF'\n{service_content}\nSVCEOF",
                 timeout=15,
             )
             _log_cmd_output(_log, stdout, stderr, code)
@@ -326,40 +319,44 @@ def run_prometheus_install(log_callback=None):
                 return False, log_lines
 
             # Enable and start
-            _log("Starting Prometheus...")
+            _log("Starting unpoller...")
             stdout, stderr, code = ssh.execute_sudo(
-                "systemctl daemon-reload && systemctl enable prometheus && systemctl start prometheus",
+                "systemctl daemon-reload && systemctl enable unpoller && systemctl start unpoller",
                 timeout=30,
             )
             _log_cmd_output(_log, stdout, stderr, code)
             if code != 0:
-                _log("ERROR: Failed to start Prometheus.")
+                _log("ERROR: Failed to start unpoller.")
                 return False, log_lines
 
             # Verify it's running
             time.sleep(3)
             stdout, stderr, code = ssh.execute_sudo(
-                "systemctl is-active prometheus", timeout=10
+                "systemctl is-active unpoller", timeout=10
             )
             if code != 0 or (stdout or "").strip() != "active":
-                _log("WARNING: Prometheus may not be running. Check logs with: journalctl -u prometheus")
+                _log("WARNING: Unpoller may not be running. Check logs with: journalctl -u unpoller")
 
             # Clean up
-            ssh.execute_sudo(f"rm -rf /tmp/prometheus.tar.gz /tmp/{extract_dir}", timeout=15)
+            ssh.execute_sudo("rm -f /tmp/unpoller /tmp/unpoller.gz", timeout=15)
 
-            _log(f"Prometheus v{latest} installed successfully.")
+            _log(f"Unpoller v{latest} installed successfully.")
 
             # Update settings
-            Setting.set("prometheus_installed", "true")
-            Setting.set("prometheus_current_version", latest)
-            Setting.set("prometheus_update_available", "false")
+            Setting.set("unpoller_installed", "true")
+            Setting.set("unpoller_current_version", latest)
+            Setting.set("unpoller_update_available", "false")
             db.session.commit()
+
+            # Regenerate prometheus.yml to include unpoller scrape target
+            _log("Updating prometheus.yml with unpoller scrape target...")
+            _update_prometheus_config(ssh, guest, _log)
 
             return True, log_lines
 
     except Exception as e:
         _log(f"FATAL ERROR: {e}")
-        logger.exception("Prometheus install failed")
+        logger.exception("Unpoller install failed")
         return False, log_lines
 
 
@@ -367,8 +364,8 @@ def run_prometheus_install(log_callback=None):
 # Upgrade
 # ---------------------------------------------------------------------------
 
-def run_prometheus_upgrade(log_callback=None):
-    """Upgrade Prometheus on the configured target guest."""
+def run_unpoller_upgrade(log_callback=None):
+    """Upgrade unpoller on the Prometheus guest."""
     from models import Credential, db
 
     log = log_callback or (lambda msg: None)
@@ -406,19 +403,22 @@ def run_prometheus_upgrade(log_callback=None):
         _log("ERROR: Guest has no usable IP address.")
         return False, log_lines
 
-    latest = Setting.get("prometheus_latest_version", "")
-    current = Setting.get("prometheus_current_version", "")
+    latest = Setting.get("unpoller_latest_version", "")
+    current = Setting.get("unpoller_current_version", "")
     if not latest:
         _log("ERROR: No target version available.")
         return False, log_lines
 
-    _log(f"Upgrading Prometheus from v{current} to v{latest} on {guest.name}...")
+    _log(f"Upgrading unpoller from v{current} to v{latest} on {guest.name}...")
 
     # Protection
-    protection_type = config.get("protection_type", "snapshot")
+    protection_type = Setting.get("prometheus_protection_type", "snapshot")
     _log(f"Creating {protection_type} protection...")
     if protection_type == "backup":
-        ok, msg = _backup_guest(guest, config.get("backup_storage", ""), config.get("backup_mode", "snapshot"))
+        ok, msg = _backup_guest(
+            guest, Setting.get("prometheus_backup_storage", ""),
+            Setting.get("prometheus_backup_mode", "snapshot"),
+        )
     else:
         ok, msg = _snapshot_guest(guest)
     _log(msg)
@@ -430,19 +430,19 @@ def run_prometheus_upgrade(log_callback=None):
         with SSHClient.from_credential(guest.ip_address, credential) as ssh:
             arch_out, _, _ = ssh.execute_sudo("dpkg --print-architecture", timeout=10)
             arch = (arch_out or "amd64").strip()
-            prom_arch = "arm64" if arch == "arm64" else "amd64"
+            up_arch = "arm64" if arch == "arm64" else "amd64"
 
             # Download new version
             dl_url = (
-                f"https://github.com/prometheus/prometheus/releases/download/v{latest}/"
-                f"prometheus-{latest}.linux-{prom_arch}.tar.gz"
+                f"https://github.com/{GITHUB_REPO}/releases/download/v{latest}/"
+                f"unpoller.{up_arch}.linux.gz"
             )
-            _log(f"Downloading Prometheus v{latest}...")
+            _log(f"Downloading unpoller v{latest}...")
             dl_cmd = (
                 f"cd /tmp && "
-                f"(curl -sSL -o prometheus.tar.gz '{dl_url}' 2>/dev/null "
-                f"|| wget -q -O prometheus.tar.gz '{dl_url}') && "
-                f"tar xzf prometheus.tar.gz"
+                f"(curl -sSL -o unpoller.gz '{dl_url}' 2>/dev/null "
+                f"|| wget -q -O unpoller.gz '{dl_url}') && "
+                f"gunzip -f unpoller.gz && chmod +x unpoller"
             )
             stdout, stderr, code = ssh.execute_sudo(dl_cmd, timeout=120)
             _log_cmd_output(_log, stdout, stderr, code)
@@ -451,44 +451,42 @@ def run_prometheus_upgrade(log_callback=None):
                 return False, log_lines
 
             # Stop service
-            _log("Stopping Prometheus...")
-            ssh.execute_sudo("systemctl stop prometheus", timeout=30)
+            _log("Stopping unpoller...")
+            ssh.execute_sudo("systemctl stop unpoller", timeout=30)
 
-            # Replace binaries
-            extract_dir = f"prometheus-{latest}.linux-{prom_arch}"
-            _log("Replacing binaries...")
+            # Replace binary
+            _log("Replacing binary...")
             stdout, stderr, code = ssh.execute_sudo(
-                f"cp /tmp/{extract_dir}/prometheus /usr/local/bin/ && "
-                f"cp /tmp/{extract_dir}/promtool /usr/local/bin/ && "
-                "chown prometheus:prometheus /usr/local/bin/prometheus /usr/local/bin/promtool",
+                "cp /tmp/unpoller /usr/local/bin/unpoller && "
+                "chown root:root /usr/local/bin/unpoller",
                 timeout=30,
             )
             _log_cmd_output(_log, stdout, stderr, code)
             if code != 0:
-                _log("ERROR: Failed to replace binaries.")
+                _log("ERROR: Failed to replace binary.")
                 return False, log_lines
 
             # Start service
-            _log("Starting Prometheus...")
-            stdout, stderr, code = ssh.execute_sudo("systemctl start prometheus", timeout=30)
+            _log("Starting unpoller...")
+            stdout, stderr, code = ssh.execute_sudo("systemctl start unpoller", timeout=30)
             _log_cmd_output(_log, stdout, stderr, code)
             if code != 0:
-                _log("ERROR: Failed to start Prometheus after upgrade.")
+                _log("ERROR: Failed to start unpoller after upgrade.")
                 return False, log_lines
 
             # Clean up
-            ssh.execute_sudo(f"rm -rf /tmp/prometheus.tar.gz /tmp/{extract_dir}", timeout=15)
+            ssh.execute_sudo("rm -f /tmp/unpoller /tmp/unpoller.gz", timeout=15)
 
-            _log(f"Prometheus upgraded to v{latest} successfully.")
-            Setting.set("prometheus_current_version", latest)
-            Setting.set("prometheus_update_available", "false")
+            _log(f"Unpoller upgraded to v{latest} successfully.")
+            Setting.set("unpoller_current_version", latest)
+            Setting.set("unpoller_update_available", "false")
             db.session.commit()
 
             return True, log_lines
 
     except Exception as e:
         _log(f"FATAL ERROR: {e}")
-        logger.exception("Prometheus upgrade failed")
+        logger.exception("Unpoller upgrade failed")
         return False, log_lines
 
 
@@ -496,11 +494,8 @@ def run_prometheus_upgrade(log_callback=None):
 # Pre-flight check
 # ---------------------------------------------------------------------------
 
-def run_prometheus_preflight(log_callback=None):
-    """Run read-only pre-flight checks before Prometheus install or upgrade.
-
-    Validates configuration, Proxmox guest status, SSH connectivity,
-    and Prometheus-specific prerequisites.
+def run_unpoller_preflight(log_callback=None):
+    """Run read-only pre-flight checks before unpoller install or upgrade.
 
     Returns (all_pass: bool, log_output: str).
     """
@@ -531,7 +526,7 @@ def run_prometheus_preflight(log_callback=None):
                 msg += f" — {fail_msg}"
             log(msg)
 
-    log("=== Prometheus Pre-flight Check ===")
+    log("=== Unpoller Pre-flight Check ===")
     log("")
 
     # ── A. Configuration ──────────────────────────────────────────────────────
@@ -542,18 +537,18 @@ def run_prometheus_preflight(log_callback=None):
     if guest_id:
         check("Prometheus guest configured", True)
     else:
-        check("Prometheus guest configured", False, "not set in settings")
+        check("Prometheus guest configured", False, "not set in Prometheus settings")
         config_ok = False
 
-    protection_type = config.get("protection_type", "snapshot")
-    backup_storage = config.get("backup_storage", "")
-    if protection_type == "backup":
-        if backup_storage:
-            check("Backup storage configured", True)
-        else:
-            check("Backup storage configured", False,
-                  "backup protection selected but no storage configured")
-            config_ok = False
+    unifi_url = config.get("unifi_url", "")
+    unifi_user = config.get("unifi_user", "")
+    unifi_pass = config.get("unifi_pass", "")
+    check("UniFi controller URL configured", bool(unifi_url), "set it in Settings > UniFi Controller")
+    check("UniFi username configured", bool(unifi_user), "set it in Settings > UniFi Controller")
+    check("UniFi password configured", bool(unifi_pass), "set it in Settings > UniFi Controller")
+
+    if not unifi_url or not unifi_user or not unifi_pass:
+        config_ok = False
 
     if not config_ok:
         log("")
@@ -586,12 +581,6 @@ def run_prometheus_preflight(log_callback=None):
                 status = client.get_guest_status(node, app_guest.vmid, app_guest.guest_type)
                 check(f"{app_guest.name} running", status == "running",
                       f"current status: {status}")
-                if protection_type == "snapshot":
-                    supports_snap = client.guest_supports_snapshot(
-                        node, app_guest.vmid, app_guest.guest_type
-                    )
-                    check(f"{app_guest.name} supports snapshots", supports_snap,
-                          "storage does not support snapshots — switch to Backup protection")
         except Exception as e:
             check(f"{app_guest.name} Proxmox reachable", False, str(e))
     else:
@@ -618,7 +607,7 @@ def run_prometheus_preflight(log_callback=None):
             with SSHClient.from_credential(app_guest.ip_address, credential) as ssh:
                 check("SSH connection established", True)
 
-                # Check download tool available (curl or wget)
+                # Check download tool available
                 stdout, stderr, code = ssh.execute_sudo(
                     "command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 && echo ok",
                     timeout=10,
@@ -627,68 +616,53 @@ def run_prometheus_preflight(log_callback=None):
                       code == 0 and "ok" in (stdout or ""),
                       "neither curl nor wget found — install one before proceeding")
 
-                # Check if prometheus binary exists
+                # Check if unpoller binary exists
                 stdout, stderr, code = ssh.execute_sudo(
-                    "test -f /usr/local/bin/prometheus && echo ok", timeout=10
+                    "test -f /usr/local/bin/unpoller && echo ok", timeout=10
                 )
-                prom_installed = code == 0 and "ok" in (stdout or "")
-                if prom_installed:
-                    log("  [INFO] Prometheus binary found at /usr/local/bin/prometheus")
+                up_installed = code == 0 and "ok" in (stdout or "")
+                if up_installed:
+                    log("  [INFO] Unpoller binary found at /usr/local/bin/unpoller")
                 else:
-                    log("  [INFO] Prometheus binary not found — fresh install expected")
+                    log("  [INFO] Unpoller binary not found — fresh install expected")
 
-                # Check prometheus user
-                stdout, stderr, code = ssh.execute_sudo("id prometheus 2>/dev/null", timeout=10)
+                # Check unpoller user
+                stdout, stderr, code = ssh.execute_sudo("id unpoller 2>/dev/null", timeout=10)
                 if code == 0:
-                    log("  [INFO] prometheus user exists")
+                    log("  [INFO] unpoller user exists")
                 else:
-                    log("  [INFO] prometheus user does not exist — will be created on install")
+                    log("  [INFO] unpoller user does not exist — will be created on install")
 
-                # Check directories
+                # Check Prometheus is running (since unpoller scrapes are served to Prometheus)
                 stdout, stderr, code = ssh.execute_sudo(
-                    "test -d /etc/prometheus && echo ok", timeout=10
+                    "systemctl is-active prometheus 2>/dev/null", timeout=10
                 )
-                if code == 0 and "ok" in (stdout or ""):
-                    log("  [INFO] /etc/prometheus exists")
+                prom_status = (stdout or "").strip()
+                if prom_status == "active":
+                    check("Prometheus service running", True)
                 else:
-                    log("  [INFO] /etc/prometheus does not exist — will be created on install")
-
-                stdout, stderr, code = ssh.execute_sudo(
-                    "test -d /var/lib/prometheus && echo ok", timeout=10
-                )
-                if code == 0 and "ok" in (stdout or ""):
-                    log("  [INFO] /var/lib/prometheus exists")
-                else:
-                    log("  [INFO] /var/lib/prometheus does not exist — will be created on install")
+                    check("Prometheus service running", False,
+                          f"status: {prom_status or 'not found'} — install Prometheus first")
 
                 # Systemd service status (informational)
-                if prom_installed:
+                if up_installed:
                     stdout, stderr, code = ssh.execute_sudo(
-                        "systemctl is-active prometheus 2>/dev/null", timeout=10
+                        "systemctl is-active unpoller 2>/dev/null", timeout=10
                     )
                     svc_status = (stdout or "").strip()
                     if svc_status == "active":
-                        log("  [INFO] prometheus service is active")
+                        log("  [INFO] unpoller service is active")
                     elif svc_status:
-                        log(f"  [WARN] prometheus service status: {svc_status}")
+                        log(f"  [WARN] unpoller service status: {svc_status}")
 
-                    # Current version (informational)
+                    # Current version
                     stdout, stderr, code = ssh.execute_sudo(
-                        "/usr/local/bin/prometheus --version 2>&1 | head -1", timeout=10
+                        "/usr/local/bin/unpoller --version 2>&1 | head -1", timeout=10
                     )
                     if code == 0 and stdout:
-                        m = re.search(r"prometheus.*?version (\d+\.\d+\.\d+)", stdout)
+                        m = re.search(r"(\d+\.\d+\.\d+)", stdout)
                         if m:
                             log(f"  [INFO] Current version: {m.group(1)}")
-
-                # Disk space on /var/lib/prometheus (informational)
-                stdout, stderr, code = ssh.execute_sudo(
-                    "df -h /var/lib/prometheus 2>/dev/null | tail -1", timeout=10
-                )
-                if code == 0 and stdout and stdout.strip():
-                    parts = stdout.strip().split()
-                    if len(parts) >= 4:
-                        log(f"  [INFO] Disk space: {parts[3]} available on {parts[0]}")
 
         except Exception as e:
             check("SSH connection established", False, str(e))
@@ -705,79 +679,208 @@ def run_prometheus_preflight(log_callback=None):
 
 
 # ---------------------------------------------------------------------------
+# Regenerate config (update credentials without reinstall)
+# ---------------------------------------------------------------------------
+
+def run_unpoller_reconfig(log_callback=None):
+    """Regenerate unpoller config and restart the service.
+
+    Returns (success, log_lines).
+    """
+    from models import Credential
+
+    log = log_callback or (lambda msg: None)
+    log_lines = []
+
+    def _log(msg):
+        log_lines.append(msg)
+        log(msg)
+
+    config = _get_config()
+    guest_id = config.get("guest_id", "")
+    if not guest_id:
+        _log("ERROR: Prometheus guest is not configured.")
+        return False, log_lines
+
+    try:
+        guest = Guest.query.get(int(guest_id))
+    except (TypeError, ValueError):
+        _log("ERROR: Invalid guest ID.")
+        return False, log_lines
+
+    if not guest:
+        _log("ERROR: Guest not found.")
+        return False, log_lines
+
+    credential = guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        _log("ERROR: No SSH credential configured.")
+        return False, log_lines
+
+    has_ip = guest.ip_address and guest.ip_address.lower() not in ("dhcp", "dhcp6", "auto")
+    if not has_ip:
+        _log("ERROR: Guest has no usable IP address.")
+        return False, log_lines
+
+    _log("Regenerating unpoller config...")
+
+    try:
+        with SSHClient.from_credential(guest.ip_address, credential) as ssh:
+            conf = _generate_unpoller_config(config)
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cat > /etc/unpoller/up.conf << 'UPEOF'\n{conf}\nUPEOF",
+                timeout=15,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to write config.")
+                return False, log_lines
+
+            ssh.execute_sudo("chmod 640 /etc/unpoller/up.conf && chown root:unpoller /etc/unpoller/up.conf", timeout=10)
+
+            _log("Restarting unpoller...")
+            stdout, stderr, code = ssh.execute_sudo("systemctl restart unpoller", timeout=30)
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to restart unpoller.")
+                return False, log_lines
+
+            _log("Unpoller config updated and service restarted.")
+            return True, log_lines
+
+    except Exception as e:
+        _log(f"FATAL ERROR: {e}")
+        logger.exception("Unpoller reconfig failed")
+        return False, log_lines
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _get_config():
-    """Read all Prometheus settings into a dict."""
+    """Read all relevant settings into a dict."""
     return {
         "guest_id": Setting.get("prometheus_guest_id", ""),
-        "url": Setting.get("prometheus_url", ""),
-        "retention_days": Setting.get("prometheus_retention_days", "365"),
-        "protection_type": Setting.get("prometheus_protection_type", "snapshot"),
-        "backup_storage": Setting.get("prometheus_backup_storage", ""),
-        "backup_mode": Setting.get("prometheus_backup_mode", "snapshot"),
-        "mstdnca_metrics_url": Setting.get("prometheus_mstdnca_metrics_url", ""),
-        "latest_version": Setting.get("prometheus_latest_version", ""),
+        "unifi_url": Setting.get("unifi_url", ""),
+        "unifi_user": Setting.get("unifi_username", ""),
+        "unifi_pass": Setting.get("unifi_password", ""),
+        "unifi_site": Setting.get("unpoller_site_name", "default"),
+        "metric_prefix": Setting.get("unpoller_metric_prefix", "unpoller"),
+        "listen_port": Setting.get("unpoller_listen_port", str(DEFAULT_PORT)),
     }
 
 
-def _generate_prometheus_yml(mstdnca_metrics_url, auth_token="", extra_scrape_configs=""):
-    """Generate a prometheus.yml config file."""
-    scrape_configs = """  - job_name: "prometheus"
-    static_configs:
-      - targets: ["localhost:9090"]"""
+def _generate_unpoller_config(config):
+    """Generate the unpoller up.conf TOML config file."""
+    unifi_url = config.get("unifi_url", "")
+    unifi_user = config.get("unifi_user", "")
+    unifi_pass = config.get("unifi_pass", "")
+    site = config.get("unifi_site", "default")
+    prefix = config.get("metric_prefix", "unpoller")
+    port = config.get("listen_port", str(DEFAULT_PORT))
 
-    if mstdnca_metrics_url:
-        auth_section = ""
-        if auth_token:
-            auth_section = f"""
-    authorization:
-      type: Bearer
-      credentials: "{auth_token}" """
+    # Ensure URL has https:// prefix
+    if unifi_url and not unifi_url.startswith("http"):
+        unifi_url = f"https://{unifi_url}"
 
-        scrape_configs += f"""
+    return f"""# Unpoller configuration — managed by mstdnca-proxmox-tool
+# Do not edit manually; changes will be overwritten on reconfigure.
 
-  - job_name: "mstdnca"
-    scrape_interval: 60s
-    static_configs:
-      - targets: ["{mstdnca_metrics_url}"]{auth_section}"""
+[poller]
+  debug = false
+  quiet = false
 
-    if extra_scrape_configs:
-        scrape_configs += extra_scrape_configs
+[prometheus]
+  disable = false
+  http_listen = "0.0.0.0:{port}"
+  report_errors = false
+  namespace = "{prefix}"
 
-    return f"""global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+[influxdb]
+  disable = true
 
-scrape_configs:
-{scrape_configs}
+[loki]
+  disable = true
+
+[[unifi.controller]]
+  url = "{unifi_url}"
+  user = "{unifi_user}"
+  pass = "{unifi_pass}"
+  sites = ["{site}"]
+  save_ids = true
+  save_events = false
+  save_alarms = false
+  save_anomalies = false
+  save_dpi = true
+  save_sites = true
+  verify_ssl = false
 """
 
 
-def _generate_systemd_unit(retention_days="365"):
-    """Generate the Prometheus systemd service unit."""
-    return f"""[Unit]
-Description=Prometheus Monitoring System
-Documentation=https://prometheus.io/docs/
+def _generate_systemd_unit():
+    """Generate the unpoller systemd service unit."""
+    return """[Unit]
+Description=Unpoller — UniFi Prometheus Exporter
+Documentation=https://unpoller.com
 Wants=network-online.target
 After=network-online.target
 
 [Service]
-User=prometheus
-Group=prometheus
+User=unpoller
+Group=unpoller
 Type=simple
-ExecStart=/usr/local/bin/prometheus \\
-  --config.file=/etc/prometheus/prometheus.yml \\
-  --storage.tsdb.path=/var/lib/prometheus/ \\
-  --storage.tsdb.retention.time={retention_days}d \\
-  --web.console.templates=/etc/prometheus/consoles \\
-  --web.console.libraries=/etc/prometheus/console_libraries \\
-  --web.listen-address=0.0.0.0:9090
-ExecReload=/bin/kill -HUP $MAINPID
+ExecStart=/usr/local/bin/unpoller --config /etc/unpoller/up.conf
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 """
+
+
+def _update_prometheus_config(ssh, guest, _log):
+    """Regenerate prometheus.yml on the guest to include unpoller scrape target."""
+    try:
+        from apps.prometheus_app import _generate_prometheus_yml
+
+        mstdnca_url = Setting.get("prometheus_mstdnca_metrics_url", "")
+        auth_token = Setting.get("prometheus_auth_token", "")
+        extra_scrape = get_unpoller_scrape_config(guest.ip_address)
+        yml = _generate_prometheus_yml(mstdnca_url, auth_token, extra_scrape_configs=extra_scrape)
+
+        stdout, stderr, code = ssh.execute_sudo(
+            f"cat > /etc/prometheus/prometheus.yml << 'PROMEOF'\n{yml}\nPROMEOF",
+            timeout=15,
+        )
+        if code != 0:
+            _log("WARNING: Failed to update prometheus.yml.")
+            return
+
+        # Reload Prometheus to pick up the new config
+        stdout, stderr, code = ssh.execute_sudo(
+            "systemctl reload prometheus 2>/dev/null || systemctl restart prometheus",
+            timeout=30,
+        )
+        if code == 0:
+            _log("Prometheus config updated and reloaded.")
+        else:
+            _log("WARNING: Failed to reload Prometheus after config update.")
+    except Exception as e:
+        _log(f"WARNING: Could not update Prometheus config: {e}")
+
+
+def get_unpoller_scrape_config(guest_ip, port=None):
+    """Return a Prometheus scrape config snippet for unpoller.
+
+    Used by the Prometheus config generator to include unpoller as a scrape target.
+    """
+    port = port or Setting.get("unpoller_listen_port", str(DEFAULT_PORT))
+    return f"""
+
+  - job_name: "unpoller"
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["{guest_ip}:{port}"]"""
