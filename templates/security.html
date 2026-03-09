@@ -67,6 +67,7 @@
                                 <th scope="col">Role</th>
                                 <th scope="col">Source</th>
                                 <th scope="col">Tags</th>
+                                <th scope="col">Last Login</th>
                                 <th scope="col">Status</th>
                                 <th scope="col">Actions</th>
                             </tr>
@@ -110,6 +111,13 @@
                                     <span class="text-muted">None</span>
                                     {% elif user.is_admin %}
                                     <span class="text-muted">All (admin)</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if user.last_login_at %}
+                                    <span title="{{ user.last_login_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ user.last_login_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                                    {% else %}
+                                    <span class="text-muted">Never</span>
                                     {% endif %}
                                 </td>
                                 <td>

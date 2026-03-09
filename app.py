@@ -339,6 +339,10 @@ def _migrate_schema():
             logger.info("Adding timezone column to users table...")
             db.session.execute(text("ALTER TABLE users ADD COLUMN timezone VARCHAR(64)"))
             db.session.commit()
+        if "last_login_at" not in user_columns:
+            logger.info("Adding last_login_at column to users table...")
+            db.session.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME"))
+            db.session.commit()
 
     if "roles" in table_names:
         role_columns = [c["name"] for c in inspector.get_columns("roles")]

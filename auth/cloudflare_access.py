@@ -17,6 +17,7 @@ fetched and cached from https://<team-domain>/cdn-cgi/access/certs.
 import json
 import logging
 import time
+from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
 import jwt as pyjwt  # PyJWT library
@@ -193,6 +194,8 @@ def init_cf_access(app):
             if user and user.is_active:
                 session.clear()
                 login_user(user)
+                user.last_login_at = datetime.now(timezone.utc)
+                db.session.commit()
                 g.cf_access_user = True
             elif not user:
                 logger.warning(f"CF Access: user {email} not provisioned and auto-provision is off")

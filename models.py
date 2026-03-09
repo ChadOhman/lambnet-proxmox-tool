@@ -149,6 +149,7 @@ class User(UserMixin, db.Model):
     is_active_user = db.Column(db.Boolean, default=True)
     timezone = db.Column(db.String(64), nullable=True)  # IANA tz name, e.g. "America/Chicago"; None = browser auto-detect
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    last_login_at = db.Column(db.DateTime, nullable=True)
 
     # Tags this user has access to
     allowed_tags = db.relationship("Tag", secondary=user_tags, backref="users")

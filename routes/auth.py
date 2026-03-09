@@ -2,6 +2,7 @@ import collections
 import threading
 import time
 import zoneinfo
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
@@ -95,6 +96,7 @@ def login():
             # Regenerate session to prevent session fixation attacks
             session.clear()
             login_user(user, remember="remember" in request.form)
+            user.last_login_at = datetime.now(timezone.utc)
             log_action("login", "user", resource_id=user.id, resource_name=user.username)
             db.session.commit()
             next_page = request.args.get("next")

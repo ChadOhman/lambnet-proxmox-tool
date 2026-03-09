@@ -11,6 +11,7 @@ Trusted subnets are configurable via the Settings UI.
 
 import ipaddress
 import logging
+from datetime import datetime, timezone
 
 from flask import g, request, session
 from flask_login import current_user, login_user
@@ -116,6 +117,7 @@ def init_local_bypass(app):
             safety = session.get("safety_mode", False)
             session.clear()
             login_user(admin)
+            admin.last_login_at = datetime.now(timezone.utc)
             if safety:
                 session["safety_mode"] = True
             g.local_bypass = True
