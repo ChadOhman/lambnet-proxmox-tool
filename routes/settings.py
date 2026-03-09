@@ -60,6 +60,8 @@ def _get_settings_dict():
         "discord_notify_prometheus": Setting.get("discord_notify_prometheus", "true"),
         "discord_notify_prometheus_upgrade_started": Setting.get("discord_notify_prometheus_upgrade_started", "true"),
         "discord_notify_prometheus_upgrade_result": Setting.get("discord_notify_prometheus_upgrade_result", "true"),
+        "discord_notify_unpoller_upgrade_started": Setting.get("discord_notify_unpoller_upgrade_started", "true"),
+        "discord_notify_unpoller_upgrade_result": Setting.get("discord_notify_unpoller_upgrade_result", "true"),
         "discord_notify_app": Setting.get("discord_notify_app", "true"),
         "scan_interval": Setting.get("scan_interval", "6"),
         "scan_enabled": Setting.get("scan_enabled", "true"),
@@ -177,6 +179,8 @@ def save_discord():
     notify_prometheus = "discord_notify_prometheus" in request.form
     notify_prometheus_upgrade_started = "discord_notify_prometheus_upgrade_started" in request.form
     notify_prometheus_upgrade_result = "discord_notify_prometheus_upgrade_result" in request.form
+    notify_unpoller_upgrade_started = "discord_notify_unpoller_upgrade_started" in request.form
+    notify_unpoller_upgrade_result = "discord_notify_unpoller_upgrade_result" in request.form
     notify_app = "discord_notify_app" in request.form
 
     if webhook_url:
@@ -202,6 +206,8 @@ def save_discord():
     Setting.set("discord_notify_prometheus", "true" if notify_prometheus else "false")
     Setting.set("discord_notify_prometheus_upgrade_started", "true" if notify_prometheus_upgrade_started else "false")
     Setting.set("discord_notify_prometheus_upgrade_result", "true" if notify_prometheus_upgrade_result else "false")
+    Setting.set("discord_notify_unpoller_upgrade_started", "true" if notify_unpoller_upgrade_started else "false")
+    Setting.set("discord_notify_unpoller_upgrade_result", "true" if notify_unpoller_upgrade_result else "false")
     Setting.set("discord_notify_app", "true" if notify_app else "false")
 
     log_action("settings_discord_save", "settings", resource_name="discord")
