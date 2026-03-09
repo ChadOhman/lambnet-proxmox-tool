@@ -2088,21 +2088,15 @@ def sd_add_user(username, password):
     except ValueError as e:
         return False, str(e)
 
-    # Pass password via base64 stdin to avoid shell exposure
+    # Pass password via base64-decoded positional argument to prosodyctl register.
+    # We use base64 to avoid shell quoting issues with special characters.
     pw_b64 = base64.b64encode(password.encode("utf-8")).decode("ascii")
     try:
         with ssh:
             stdout, stderr, code = ssh.execute_sudo(
-                f"printf '%s' '{pw_b64}' | base64 -d | prosodyctl register {username} {hostname} --stdin",
+                f"prosodyctl register {username} {hostname} \"$(printf '%s' '{pw_b64}' | base64 -d)\"",
                 timeout=15,
             )
-            # Some prosodyctl versions don't support --stdin; fall back to positional arg
-            if code != 0 and "--stdin" in (stderr or ""):
-                _validate_shell_param(password, "password")
-                stdout, stderr, code = ssh.execute_sudo(
-                    f"prosodyctl register {username} {hostname} '{password}'",
-                    timeout=15,
-                )
             if code != 0:
                 err_msg = (stderr or stdout or "").strip()
                 if "user already exists" in err_msg.lower():
