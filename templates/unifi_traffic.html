@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Traffic Analysis - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-graph-up"></i> Traffic Analysis</h2>
+    <a href="{{ url_for('unifi.index') }}" class="btn btn-outline-light btn-sm">
+        <i class="bi bi-arrow-left"></i> Back to Network
+    </a>
+</div>
+
+{% set DPI_CATEGORIES = {
+    0: 'Instant Messaging', 1: 'P2P', 2: 'File Transfer', 3: 'Streaming Media',
+    4: 'Mail & Collaboration', 5: 'VoIP & Video', 6: 'Database', 7: 'Gaming',
+    8: 'Network Management', 10: 'VPN & Tunnels', 13: 'Web',
+    14: 'Security & Updates', 17: 'Device & IoT', 18: 'Shopping',
+    19: 'Social Media', 20: 'Business Tools', 23: 'Health & Fitness',
+    24: 'News & Education', 255: 'Other',
+} %}
+
+<!-- DPI breakdown -->
+{% if dpi_categories %}
+<div class="row g-3 mb-4">
+    <div class="col-md-5">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-pie-chart"></i> Traffic by Category</h6>
+            </div>
+            <div class="card-body" style="height:300px">
+                <canvas id="chartDpi" role="img" aria-label="DPI traffic breakdown by category"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-7">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-list-ol"></i> Top Categories</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0" aria-label="DPI traffic categories">
+                        <thead>
+                            <tr>
+                                <th scope="col">Category</th>
+                                <th scope="col" class="text-end">Download</th>
+                                <th scope="col" class="text-end">Upload</th>
+                                <th scope="col" class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for cat in dpi_categories[:15] %}
+                            {% set total_bytes = cat.rx_bytes + cat.tx_bytes %}
+                            {% if total_bytes > 0 %}
+                            <tr>
+                                <td>{{ DPI_CATEGORIES.get(cat.cat, 'Category ' ~ cat.cat) }}</td>
+                                <td class="text-end"><small class="text-info">{{ "%.1f"|format(cat.rx_bytes / 1048576) }} MB</small></td>
+                                <td class="text-end"><small class="text-warning">{{ "%.1f"|format(cat.tx_bytes / 1048576) }} MB</small></td>
+                                <td class="text-end"><strong>{{ "%.1f"|format(total_bytes / 1048576) }} MB</strong></td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card bg-dark mb-4">
+    <div class="card-body text-center py-4">
+        <i class="bi bi-pie-chart display-4 text-muted"></i>
+        <p class="text-muted mt-2">No DPI data available. Ensure Deep Packet Inspection is enabled on your UniFi controller.</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- Daily bandwidth chart -->
+{% if daily_stats %}
+<div class="card bg-dark mb-4">
+    <div class="card-header py-2">
+        <h6 class="mb-0 text-muted"><i class="bi bi-bar-chart-line"></i> Daily Bandwidth (Last 7 Days)</h6>
+    </div>
+    <div class="card-body" style="height:250px">
+        <canvas id="chartDaily" role="img" aria-label="Daily bandwidth over the last 7 days"></canvas>
+    </div>
+</div>
+{% endif %}
+
+{% if unpoller_enabled %}
+<!-- DPI time-series (unpoller enhanced) -->
+<div class="card bg-dark mb-4">
+    <div class="card-header py-2">
+        <h6 class="mb-0 text-muted"><i class="bi bi-graph-up-arrow"></i> DPI Category Traffic Over Time (Unpoller)</h6>
+    </div>
+    <div class="card-body" style="height:300px">
+        <canvas id="chartDpiTimeseries" role="img" aria-label="DPI category traffic over time"></canvas>
+    </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+    const chartDefaults = {
+        plugins: { legend: { labels: { color: '#adb5bd' } } },
+        scales: {
+            x: { ticks: { color: '#adb5bd', font: { size: 11 } }, grid: { color: '#2d3035' } },
+            y: { ticks: { color: '#adb5bd', font: { size: 11 } }, grid: { color: '#2d3035' }, beginAtZero: true },
+        },
+        responsive: true,
+        maintainAspectRatio: false,
+    };
+
+    {% if dpi_categories %}
+    const dpiData = {{ dpi_categories | tojson }};
+    const catNames = {{ DPI_CATEGORIES | tojson }};
+    const colors = ['#0dcaf0','#198754','#ffc107','#dc3545','#6c757d','#0d6efd','#6610f2','#d63384','#fd7e14','#20c997','#6f42c1','#e83e8c','#17a2b8','#28a745','#f8f9fa'];
+    const filtered = dpiData.filter(d => (d.rx_bytes + d.tx_bytes) > 0).slice(0, 10);
+    new Chart(document.getElementById('chartDpi'), {
+        type: 'doughnut',
+        data: {
+            labels: filtered.map(d => catNames[d.cat] || ('Category ' + d.cat)),
+            datasets: [{
+                data: filtered.map(d => d.rx_bytes + d.tx_bytes),
+                backgroundColor: colors.slice(0, filtered.length),
+            }]
+        },
+        options: {
+            plugins: {
+                legend: { position: 'right', labels: { color: '#adb5bd', boxWidth: 12, font: { size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            return ctx.label + ': ' + (ctx.raw / 1048576).toFixed(1) + ' MB';
+                        }
+                    }
+                }
+            },
+            responsive: true,
+            maintainAspectRatio: false,
+        },
+    });
+    {% endif %}
+
+    {% if daily_stats %}
+    const dailyData = {{ daily_stats | tojson }};
+    const dailyLabels = dailyData.map(d => {
+        const dt = new Date(d.time);
+        return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    });
+    new Chart(document.getElementById('chartDaily'), {
+        type: 'bar',
+        data: {
+            labels: dailyLabels,
+            datasets: [
+                { label: 'Download (GB)', data: dailyData.map(d => (d.wan_rx_bytes / 1073741824).toFixed(2)), backgroundColor: '#0dcaf0' },
+                { label: 'Upload (GB)', data: dailyData.map(d => (d.wan_tx_bytes / 1073741824).toFixed(2)), backgroundColor: '#ffc107' },
+            ]
+        },
+        options: chartDefaults,
+    });
+    {% endif %}
+
+    {% if unpoller_enabled %}
+    // DPI time-series from unpoller
+    fetch('{{ url_for("unifi.dpi_chart_data") }}?timeframe=day')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error || !data.labels || data.labels.length === 0) return;
+            const cats = data.categories || {};
+            const catNames = Object.keys(cats);
+            const tsColors = ['#0dcaf0','#198754','#ffc107','#dc3545','#6c757d','#0d6efd','#6610f2','#d63384','#fd7e14','#20c997'];
+            const datasets = catNames.slice(0, 10).map((name, i) => ({
+                label: name,
+                data: (cats[name].rx || []).map((v, j) => (v || 0) + ((cats[name].tx || [])[j] || 0)),
+                borderColor: tsColors[i % tsColors.length],
+                backgroundColor: tsColors[i % tsColors.length] + '20',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 0,
+            }));
+            const el = document.getElementById('chartDpiTimeseries');
+            if (el && datasets.length > 0) {
+                new Chart(el, {
+                    type: 'line',
+                    data: { labels: data.labels, datasets: datasets },
+                    options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, legend: { labels: { color: '#adb5bd', boxWidth: 10, font: { size: 10 } } } }, scales: { ...chartDefaults.scales, x: { ...chartDefaults.scales.x, stacked: true }, y: { ...chartDefaults.scales.y, stacked: true } } },
+                });
+            }
+        })
+        .catch(() => {});
+    {% endif %}
+})();
+</script>
+{% endblock %}

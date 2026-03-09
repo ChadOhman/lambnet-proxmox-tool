@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+{% block title %}{{ device.name }} - Network{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>
+        <i class="bi bi-hdd-network"></i> {{ device.name }}
+        {% if device.state == 1 %}
+        <span class="badge bg-success">Online</span>
+        {% elif device.state == 0 %}
+        <span class="badge bg-danger">Offline</span>
+        {% endif %}
+    </h2>
+    <a href="{{ url_for('unifi.index') }}" class="btn btn-outline-light btn-sm">
+        <i class="bi bi-arrow-left"></i> Back to Network
+    </a>
+</div>
+
+<!-- Device summary -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2">
+                <small class="text-muted d-block">Model</small>
+                <code>{{ device.model }}</code>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2">
+                <small class="text-muted d-block">IP Address</small>
+                {% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<code>{{ device.ip }}</code>{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2">
+                <small class="text-muted d-block">MAC Address</small>
+                {% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<code>{{ device.mac }}</code>{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2">
+                <small class="text-muted d-block">Firmware</small>
+                {{ device.version or '-' }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Performance stats -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2 text-center">
+                <small class="text-muted d-block">CPU</small>
+                <span class="fs-5">{{ "%.0f"|format(device.cpu) if device.cpu is not none else '-' }}%</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2 text-center">
+                <small class="text-muted d-block">Memory</small>
+                <span class="fs-5">{{ "%.0f"|format(device.mem) if device.mem is not none else '-' }}%</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2 text-center">
+                <small class="text-muted d-block">Temperature</small>
+                <span class="fs-5">{{ "%.1f"|format(device.temperature) if device.temperature is not none else '-' }}°C</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2 text-center">
+                <small class="text-muted d-block">Load (1m)</small>
+                <span class="fs-5">{{ "%.2f"|format(device.loadavg_1) if device.loadavg_1 is not none else '-' }}</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2 text-center">
+                <small class="text-muted d-block">Clients</small>
+                <span class="fs-5">{{ device.num_sta or 0 }}</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2 text-center">
+                <small class="text-muted d-block">Uptime</small>
+                <span class="fs-6">
+                    {% if device.uptime %}
+                    {% set days = device.uptime // 86400 %}
+                    {% set hours = (device.uptime % 86400) // 3600 %}
+                    {% set mins = (device.uptime % 3600) // 60 %}
+                    {% if days > 0 %}{{ days }}d {% endif %}{{ hours }}h {{ mins }}m
+                    {% else %}-{% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Performance charts (from Prometheus) -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-cpu"></i> CPU & Memory</h6>
+            </div>
+            <div class="card-body" style="height:200px">
+                <canvas id="chartCpuMem" role="img" aria-label="CPU and memory usage over time"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-people"></i> Connected Clients</h6>
+            </div>
+            <div class="card-body" style="height:200px">
+                <canvas id="chartClients" role="img" aria-label="Connected clients over time"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Radio table (APs) -->
+{% if device.radio_table %}
+<div class="card bg-dark mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-broadcast"></i> Radios <span class="badge bg-secondary">{{ device.radio_table|length }}</span></h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0" aria-label="Radio interfaces">
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Channel</th>
+                        <th scope="col">HT Mode</th>
+                        <th scope="col">TX Power</th>
+                        <th scope="col">Clients</th>
+                        <th scope="col">Channel Util.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for radio in device.radio_table %}
+                    <tr>
+                        <td><code>{{ radio.name or radio.radio }}</code></td>
+                        <td>{{ radio.channel or '-' }}</td>
+                        <td>{{ radio.ht or '-' }}</td>
+                        <td>{{ radio.tx_power or '-' }} dBm</td>
+                        <td>{{ radio.num_sta or 0 }}</td>
+                        <td>
+                            {% if radio.cu_total is not none and radio.cu_total > 0 %}
+                            <div class="progress" style="height:18px; min-width:60px">
+                                <div class="progress-bar {% if radio.cu_total > 80 %}bg-danger{% elif radio.cu_total > 50 %}bg-warning{% else %}bg-success{% endif %}"
+                                     style="width:{{ radio.cu_total }}%" aria-valuenow="{{ radio.cu_total }}" aria-valuemin="0" aria-valuemax="100">
+                                    {{ radio.cu_total }}%
+                                </div>
+                            </div>
+                            {% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Per-radio charts (unpoller only) -->
+{% if unpoller_enabled and device.radio_table %}
+<div class="row g-3 mb-4">
+    {% for radio in device.radio_table %}
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-broadcast"></i> {{ radio.name or radio.radio }} — Channel Utilization</h6>
+            </div>
+            <div class="card-body" style="height:180px">
+                <canvas id="chartRadio{{ loop.index }}" role="img" aria-label="Radio {{ radio.name }} utilization over time"></canvas>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Port table (switches/gateways) -->
+{% if device.port_table %}
+<div class="card bg-dark mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-plug"></i> Ports <span class="badge bg-secondary">{{ device.port_table|length }}</span></h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0" aria-label="Network ports">
+                <thead>
+                    <tr>
+                        <th scope="col">Port</th>
+                        <th scope="col">Speed</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">PoE</th>
+                        <th scope="col">TX</th>
+                        <th scope="col">RX</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for port in device.port_table %}
+                    <tr>
+                        <td><code>{{ port.name }}</code></td>
+                        <td>{{ port.speed or '-' }} Mbps</td>
+                        <td>
+                            {% if port.up %}
+                            <span class="badge bg-success">Up</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Down</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ port.poe_mode or '-' }}</td>
+                        <td>{{ "%.1f"|format(port.tx_bytes / 1048576) if port.tx_bytes else '0' }} MB</td>
+                        <td>{{ "%.1f"|format(port.rx_bytes / 1048576) if port.rx_bytes else '0' }} MB</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Connected clients -->
+<div class="card bg-dark mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-people"></i> Connected Clients <span class="badge bg-secondary">{{ clients|length }}</span></h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0" aria-label="Clients connected to this device">
+                <thead>
+                    <tr>
+                        <th scope="col">Hostname</th>
+                        <th scope="col">IP</th>
+                        <th scope="col">MAC</th>
+                        <th scope="col">Network</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Signal</th>
+                        <th scope="col">Uptime</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for client in clients %}
+                    <tr>
+                        <td>{{ client.hostname }}</td>
+                        <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<code>{{ client.ip }}</code>{% endif %}</td>
+                        <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<small class="text-muted">{{ client.mac }}</small>{% endif %}</td>
+                        <td>{{ client.network or '-' }}</td>
+                        <td>
+                            {% if client.is_wired %}
+                            <i class="bi bi-ethernet" title="Wired"></i> Wired
+                            {% else %}
+                            <i class="bi bi-wifi" title="Wireless"></i> Wireless
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if client.signal is not none and not client.is_wired %}
+                            {{ client.signal }} dBm
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>
+                            {% if client.uptime %}
+                            {% set days = client.uptime // 86400 %}
+                            {% set hours = (client.uptime % 86400) // 3600 %}
+                            {% set mins = (client.uptime % 3600) // 60 %}
+                            {% if days > 0 %}{{ days }}d {% endif %}{{ hours }}h {{ mins }}m
+                            {% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" class="text-center text-muted py-3">No clients connected to this device.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const chartDefaults = {
+        plugins: { legend: { labels: { color: '#adb5bd' } } },
+        scales: {
+            x: { ticks: { color: '#adb5bd', font: { size: 10 }, maxTicksLimit: 12 }, grid: { color: '#2d3035' } },
+            y: { ticks: { color: '#adb5bd', font: { size: 11 } }, grid: { color: '#2d3035' } },
+        },
+        responsive: true,
+        maintainAspectRatio: false,
+    };
+
+    fetch('{{ url_for("unifi.device_chart_data", mac=device.mac) }}?timeframe=day&name={{ device.name | urlencode }}')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error || !data.labels || data.labels.length === 0) return;
+
+            new Chart(document.getElementById('chartCpuMem'), {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        { label: 'CPU %', data: data.cpu, borderColor: '#0dcaf0', tension: 0.3, pointRadius: 0, fill: false },
+                        { label: 'Memory %', data: data.memory, borderColor: '#ffc107', tension: 0.3, pointRadius: 0, fill: false },
+                    ]
+                },
+                options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: 0, max: 100 } } },
+            });
+
+            new Chart(document.getElementById('chartClients'), {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        { label: 'Clients', data: data.clients, borderColor: '#198754', tension: 0.3, pointRadius: 0, fill: true, backgroundColor: 'rgba(25,135,84,0.15)' },
+                    ]
+                },
+                options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, beginAtZero: true } } },
+            });
+        })
+        .catch(() => {});
+
+    {% if unpoller_enabled and device.radio_table %}
+    // Per-radio charts from unpoller
+    const radioCharts = [
+        {% for radio in device.radio_table %}
+        { id: 'chartRadio{{ loop.index }}', name: '{{ (radio.name or radio.radio) | e }}' },
+        {% endfor %}
+    ];
+    radioCharts.forEach(rc => {
+        const url = '{{ url_for("unifi.radio_chart_data", mac=device.mac, radio_name="__RADIO__") }}'.replace('__RADIO__', rc.name)
+            + '?timeframe=day&name={{ device.name | urlencode }}';
+        fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error || !data.labels || data.labels.length === 0) return;
+                new Chart(document.getElementById(rc.id), {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            { label: 'Utilization %', data: (data.channel_utilization || []).map(v => v !== null ? v * 100 : null), borderColor: '#ffc107', tension: 0.3, pointRadius: 0, fill: true, backgroundColor: 'rgba(255,193,7,0.1)' },
+                            { label: 'Stations', data: data.stations || [], borderColor: '#198754', tension: 0.3, pointRadius: 0, yAxisID: 'y1' },
+                        ]
+                    },
+                    options: {
+                        ...chartDefaults,
+                        scales: {
+                            ...chartDefaults.scales,
+                            y: { ...chartDefaults.scales.y, min: 0, max: 100, title: { display: true, text: '%', color: '#adb5bd' } },
+                            y1: { position: 'right', ticks: { color: '#adb5bd' }, grid: { display: false }, beginAtZero: true, title: { display: true, text: 'Clients', color: '#adb5bd' } },
+                        },
+                    },
+                });
+            })
+            .catch(() => {});
+    });
+    {% endif %}
+})();
+</script>
+{% endblock %}

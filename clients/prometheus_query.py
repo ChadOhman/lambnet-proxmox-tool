@@ -465,6 +465,346 @@ class PrometheusQueryClient:
 
         return {"snapshots": snapshots, "source": source}
 
+    # ----- UniFi -----
+
+    def get_unifi_device_history(self, device_mac, timeframe="day"):
+        """Query Prometheus for UniFi device performance metrics over time.
+
+        Returns Chart.js-ready JSON with CPU, memory, client count, TX/RX.
+        """
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        mac = device_mac.lower()
+
+        queries = {
+            "cpu": f'mstdnca_unifi_device_cpu_percent{{device_mac="{mac}"}}',
+            "memory": f'mstdnca_unifi_device_memory_percent{{device_mac="{mac}"}}',
+            "clients": f'mstdnca_unifi_device_clients{{device_mac="{mac}"}}',
+            "tx_bytes": f'mstdnca_unifi_device_tx_bytes{{device_mac="{mac}"}}',
+            "rx_bytes": f'mstdnca_unifi_device_rx_bytes{{device_mac="{mac}"}}',
+            "temperature": f'mstdnca_unifi_device_temperature_celsius{{device_mac="{mac}"}}',
+        }
+
+        all_series = {}
+        timestamps = []
+        for name, promql in queries.items():
+            result = self._range_single(promql, start, end, step)
+            all_series[name] = result.get("values", [])
+            if not timestamps and result.get("timestamps"):
+                timestamps = result["timestamps"]
+
+        utz = _user_tz()
+        labels = [
+            datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M")
+            for ts in timestamps
+        ]
+
+        return {
+            "labels": labels,
+            "cpu": all_series.get("cpu", []),
+            "memory": all_series.get("memory", []),
+            "clients": all_series.get("clients", []),
+            "tx_bytes": all_series.get("tx_bytes", []),
+            "rx_bytes": all_series.get("rx_bytes", []),
+            "temperature": all_series.get("temperature", []),
+        }
+
+    def get_unifi_site_history(self, site_name, timeframe="day"):
+        """Query Prometheus for aggregate UniFi site metrics over time.
+
+        Returns Chart.js-ready JSON with total clients, WAN latency, bandwidth.
+        """
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+
+        queries = {
+            "clients": f'mstdnca_unifi_client_count{{site_name="{site_name}"}}',
+            "devices": f'mstdnca_unifi_device_count{{site_name="{site_name}"}}',
+            "wan_latency": f'mstdnca_unifi_wan_latency_ms{{site_name="{site_name}"}}',
+            "wan_tx": f'mstdnca_unifi_wan_tx_bytes_per_sec{{site_name="{site_name}"}}',
+            "wan_rx": f'mstdnca_unifi_wan_rx_bytes_per_sec{{site_name="{site_name}"}}',
+            "speedtest_dl": f'mstdnca_unifi_speedtest_download_mbps{{site_name="{site_name}"}}',
+            "speedtest_ul": f'mstdnca_unifi_speedtest_upload_mbps{{site_name="{site_name}"}}',
+        }
+
+        all_series = {}
+        timestamps = []
+        for name, promql in queries.items():
+            result = self._range_single(promql, start, end, step)
+            all_series[name] = result.get("values", [])
+            if not timestamps and result.get("timestamps"):
+                timestamps = result["timestamps"]
+
+        utz = _user_tz()
+        labels = [
+            datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M")
+            for ts in timestamps
+        ]
+
+        return {
+            "labels": labels,
+            **all_series,
+        }
+
+    # ----- Unpoller (enhanced UniFi metrics) -----
+
+    def _unpoller_prefix(self):
+        """Return the configured unpoller metric namespace prefix."""
+        return Setting.get("unpoller_metric_prefix", "unpoller")
+
+    def check_unpoller_available(self):
+        """Return True if unpoller metrics exist in Prometheus."""
+        prefix = self._unpoller_prefix()
+        try:
+            result = self.query(f"{prefix}_site_num_user")
+            return len(result) > 0
+        except Exception:
+            return False
+
+    def get_unpoller_device_history(self, device_name, site_name=None, timeframe="day"):
+        """Query unpoller for per-device metrics over time.
+
+        Uses device *name* label since unpoller labels devices by name.
+        Falls back to mstdnca metrics if unpoller returns no data.
+        """
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        p = self._unpoller_prefix()
+        site = site_name or Setting.get("unpoller_site_name", "default")
+        lbl = f'site_name="{site}",name="{device_name}"'
+
+        queries = {
+            "cpu": f'{p}_device_system_cpu{{site_name="{site}",name="{device_name}"}}',
+            "memory": f'{p}_device_system_mem{{site_name="{site}",name="{device_name}"}}',
+            "clients": f'{p}_device_num_sta{{site_name="{site}",name="{device_name}"}}',
+            "temperature": f'{p}_device_general_temperature{{site_name="{site}",name="{device_name}"}}',
+            "uptime": f'{p}_device_uptime_seconds{{site_name="{site}",name="{device_name}"}}',
+            "tx_bytes": f'{p}_device_stat_bytes_sent{{{lbl}}}',
+            "rx_bytes": f'{p}_device_stat_bytes_received{{{lbl}}}',
+        }
+
+        all_series = {}
+        timestamps = []
+        for name, promql in queries.items():
+            result = self._range_single(promql, start, end, step)
+            all_series[name] = result.get("values", [])
+            if not timestamps and result.get("timestamps"):
+                timestamps = result["timestamps"]
+
+        utz = _user_tz()
+        labels = [
+            datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M")
+            for ts in timestamps
+        ]
+
+        return {
+            "labels": labels,
+            "cpu": all_series.get("cpu", []),
+            "memory": all_series.get("memory", []),
+            "clients": all_series.get("clients", []),
+            "tx_bytes": all_series.get("tx_bytes", []),
+            "rx_bytes": all_series.get("rx_bytes", []),
+            "temperature": all_series.get("temperature", []),
+            "uptime": all_series.get("uptime", []),
+            "source": "unpoller",
+        }
+
+    def get_unpoller_client_history(self, client_mac, site_name=None, timeframe="day"):
+        """Query unpoller for per-client metrics over time (signal, satisfaction, TX/RX)."""
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        p = self._unpoller_prefix()
+        site = site_name or Setting.get("unpoller_site_name", "default")
+        mac = client_mac.lower()
+        lbl = f'site_name="{site}",mac="{mac}"'
+        ri = f"{max(step * 2, 120)}s"
+
+        queries = {
+            "rssi": f"{p}_client_rssi_db{{{lbl}}}",
+            "signal": f"{p}_client_radio_signal_db{{{lbl}}}",
+            "satisfaction": f"{p}_client_satisfaction_ratio{{{lbl}}}",
+            "noise": f"{p}_client_noise_db{{{lbl}}}",
+            "tx_rate": f"rate({p}_client_transmit_bytes_total{{{lbl}}}[{ri}])",
+            "rx_rate": f"rate({p}_client_receive_bytes_total{{{lbl}}}[{ri}])",
+            "uptime": f"{p}_client_uptime_seconds{{{lbl}}}",
+        }
+
+        all_series = {}
+        timestamps = []
+        for name, promql in queries.items():
+            result = self._range_single(promql, start, end, step)
+            all_series[name] = result.get("values", [])
+            if not timestamps and result.get("timestamps"):
+                timestamps = result["timestamps"]
+
+        utz = _user_tz()
+        labels = [
+            datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M")
+            for ts in timestamps
+        ]
+
+        return {"labels": labels, **all_series, "source": "unpoller"}
+
+    def get_unpoller_radio_history(self, device_name, radio_name, site_name=None, timeframe="day"):
+        """Query unpoller for per-radio metrics over time (channel util, stations, TX power)."""
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        p = self._unpoller_prefix()
+        site = site_name or Setting.get("unpoller_site_name", "default")
+        lbl = f'site_name="{site}",name="{device_name}",radio_name="{radio_name}"'
+
+        queries = {
+            "channel": f"{p}_device_radio_channel{{{lbl}}}",
+            "channel_utilization": f"{p}_device_radio_channel_utilization_total_ratio{{{lbl}}}",
+            "stations": f"{p}_device_radio_stations{{{lbl}}}",
+            "tx_power": f"{p}_device_radio_transmit_power{{{lbl}}}",
+        }
+
+        all_series = {}
+        timestamps = []
+        for name, promql in queries.items():
+            result = self._range_single(promql, start, end, step)
+            all_series[name] = result.get("values", [])
+            if not timestamps and result.get("timestamps"):
+                timestamps = result["timestamps"]
+
+        utz = _user_tz()
+        labels = [
+            datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M")
+            for ts in timestamps
+        ]
+
+        return {"labels": labels, **all_series, "source": "unpoller"}
+
+    def get_unpoller_site_history(self, site_name=None, timeframe="day"):
+        """Query unpoller for site-level metrics over time."""
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        p = self._unpoller_prefix()
+        site = site_name or Setting.get("unpoller_site_name", "default")
+        lbl = f'site_name="{site}"'
+
+        queries = {
+            "clients": f"{p}_site_num_user{{{lbl}}}",
+            "guests": f"{p}_site_num_guest{{{lbl}}}",
+            "devices": f"{p}_site_num_adopted{{{lbl}}}",
+            "wan_latency": f"{p}_site_latency_seconds{{{lbl}}}",
+            "wan_tx": f"{p}_site_transmit_rate_bytes{{{lbl}}}",
+            "wan_rx": f"{p}_site_receive_rate_bytes{{{lbl}}}",
+            "speedtest_dl": f"{p}_site_xput_down_rate{{{lbl}}}",
+            "speedtest_ul": f"{p}_site_xput_up_rate{{{lbl}}}",
+            "aps": f"{p}_site_num_ap{{{lbl}}}",
+            "switches": f"{p}_site_num_sw{{{lbl}}}",
+            "gateways": f"{p}_site_num_gw{{{lbl}}}",
+        }
+
+        all_series = {}
+        timestamps = []
+        for name, promql in queries.items():
+            result = self._range_single(promql, start, end, step)
+            all_series[name] = result.get("values", [])
+            if not timestamps and result.get("timestamps"):
+                timestamps = result["timestamps"]
+
+        utz = _user_tz()
+        labels = [
+            datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M")
+            for ts in timestamps
+        ]
+
+        return {"labels": labels, **all_series, "source": "unpoller"}
+
+    def get_unpoller_wan_history(self, site_name=None, timeframe="day"):
+        """Query unpoller for WAN-specific metrics over time."""
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        p = self._unpoller_prefix()
+        site = site_name or Setting.get("unpoller_site_name", "default")
+        lbl = f'site_name="{site}"'
+
+        queries = {
+            "latency": f"{p}_site_latency_seconds{{{lbl}}}",
+            "wan_tx_rate": f"{p}_site_transmit_rate_bytes{{{lbl}}}",
+            "wan_rx_rate": f"{p}_site_receive_rate_bytes{{{lbl}}}",
+            "speedtest_download": f"{p}_site_xput_down_rate{{{lbl}}}",
+            "speedtest_upload": f"{p}_site_xput_up_rate{{{lbl}}}",
+            "speedtest_ping": f"{p}_site_speedtest_ping{{{lbl}}}",
+            "internet_drops": f"{p}_site_intenet_drops_total{{{lbl}}}",
+        }
+
+        all_series = {}
+        timestamps = []
+        for name, promql in queries.items():
+            result = self._range_single(promql, start, end, step)
+            all_series[name] = result.get("values", [])
+            if not timestamps and result.get("timestamps"):
+                timestamps = result["timestamps"]
+
+        utz = _user_tz()
+        labels = [
+            datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M")
+            for ts in timestamps
+        ]
+
+        return {"labels": labels, **all_series, "source": "unpoller"}
+
+    def get_unpoller_dpi_history(self, site_name=None, timeframe="day"):
+        """Query unpoller for DPI category breakdown over time."""
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        p = self._unpoller_prefix()
+        site = site_name or Setting.get("unpoller_site_name", "default")
+        ri = f"{max(step * 2, 120)}s"
+
+        # Query all DPI categories at once — unpoller labels by category
+        rx_query = f'rate({p}_site_dpi_receive_bytes{{site_name="{site}"}}[{ri}])'
+        tx_query = f'rate({p}_site_dpi_transmit_bytes{{site_name="{site}"}}[{ri}])'
+
+        try:
+            rx_results = self.query_range(rx_query, start, end, step)
+            tx_results = self.query_range(tx_query, start, end, step)
+        except Exception:
+            logger.debug("Unpoller DPI query failed", exc_info=True)
+            return {"labels": [], "categories": [], "source": "unpoller"}
+
+        # Build per-category series
+        categories = {}
+        timestamps = []
+        for series in rx_results + tx_results:
+            cat = series.get("metric", {}).get("category", "unknown")
+            if cat not in categories:
+                categories[cat] = {"rx": [], "tx": []}
+            values_raw = series.get("values", [])
+            if not timestamps and values_raw:
+                timestamps = [float(v[0]) for v in values_raw]
+            parsed = []
+            for _, val in values_raw:
+                try:
+                    parsed.append(round(float(val), 2))
+                except (TypeError, ValueError):
+                    parsed.append(0)
+            # Determine if this is RX or TX based on which query set it came from
+            if series in rx_results:
+                categories[cat]["rx"] = parsed
+            else:
+                categories[cat]["tx"] = parsed
+
+        utz = _user_tz()
+        labels = [
+            datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M")
+            for ts in timestamps
+        ]
+
+        return {"labels": labels, "categories": categories, "source": "unpoller"}
+
     # ----- internal -----
 
     def _range_single(self, promql, start, end, step):

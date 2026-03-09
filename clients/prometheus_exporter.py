@@ -135,12 +135,70 @@ PROM_HEAD_SERIES = Gauge("mstdnca_prometheus_head_series", "Prometheus TSDB head
                          ["service_id", "guest_name"], registry=registry)
 
 # ---------------------------------------------------------------------------
-# UniFi (labels: site_name)
+# UniFi — aggregate (labels: site_name)
 # ---------------------------------------------------------------------------
 UNIFI_DEVICES = Gauge("mstdnca_unifi_device_count", "UniFi managed device count",
                       ["site_name"], registry=registry)
 UNIFI_CLIENTS = Gauge("mstdnca_unifi_client_count", "UniFi connected client count",
                       ["site_name"], registry=registry)
+
+# ---------------------------------------------------------------------------
+# UniFi — per-device (labels: site_name, device_mac, device_name, device_type)
+# ---------------------------------------------------------------------------
+_UNIFI_DEV_LABELS = ["site_name", "device_mac", "device_name", "device_type"]
+UNIFI_DEV_CPU = Gauge("mstdnca_unifi_device_cpu_percent", "UniFi device CPU utilization",
+                      _UNIFI_DEV_LABELS, registry=registry)
+UNIFI_DEV_MEM = Gauge("mstdnca_unifi_device_memory_percent", "UniFi device memory utilization",
+                      _UNIFI_DEV_LABELS, registry=registry)
+UNIFI_DEV_UPTIME = Gauge("mstdnca_unifi_device_uptime_seconds", "UniFi device uptime",
+                         _UNIFI_DEV_LABELS, registry=registry)
+UNIFI_DEV_TEMP = Gauge("mstdnca_unifi_device_temperature_celsius", "UniFi device temperature",
+                       _UNIFI_DEV_LABELS, registry=registry)
+UNIFI_DEV_LOAD1 = Gauge("mstdnca_unifi_device_load_avg_1", "UniFi device 1-min load average",
+                        _UNIFI_DEV_LABELS, registry=registry)
+UNIFI_DEV_CLIENTS = Gauge("mstdnca_unifi_device_clients", "UniFi device connected clients",
+                          _UNIFI_DEV_LABELS, registry=registry)
+UNIFI_DEV_TX = Gauge("mstdnca_unifi_device_tx_bytes", "UniFi device TX bytes",
+                     _UNIFI_DEV_LABELS, registry=registry)
+UNIFI_DEV_RX = Gauge("mstdnca_unifi_device_rx_bytes", "UniFi device RX bytes",
+                     _UNIFI_DEV_LABELS, registry=registry)
+UNIFI_DEV_UPLINK_SPEED = Gauge("mstdnca_unifi_device_uplink_speed_mbps", "UniFi device uplink speed",
+                               _UNIFI_DEV_LABELS, registry=registry)
+
+# ---------------------------------------------------------------------------
+# UniFi — per-AP radio (labels: site_name, device_mac, device_name, radio)
+# ---------------------------------------------------------------------------
+_UNIFI_RADIO_LABELS = ["site_name", "device_mac", "device_name", "radio"]
+UNIFI_RADIO_CHANNEL = Gauge("mstdnca_unifi_radio_channel", "UniFi AP radio channel",
+                            _UNIFI_RADIO_LABELS, registry=registry)
+UNIFI_RADIO_CU = Gauge("mstdnca_unifi_radio_channel_utilization", "UniFi AP channel utilization %",
+                       _UNIFI_RADIO_LABELS, registry=registry)
+UNIFI_RADIO_CLIENTS = Gauge("mstdnca_unifi_radio_clients", "UniFi AP radio clients",
+                            _UNIFI_RADIO_LABELS, registry=registry)
+UNIFI_RADIO_TX_POWER = Gauge("mstdnca_unifi_radio_tx_power", "UniFi AP radio TX power",
+                             _UNIFI_RADIO_LABELS, registry=registry)
+
+# ---------------------------------------------------------------------------
+# UniFi — site health (labels: site_name, subsystem)
+# ---------------------------------------------------------------------------
+_UNIFI_HEALTH_LABELS = ["site_name", "subsystem"]
+UNIFI_HEALTH_STATUS = Gauge("mstdnca_unifi_health_status",
+                            "UniFi subsystem health (0=unknown, 1=ok, 2=warn, 3=error)",
+                            _UNIFI_HEALTH_LABELS, registry=registry)
+
+# UniFi — WAN metrics (labels: site_name)
+UNIFI_WAN_LATENCY = Gauge("mstdnca_unifi_wan_latency_ms", "UniFi WAN latency (ms)",
+                          ["site_name"], registry=registry)
+UNIFI_WAN_TX_RATE = Gauge("mstdnca_unifi_wan_tx_bytes_per_sec", "UniFi WAN TX bytes/sec",
+                          ["site_name"], registry=registry)
+UNIFI_WAN_RX_RATE = Gauge("mstdnca_unifi_wan_rx_bytes_per_sec", "UniFi WAN RX bytes/sec",
+                          ["site_name"], registry=registry)
+UNIFI_WAN_UPTIME = Gauge("mstdnca_unifi_wan_uptime_seconds", "UniFi WAN uptime",
+                         ["site_name"], registry=registry)
+UNIFI_SPEEDTEST_DL = Gauge("mstdnca_unifi_speedtest_download_mbps", "UniFi last speedtest download",
+                           ["site_name"], registry=registry)
+UNIFI_SPEEDTEST_UL = Gauge("mstdnca_unifi_speedtest_upload_mbps", "UniFi last speedtest upload",
+                           ["site_name"], registry=registry)
 
 # ---------------------------------------------------------------------------
 # APT updates (labels: guest_id, guest_name)
@@ -345,6 +403,91 @@ def update_unifi_metrics(site_name, device_count=None, client_count=None):
                 UNIFI_CLIENTS.labels(site_name).set(client_count)
         except Exception:
             logger.debug("Failed to update UniFi metrics", exc_info=True)
+
+
+def update_unifi_device_metrics(site_name, devices):
+    """Update per-device and per-radio UniFi metrics."""
+    with _lock:
+        try:
+            for d in devices:
+                labels = [site_name, d.get("mac", ""), d.get("name", ""), d.get("type", "")]
+                cpu = d.get("cpu")
+                if cpu is not None:
+                    UNIFI_DEV_CPU.labels(*labels).set(cpu)
+                mem = d.get("mem")
+                if mem is not None:
+                    UNIFI_DEV_MEM.labels(*labels).set(mem)
+                uptime = d.get("uptime")
+                if uptime:
+                    UNIFI_DEV_UPTIME.labels(*labels).set(uptime)
+                temp = d.get("temperature")
+                if temp is not None:
+                    UNIFI_DEV_TEMP.labels(*labels).set(temp)
+                load1 = d.get("loadavg_1")
+                if load1 is not None:
+                    UNIFI_DEV_LOAD1.labels(*labels).set(load1)
+                num_sta = d.get("num_sta")
+                if num_sta is not None:
+                    UNIFI_DEV_CLIENTS.labels(*labels).set(num_sta)
+
+                uplink = d.get("uplink", {})
+                if uplink.get("tx_bytes"):
+                    UNIFI_DEV_TX.labels(*labels).set(uplink["tx_bytes"])
+                if uplink.get("rx_bytes"):
+                    UNIFI_DEV_RX.labels(*labels).set(uplink["rx_bytes"])
+                if uplink.get("speed"):
+                    UNIFI_DEV_UPLINK_SPEED.labels(*labels).set(uplink["speed"])
+
+                # Per-radio metrics
+                for r in d.get("radio_table", []):
+                    radio_name = r.get("name") or r.get("radio", "unknown")
+                    rlabels = [site_name, d.get("mac", ""), d.get("name", ""), radio_name]
+                    if r.get("channel"):
+                        UNIFI_RADIO_CHANNEL.labels(*rlabels).set(r["channel"])
+                    if r.get("cu_total") is not None:
+                        UNIFI_RADIO_CU.labels(*rlabels).set(r["cu_total"])
+                    if r.get("num_sta") is not None:
+                        UNIFI_RADIO_CLIENTS.labels(*rlabels).set(r["num_sta"])
+                    if r.get("tx_power"):
+                        UNIFI_RADIO_TX_POWER.labels(*rlabels).set(r["tx_power"])
+        except Exception:
+            logger.debug("Failed to update UniFi device metrics", exc_info=True)
+
+
+def update_unifi_health_metrics(site_name, health_data):
+    """Update UniFi site health and WAN metrics."""
+    _HEALTH_MAP = {"ok": 1, "warning": 2, "error": 3}
+    with _lock:
+        try:
+            for subsystem in health_data:
+                name = subsystem.get("subsystem", "")
+                if not name:
+                    continue
+                status = subsystem.get("status", "unknown")
+                UNIFI_HEALTH_STATUS.labels(site_name, name).set(_HEALTH_MAP.get(status, 0))
+
+                # WAN-specific metrics
+                if name == "wan":
+                    latency = subsystem.get("latency")
+                    if latency is not None:
+                        UNIFI_WAN_LATENCY.labels(site_name).set(_to_num(latency))
+                    tx_rate = subsystem.get("tx_bytes-r")
+                    if tx_rate is not None:
+                        UNIFI_WAN_TX_RATE.labels(site_name).set(_to_num(tx_rate))
+                    rx_rate = subsystem.get("rx_bytes-r")
+                    if rx_rate is not None:
+                        UNIFI_WAN_RX_RATE.labels(site_name).set(_to_num(rx_rate))
+                    wan_uptime = subsystem.get("uptime")
+                    if wan_uptime is not None:
+                        UNIFI_WAN_UPTIME.labels(site_name).set(_to_num(wan_uptime))
+                    speedtest_dl = subsystem.get("speedtest_lastrun_download")
+                    if speedtest_dl is not None:
+                        UNIFI_SPEEDTEST_DL.labels(site_name).set(_to_num(speedtest_dl))
+                    speedtest_ul = subsystem.get("speedtest_lastrun_upload")
+                    if speedtest_ul is not None:
+                        UNIFI_SPEEDTEST_UL.labels(site_name).set(_to_num(speedtest_ul))
+        except Exception:
+            logger.debug("Failed to update UniFi health metrics", exc_info=True)
 
 
 def update_apt_metrics(guest_id, guest_name, pending, security, reboot_required):

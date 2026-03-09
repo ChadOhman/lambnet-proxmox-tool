@@ -233,6 +233,118 @@ class TestPrometheusQueryClient:
         assert result["timestamps"] == [1000.0, 1060.0]
         assert result["values"] == [42.5, 43.0]
 
+    def test_unpoller_prefix_default(self, app):
+        from clients.prometheus_query import PrometheusQueryClient
+        client = PrometheusQueryClient(base_url="http://localhost:9090")
+        with app.app_context():
+            assert client._unpoller_prefix() == "unpoller"
+
+    def test_unpoller_prefix_custom(self, app):
+        from clients.prometheus_query import PrometheusQueryClient
+        client = PrometheusQueryClient(base_url="http://localhost:9090")
+        with app.app_context():
+            from models import Setting
+            Setting.set("unpoller_metric_prefix", "myprefix")
+            assert client._unpoller_prefix() == "myprefix"
+
+    @patch("clients.prometheus_query.requests.get")
+    def test_check_unpoller_available_true(self, mock_get, app):
+        from clients.prometheus_query import PrometheusQueryClient
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {"result": [{"metric": {}, "value": [1000, "5"]}]},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        client = PrometheusQueryClient(base_url="http://localhost:9090")
+        with app.app_context():
+            assert client.check_unpoller_available() is True
+
+    @patch("clients.prometheus_query.requests.get")
+    def test_check_unpoller_available_false(self, mock_get, app):
+        from clients.prometheus_query import PrometheusQueryClient
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {"result": []},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        client = PrometheusQueryClient(base_url="http://localhost:9090")
+        with app.app_context():
+            assert client.check_unpoller_available() is False
+
+    @patch("clients.prometheus_query.requests.get")
+    def test_get_unpoller_client_history(self, mock_get, app):
+        from clients.prometheus_query import PrometheusQueryClient
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [{
+                    "metric": {},
+                    "values": [[1000, "-65"], [1060, "-63"]],
+                }],
+            },
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        client = PrometheusQueryClient(base_url="http://localhost:9090")
+        with app.app_context():
+            data = client.get_unpoller_client_history("aa:bb:cc:dd:ee:ff", timeframe="hour")
+        assert data["source"] == "unpoller"
+        assert len(data["labels"]) == 2
+
+    @patch("clients.prometheus_query.requests.get")
+    def test_get_unpoller_site_history(self, mock_get, app):
+        from clients.prometheus_query import PrometheusQueryClient
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [{
+                    "metric": {},
+                    "values": [[1000, "50"], [1060, "52"]],
+                }],
+            },
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        client = PrometheusQueryClient(base_url="http://localhost:9090")
+        with app.app_context():
+            data = client.get_unpoller_site_history(timeframe="hour")
+        assert data["source"] == "unpoller"
+        assert len(data["labels"]) == 2
+
+    @patch("clients.prometheus_query.requests.get")
+    def test_get_unpoller_wan_history(self, mock_get, app):
+        from clients.prometheus_query import PrometheusQueryClient
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {"resultType": "matrix", "result": []},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        client = PrometheusQueryClient(base_url="http://localhost:9090")
+        with app.app_context():
+            data = client.get_unpoller_wan_history(timeframe="hour")
+        assert data["source"] == "unpoller"
+        assert data["labels"] == []
+
 
 # ---------------------------------------------------------------------------
 # Prometheus app management routes tests

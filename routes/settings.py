@@ -79,6 +79,9 @@ def _get_settings_dict():
         "unifi_api_poll_enabled": Setting.get("unifi_api_poll_enabled", "true"),
         "unifi_api_poll_interval": Setting.get("unifi_api_poll_interval", "5"),
         "unifi_log_retention_days": Setting.get("unifi_log_retention_days", "60"),
+        "unpoller_enabled": Setting.get("unpoller_enabled", "false"),
+        "unpoller_metric_prefix": Setting.get("unpoller_metric_prefix", "unpoller"),
+        "unpoller_site_name": Setting.get("unpoller_site_name", "default"),
         "app_auto_update": Setting.get("app_auto_update", "false"),
         "app_update_branch": Setting.get("app_update_branch", ""),
         # Global backup_storage/mode/compress removed; per-tag overrides only
@@ -403,6 +406,47 @@ def save_unifi_logging():
     log_action("settings_unifi_logging_save", "settings", resource_name="unifi_logging")
     db.session.commit()
     flash("UniFi log collection settings saved.", "success")
+    return redirect(url_for("settings.index"))
+
+
+@bp.route("/unpoller", methods=["POST"])
+def save_unpoller():
+    enabled = "unpoller_enabled" in request.form
+    prefix = request.form.get("unpoller_metric_prefix", "unpoller").strip()
+    site_name = request.form.get("unpoller_site_name", "default").strip()
+
+    Setting.set("unpoller_enabled", "true" if enabled else "false")
+    Setting.set("unpoller_metric_prefix", prefix or "unpoller")
+    Setting.set("unpoller_site_name", site_name or "default")
+
+    log_action("settings_unpoller_save", "settings", resource_name="unpoller")
+    db.session.commit()
+    flash("Unpoller settings saved.", "success")
+    return redirect(url_for("settings.index"))
+
+
+@bp.route("/unpoller/test", methods=["POST"])
+def test_unpoller():
+    save_unpoller()
+
+    prefix = Setting.get("unpoller_metric_prefix", "unpoller")
+    try:
+        from clients.prometheus_query import PrometheusQueryClient
+        prom = PrometheusQueryClient()
+        result = prom.query(f'{prefix}_site_num_user')
+        if result:
+            flash(f"Unpoller metrics found in Prometheus ({len(result)} series).", "success")
+        else:
+            flash(
+                f"No unpoller metrics found. Ensure unpoller is running and Prometheus is scraping it. "
+                f"Searched for: {prefix}_site_num_user",
+                "warning",
+            )
+    except ValueError:
+        flash("Prometheus URL is not configured. Configure it first.", "error")
+    except Exception as e:
+        flash(f"Unpoller test failed: {e}", "error")
+
     return redirect(url_for("settings.index"))
 
 
