@@ -1081,6 +1081,36 @@ def prom_reload(service_id):
     return jsonify({"ok": True, "message": "Configuration reloaded successfully."})
 
 
+@bp.route("/<int:service_id>/prometheus/reconfigure", methods=["POST"])
+def prom_reconfigure(service_id):
+    """Regenerate prometheus.yml from all installed exporters and reload."""
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
+    svc, guest = _prom_guard(service_id)
+    if svc is None:
+        return jsonify({"ok": False, "message": "Not a Prometheus service"}), 400
+
+    from apps.exporters import _regenerate_prometheus_config
+
+    messages = []
+
+    def _log(msg):
+        messages.append(msg)
+
+    _regenerate_prometheus_config(_log)
+
+    log_action("prom_reconfigure", "guest", resource_id=guest.id, resource_name=guest.name,
+               details={"service": svc.service_name})
+    db.session.commit()
+
+    # Check if any error occurred
+    has_error = any("ERROR" in m for m in messages)
+    return jsonify({
+        "ok": not has_error,
+        "message": "\n".join(messages) if messages else "Prometheus configuration regenerated.",
+    })
+
+
 @bp.route("/<int:service_id>/prometheus/snapshot", methods=["POST"])
 def prom_snapshot(service_id):
     if not current_user.can_edit_services:
