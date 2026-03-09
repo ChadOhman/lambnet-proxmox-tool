@@ -1265,6 +1265,93 @@ def _enable_jvb_rest_api(ssh, log):
         log("  WARNING: Failed to write updated jvb.conf")
 
 
+def configure_jvb_rest_binding(bind_all=True):
+    """Configure JVB REST API to bind to 0.0.0.0 (for Prometheus) or 127.0.0.1 (localhost only).
+
+    Called when the Prometheus scrape toggle changes. When bind_all=True, sets
+    ``http-servers.public.host = 0.0.0.0`` so external Prometheus can reach /metrics.
+    When False, reverts to ``127.0.0.1``.
+
+    Returns (success: bool, message: str).
+    """
+    ssh, guest, err = _sd_get_ssh()
+    if err:
+        return False, err
+
+    try:
+        path = "/etc/jitsi/videobridge/jvb.conf"
+        stdout, stderr, code = ssh.execute_sudo(f"cat {path} 2>/dev/null", timeout=10)
+        if code != 0 or not stdout:
+            return False, f"Could not read {path}"
+
+        content = stdout
+        target_host = "0.0.0.0" if bind_all else "127.0.0.1"
+
+        # Check if http-servers.public.host is already set correctly
+        if f'host = "{target_host}"' in content or f"host = {target_host}" in content:
+            return True, f"JVB REST API already bound to {target_host}"
+
+        # Check if http-servers block already exists
+        if "http-servers" in content:
+            # Replace existing host value
+            import re
+            # Match host = "..." or host = ... inside http-servers.public block
+            new_content, count = re.subn(
+                r'(http-servers\s*\{[^}]*public\s*\{[^}]*?)host\s*=\s*["\']?[\d.]+["\']?',
+                rf'\1host = {target_host}',
+                content,
+                flags=re.DOTALL,
+            )
+            if count == 0:
+                # host line doesn't exist in the block — add it
+                new_content = re.sub(
+                    r'(http-servers\s*\{\s*\n\s*public\s*\{)',
+                    rf'\1\n            host = {target_host}',
+                    content,
+                    flags=re.DOTALL,
+                )
+                if new_content == content:
+                    # public block doesn't exist — add it to http-servers
+                    new_content = re.sub(
+                        r'(http-servers\s*\{)',
+                        f'\\1\n        public {{\n            host = {target_host}\n        }}',
+                        content,
+                        flags=re.DOTALL,
+                    )
+        else:
+            # No http-servers block — insert before the last closing brace of videobridge {}
+            lines = content.split("\n")
+            insert_idx = None
+            for i in range(len(lines) - 1, -1, -1):
+                if "}" in lines[i]:
+                    insert_idx = i
+                    break
+            if insert_idx is None:
+                return False, "Could not find videobridge block boundary"
+
+            http_block = (
+                f"  http-servers {{\n"
+                f"    public {{\n"
+                f"      host = {target_host}\n"
+                f"    }}\n"
+                f"  }}"
+            )
+            lines.insert(insert_idx, http_block)
+            new_content = "\n".join(lines)
+
+        def _log_noop(msg):
+            pass
+
+        if not _ssh_write_file(ssh, path, new_content, _log_noop):
+            return False, f"Failed to write {path}"
+
+        # Restart JVB for the change to take effect
+        ssh.execute_sudo("systemctl restart jitsi-videobridge2", timeout=30)
+        return True, f"JVB REST API now bound to {target_host}, service restarted"
+    finally:
+        ssh.close()
+
+
 def _cf_patch_jvb_conf_tcp(ssh, log):
     """Patch jvb.conf to enable TCP transport (Option A). Returns warning count."""
     log("=== Step 1: Enabling TCP transport in jvb.conf ===")

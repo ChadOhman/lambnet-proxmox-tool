@@ -143,13 +143,24 @@ def save():
     log_action("jitsi_config_save", "settings", resource_name="jitsi")
     db.session.commit()
 
-    # Regenerate Prometheus config when scrape toggle changes
+    # Regenerate Prometheus config and update JVB REST API binding when scrape toggle changes
     if new_scrape != old_scrape:
         try:
             from apps.exporters import _regenerate_prometheus_config
             _regenerate_prometheus_config()
         except Exception:
             logger.warning("Failed to regenerate Prometheus config after JVB scrape toggle", exc_info=True)
+        # Configure JVB REST API to listen on 0.0.0.0 (or revert to 127.0.0.1)
+        try:
+            from apps.jitsi import configure_jvb_rest_binding
+            ok, msg = configure_jvb_rest_binding(bind_all=(new_scrape == "true"))
+            if ok:
+                logger.info("JVB REST binding: %s", msg)
+            else:
+                logger.warning("JVB REST binding failed: %s", msg)
+                flash(f"Warning: Could not configure JVB REST API binding: {msg}", "warning")
+        except Exception:
+            logger.warning("Failed to configure JVB REST API binding", exc_info=True)
     flash("Jitsi settings saved.", "success")
     return redirect(url_for("jitsi.upgrade_page"))
 

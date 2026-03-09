@@ -1348,3 +1348,101 @@ class TestJitsiSavePrometheusScrape:
         )
         with app.app_context():
             assert Setting.get("jitsi_prometheus_scrape") == "false"
+
+
+class TestConfigureJvbRestBinding:
+    """Test configure_jvb_rest_binding for Prometheus network access."""
+
+    def test_bind_all_inserts_http_servers_block(self, app):
+        from unittest.mock import patch, MagicMock
+        from apps.jitsi import configure_jvb_rest_binding
+
+        jvb_conf = (
+            "videobridge {\n"
+            "  apis {\n"
+            "    rest {\n"
+            "      enabled = true\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+        )
+
+        mock_ssh = MagicMock()
+        mock_ssh.execute_sudo.side_effect = [
+            (jvb_conf, "", 0),  # cat jvb.conf
+            ("", "", 0),        # tee (write)
+            ("", "", 0),        # systemctl restart
+        ]
+        mock_guest = MagicMock()
+
+        with app.app_context():
+            with patch("apps.jitsi._sd_get_ssh", return_value=(mock_ssh, mock_guest, None)):
+                ok, msg = configure_jvb_rest_binding(bind_all=True)
+
+        assert ok is True
+        assert "0.0.0.0" in msg
+
+    def test_bind_all_already_set(self, app):
+        from unittest.mock import patch, MagicMock
+        from apps.jitsi import configure_jvb_rest_binding
+
+        jvb_conf = (
+            "videobridge {\n"
+            "  http-servers {\n"
+            "    public {\n"
+            "      host = 0.0.0.0\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+        )
+
+        mock_ssh = MagicMock()
+        mock_ssh.execute_sudo.return_value = (jvb_conf, "", 0)
+        mock_guest = MagicMock()
+
+        with app.app_context():
+            with patch("apps.jitsi._sd_get_ssh", return_value=(mock_ssh, mock_guest, None)):
+                ok, msg = configure_jvb_rest_binding(bind_all=True)
+
+        assert ok is True
+        assert "already" in msg
+
+    def test_revert_to_localhost(self, app):
+        from unittest.mock import patch, MagicMock
+        from apps.jitsi import configure_jvb_rest_binding
+
+        jvb_conf = (
+            "videobridge {\n"
+            "  http-servers {\n"
+            "    public {\n"
+            "      host = 0.0.0.0\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+        )
+
+        mock_ssh = MagicMock()
+        mock_ssh.execute_sudo.side_effect = [
+            (jvb_conf, "", 0),  # cat jvb.conf
+            ("", "", 0),        # tee (write)
+            ("", "", 0),        # systemctl restart
+        ]
+        mock_guest = MagicMock()
+
+        with app.app_context():
+            with patch("apps.jitsi._sd_get_ssh", return_value=(mock_ssh, mock_guest, None)):
+                ok, msg = configure_jvb_rest_binding(bind_all=False)
+
+        assert ok is True
+        assert "127.0.0.1" in msg
+
+    def test_returns_error_when_no_ssh(self, app):
+        from unittest.mock import patch
+        from apps.jitsi import configure_jvb_rest_binding
+
+        with app.app_context():
+            with patch("apps.jitsi._sd_get_ssh", return_value=(None, None, "No SSH credential")):
+                ok, msg = configure_jvb_rest_binding(bind_all=True)
+
+        assert ok is False
+        assert "No SSH credential" in msg
