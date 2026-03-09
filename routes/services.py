@@ -596,10 +596,15 @@ def redis_metrics_history(service_id):
             from clients.prometheus_query import PrometheusQueryClient, _get_exporter_target
             prom = PrometheusQueryClient()
 
+            # Try redis_exporter first, then mstdnca_redis_* gauges
             redis_target = _get_exporter_target(svc.guest_id, "redis_exporter")
+            data = None
             if redis_target:
+                logger.debug("Querying redis_exporter at %s for service %s", redis_target, svc.id)
                 data = prom.get_redis_metrics_exporter(redis_target, timeframe)
-            else:
+
+            if not data or not data.get("snapshots"):
+                logger.debug("redis_exporter returned no data (target=%s), trying mstdnca_redis_* metrics", redis_target)
                 redis_metrics = [
                     "mstdnca_redis_memory_used_bytes",
                     "mstdnca_redis_connected_clients",
@@ -624,7 +629,7 @@ def redis_metrics_history(service_id):
             if data and data.get("snapshots"):
                 return jsonify(data)
         except Exception:
-            logger.debug("Prometheus query failed for Redis metrics history, falling back to SQLite")
+            logger.debug("Prometheus query failed for Redis metrics history, falling back to SQLite", exc_info=True)
 
     # Fall back to SQLite
     limit = min(int(request.args.get("limit", 144)), 288)
