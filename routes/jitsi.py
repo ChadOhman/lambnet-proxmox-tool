@@ -18,12 +18,13 @@ def _parse_iso(value):
 
 
 # ---------------------------------------------------------------------------
-# In-memory job state — four jobs: upgrade, preflight, install, and CF configure
+# In-memory job state — five jobs: upgrade, preflight, install, CF configure, SD configure
 # ---------------------------------------------------------------------------
 _upgrade_job = {"running": False, "success": None, "log": []}
 _preflight_job = {"running": False, "success": None, "log": []}
 _install_job = {"running": False, "success": None, "log": []}
 _cf_configure_job = {"running": False, "success": None, "log": []}
+_sd_configure_job = {"running": False, "success": None, "log": []}
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,10 @@ def _get_jitsi_settings():
         "public_ip": Setting.get("jitsi_public_ip", ""),
         "last_cf_configure_at": _parse_iso(Setting.get("jitsi_last_cf_configure_at", "")),
         "last_cf_configure_status": Setting.get("jitsi_last_cf_configure_status", ""),
+        "secure_domain": Setting.get("jitsi_secure_domain", "false"),
+        "last_sd_configure_at": _parse_iso(Setting.get("jitsi_last_sd_configure_at", "")),
+        "last_sd_configure_status": Setting.get("jitsi_last_sd_configure_status", ""),
+        "prometheus_scrape": Setting.get("jitsi_prometheus_scrape", "false"),
     }
 
 
@@ -128,8 +133,34 @@ def save():
     Setting.set("jitsi_cf_mode", cf_mode if cf_mode in ("none", "tcp_only", "hybrid") else "none")
     Setting.set("jitsi_public_ip", request.form.get("jitsi_public_ip", "").strip())
 
+    Setting.set("jitsi_secure_domain",
+                "true" if "jitsi_secure_domain" in request.form else "false")
+
+    new_scrape = "true" if "jitsi_prometheus_scrape" in request.form else "false"
+    old_scrape = Setting.get("jitsi_prometheus_scrape", "false")
+    Setting.set("jitsi_prometheus_scrape", new_scrape)
+
     log_action("jitsi_config_save", "settings", resource_name="jitsi")
     db.session.commit()
+
+    # Regenerate Prometheus config and update JVB REST API binding when scrape toggle changes
+    if new_scrape != old_scrape:
+        try:
+            from apps.exporters import _regenerate_prometheus_config
+            _regenerate_prometheus_config()
+        except Exception:
+            logger.warning("Failed to regenerate Prometheus config after JVB scrape toggle", exc_info=True)
+        # Configure JVB REST API to listen on 0.0.0.0 (or revert to 127.0.0.1)
+        try:
+            from apps.jitsi import configure_jvb_rest_binding
+            ok, msg = configure_jvb_rest_binding(bind_all=(new_scrape == "true"))
+            if ok:
+                logger.info("JVB REST binding: %s", msg)
+            else:
+                logger.warning("JVB REST binding failed: %s", msg)
+                flash(f"Warning: Could not configure JVB REST API binding: {msg}", "warning")
+        except Exception:
+            logger.warning("Failed to configure JVB REST API binding", exc_info=True)
     flash("Jitsi settings saved.", "success")
     return redirect(url_for("jitsi.upgrade_page"))
 
@@ -393,7 +424,7 @@ def cf_configure():
         return redirect(url_for("jitsi.upgrade_page"))
 
     if (_cf_configure_job["running"] or _upgrade_job["running"]
-            or _install_job["running"]):
+            or _install_job["running"] or _sd_configure_job["running"]):
         flash("An operation is already in progress.", "warning")
         return redirect(url_for("jitsi.upgrade_page"))
 
@@ -431,4 +462,121 @@ def cf_configure():
     except ImportError:
         _threading.Thread(target=_bg, daemon=True).start()
 
+    return redirect(url_for("jitsi.upgrade_page"))
+
+
+# ---------------------------------------------------------------------------
+# Secure Domain configuration
+# ---------------------------------------------------------------------------
+
+@bp.route("/configure-secure-domain/status")
+def sd_configure_status():
+    return jsonify({
+        "running": _sd_configure_job["running"],
+        "success": _sd_configure_job["success"],
+        "log": _sd_configure_job["log"],
+    })
+
+
+@bp.route("/configure-secure-domain", methods=["POST"])
+def sd_configure():
+    from apps.jitsi import run_secure_domain_configure
+    from flask import current_app
+
+    if Setting.get("jitsi_installed", "") != "true":
+        flash("Jitsi must be installed before configuring Secure Domain.", "warning")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    if (_sd_configure_job["running"] or _cf_configure_job["running"]
+            or _upgrade_job["running"] or _install_job["running"]):
+        flash("An operation is already in progress.", "warning")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    # Persist the checkbox state so the background job reads the correct value
+    sd_enabled = request.form.get("secure_domain_enabled") == "1"
+    Setting.set("jitsi_secure_domain", "true" if sd_enabled else "false")
+    db.session.commit()
+
+    _sd_configure_job.update({"running": True, "success": None, "log": []})
+
+    def _cb(msg):
+        _sd_configure_job["log"].append(msg)
+
+    _app = current_app._get_current_object()
+
+    def _bg():
+        ok = False
+        try:
+            with _app.app_context():
+                ok, _ = run_secure_domain_configure(log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _sd_configure_job["running"] = False
+        _sd_configure_job["success"] = ok
+        from datetime import datetime, timezone
+        with _app.app_context():
+            now = datetime.now(timezone.utc).isoformat()
+            Setting.set("jitsi_last_sd_configure_at", now)
+            Setting.set("jitsi_last_sd_configure_status", "success" if ok else "error")
+            Setting.set("jitsi_last_sd_configure_log", "\n".join(_sd_configure_job["log"]))
+            log_action("jitsi_sd_configure", "settings", resource_name="jitsi",
+                       details={"status": "success" if ok else "error",
+                                "enabled": Setting.get("jitsi_secure_domain", "false")})
+            db.session.commit()
+
+    try:
+        import gevent as _gevent
+        _gevent.spawn(_bg)
+    except ImportError:
+        _threading.Thread(target=_bg, daemon=True).start()
+
+    return redirect(url_for("jitsi.upgrade_page"))
+
+
+@bp.route("/secure-domain/users")
+def sd_list_users_route():
+    from apps.jitsi import sd_list_users
+
+    if Setting.get("jitsi_installed", "") != "true":
+        return jsonify({"users": [], "error": "Jitsi not installed"})
+
+    users, error = sd_list_users()
+    return jsonify({"users": users, "error": error})
+
+
+@bp.route("/secure-domain/add-user", methods=["POST"])
+def sd_add_user_route():
+    from apps.jitsi import sd_add_user
+
+    if Setting.get("jitsi_installed", "") != "true":
+        flash("Jitsi must be installed first.", "warning")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+
+    ok, msg = sd_add_user(username, password)
+    flash(msg, "success" if ok else "error")
+    log_action("jitsi_sd_add_user", "settings", resource_name="jitsi",
+               details={"username": username, "success": ok})
+    db.session.commit()
+    return redirect(url_for("jitsi.upgrade_page"))
+
+
+@bp.route("/secure-domain/remove-user", methods=["POST"])
+def sd_remove_user_route():
+    from apps.jitsi import sd_remove_user
+
+    if Setting.get("jitsi_installed", "") != "true":
+        flash("Jitsi must be installed first.", "warning")
+        return redirect(url_for("jitsi.upgrade_page"))
+
+    username = request.form.get("username", "").strip()
+
+    ok, msg = sd_remove_user(username)
+    flash(msg, "success" if ok else "error")
+    log_action("jitsi_sd_remove_user", "settings", resource_name="jitsi",
+               details={"username": username, "success": ok})
+    db.session.commit()
     return redirect(url_for("jitsi.upgrade_page"))

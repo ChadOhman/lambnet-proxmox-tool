@@ -413,7 +413,7 @@ def exporter_add():
     exporter_type = data.get("exporter_type", "")
     port = data.get("port", "")
 
-    if exporter_type not in KNOWN_EXPORTERS:
+    if exporter_type not in KNOWN_EXPORTERS or KNOWN_EXPORTERS[exporter_type].get("builtin"):
         flash("Invalid exporter type.", "error")
         return redirect(url_for("prometheus_app.manage"))
 

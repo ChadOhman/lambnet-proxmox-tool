@@ -421,7 +421,7 @@
                             <select class="form-select" name="exporter_type" id="exporterTypeSelect" required
                                     onchange="updateExporterForm()">
                                 <option value="">-- Select --</option>
-                                {% for key, info in known_exporters.items() %}
+                                {% for key, info in known_exporters.items() if not info.get('builtin') %}
                                 <option value="{{ key }}" data-port="{{ info.default_port }}"
                                         data-requires-config="{{ info.requires_config|lower }}"
                                         data-env-vars="{{ info.get('env_vars', [])|join(',') }}">{{ info.display_name }}</option>

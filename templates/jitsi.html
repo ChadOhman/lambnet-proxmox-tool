@@ -174,6 +174,40 @@
                     <hr class="border-secondary">
 
                     <div class="mb-3">
+                        <label class="form-label">Secure Domain</label>
+                        <div class="form-check form-switch">
+                            <input type="checkbox" class="form-check-input" name="jitsi_secure_domain"
+                                   id="secureDomain"
+                                   {{ 'checked' if settings.secure_domain == 'true' }}>
+                            <label class="form-check-label" for="secureDomain">
+                                <strong>Require authentication to create rooms</strong>
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            When enabled, only registered Prosody users can start meetings.
+                            Guests can join existing rooms without credentials.
+                            Save settings, then click <strong>Configure Secure Domain</strong> to apply.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Prometheus Scraping</label>
+                        <div class="form-check form-switch">
+                            <input type="checkbox" class="form-check-input" name="jitsi_prometheus_scrape"
+                                   id="promScrape"
+                                   {{ 'checked' if settings.prometheus_scrape == 'true' }}>
+                            <label class="form-check-label" for="promScrape">
+                                <strong>Enable Prometheus scraping of JVB metrics</strong>
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            When enabled, Prometheus will scrape JVB's native <code>/metrics</code> endpoint for historical charts.
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary">
+
+                    <div class="mb-3">
                         <label class="form-label">Jitsi URL <small class="text-muted">(optional)</small></label>
                         <input type="text" class="form-control font-monospace" name="jitsi_url"
                                value="{{ settings.url }}" placeholder="https://meet.example.com">
@@ -574,6 +608,15 @@ config.openBridgeChannel = 'websocket';</pre>
                         </button>
                     </form>
                     {% endif %}
+                    {% if settings.installed %}
+                    <form method="post" action="/jitsi/configure-secure-domain" id="sdConfigureForm"
+                          onsubmit="return startSdConfigure(event)">
+                        <input type="hidden" name="secure_domain_enabled" id="sdEnabledHidden" value="0">
+                        <button type="submit" class="btn btn-outline-warning mt-2" id="sdConfigureBtn">
+                            <i class="bi bi-shield-lock"></i> Configure Secure Domain
+                        </button>
+                    </form>
+                    {% endif %}
                     {% endif %}
                 </div>
                 <div class="mt-2" id="preflightStatusBadge"></div>
@@ -614,6 +657,45 @@ config.openBridgeChannel = 'websocket';</pre>
                      style="max-height: 500px; overflow-y: auto; font-size: 0.85em; white-space: pre-wrap;">{% if settings.installed and settings.last_upgrade_log %}{{ settings.last_upgrade_log }}{% elif settings.last_install_log %}{{ settings.last_install_log }}{% else %}No operations have been run yet.{% endif %}</pre>
             </div>
         </div>
+
+        <!-- Secure Domain Users -->
+        {% if settings.secure_domain == 'true' and settings.installed %}
+        <div class="card bg-dark mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-person-lock"></i> Secure Domain Users</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">
+                    These Prosody accounts can create authenticated Jitsi rooms.
+                </p>
+                <div id="sdUserList" class="mb-3">
+                    <p class="text-muted"><small>Loading users&hellip;</small></p>
+                </div>
+                <hr class="border-secondary">
+                <form method="post" action="/jitsi/secure-domain/add-user" class="mb-0">
+                    <div class="row g-2 align-items-end">
+                        <div class="col">
+                            <label class="form-label small">Username</label>
+                            <input type="text" class="form-control form-control-sm" name="username"
+                                   required pattern="[a-zA-Z0-9._-]+" maxlength="64" placeholder="moderator"
+                                   autocomplete="off">
+                        </div>
+                        <div class="col">
+                            <label class="form-label small">Password</label>
+                            <input type="password" class="form-control form-control-sm" name="password"
+                                   required minlength="8" placeholder="min 8 characters"
+                                   autocomplete="new-password">
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-sm btn-success">
+                                <i class="bi bi-person-plus"></i> Add
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endif %}
 
         <!-- Steps Reference -->
         <div class="card bg-dark mt-4">
@@ -765,15 +847,17 @@ function _setOperationRunning(running) {
     const upgradeBtn = document.getElementById('upgradeBtn');
     const installBtn = document.getElementById('installBtn');
     const cfConfigureBtn = document.getElementById('cfConfigureBtn');
+    const sdConfigureBtn = document.getElementById('sdConfigureBtn');
     spinner.classList.toggle('d-none', !running);
     if (upgradeBtn) upgradeBtn.disabled = running;
     if (installBtn) installBtn.disabled = running;
     if (cfConfigureBtn) cfConfigureBtn.disabled = running;
+    if (sdConfigureBtn) sdConfigureBtn.disabled = running;
 }
 
 function _setOperationBadge(success, type) {
     const badge = document.getElementById('operationStatusBadge');
-    const label = type === 'install' ? 'Install' : type === 'configure' ? 'CF Configure' : 'Upgrade';
+    const label = type === 'install' ? 'Install' : type === 'configure' ? 'CF Configure' : type === 'sd-configure' ? 'Secure Domain' : 'Upgrade';
     if (success === true) {
         badge.innerHTML = '<span class="badge bg-success">' + label + ' Success</span>';
     } else if (success === false) {
@@ -872,6 +956,64 @@ function startCfConfigure(e) {
     return true;
 }
 
+// ── Secure Domain configure ──────────────────────────────────────────────────
+function startSdConfigure(e) {
+    const enabled = document.getElementById('secureDomain');
+    const action = (enabled && enabled.checked) ? 'enable' : 'disable';
+    // Pass the current checkbox state to the form so the route can persist it
+    document.getElementById('sdEnabledHidden').value = (enabled && enabled.checked) ? '1' : '0';
+    const msg = 'This will ' + action + ' Jitsi Secure Domain.\n\n'
+        + (action === 'enable'
+            ? 'Room creation will require Prosody authentication.\nGuests can still join existing rooms.\n\n'
+            : 'Room creation will be open to everyone (anonymous).\n\n')
+        + 'This will modify Prosody, Jicofo, and Jitsi Meet configs and restart services.\n\n'
+        + 'Continue?';
+    if (!confirm(msg)) return false;
+
+    _logLen = 0;
+    document.getElementById('liveLog').textContent = 'Starting Secure Domain configuration\u2026\n';
+    document.getElementById('operationStatusBadge').innerHTML = '';
+    _setOperationRunning(true);
+    document.getElementById('logCard').scrollIntoView({behavior: 'smooth'});
+    setTimeout(() => pollOperationStatus('/jitsi/configure-secure-domain/status', 'sd-configure'), 1500);
+    return true;
+}
+
+// ── Secure Domain user management ────────────────────────────────────────────
+function loadSdUsers() {
+    const container = document.getElementById('sdUserList');
+    if (!container) return;
+    fetch('/jitsi/secure-domain/users')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                container.innerHTML = '<p class="text-warning small mb-0"><i class="bi bi-exclamation-triangle"></i> ' + data.error + '</p>';
+                return;
+            }
+            if (!data.users || data.users.length === 0) {
+                container.innerHTML = '<p class="text-muted small mb-0">No users registered yet.</p>';
+                return;
+            }
+            let html = '<table class="table table-sm table-dark table-borderless mb-0">'
+                + '<thead><tr><th>Username</th><th class="text-end">Actions</th></tr></thead><tbody>';
+            data.users.forEach(u => {
+                html += '<tr><td><i class="bi bi-person"></i> ' + u + '</td>'
+                    + '<td class="text-end">'
+                    + '<form method="post" action="/jitsi/secure-domain/remove-user" style="display:inline">'
+                    + '<input type="hidden" name="username" value="' + u + '">'
+                    + '<button type="submit" class="btn btn-sm btn-outline-danger" '
+                    + 'onclick="return confirm(\'Delete user ' + u + '?\')">'
+                    + '<i class="bi bi-trash"></i></button>'
+                    + '</form></td></tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        })
+        .catch(() => {
+            container.innerHTML = '<p class="text-danger small mb-0">Failed to load users.</p>';
+        });
+}
+
 // On page load: resume any in-progress operation
 function _resumeIfRunning() {
     Promise.all([
@@ -879,7 +1021,8 @@ function _resumeIfRunning() {
         fetch('/jitsi/install/status').then(r => r.json()),
         fetch('/jitsi/preflight/status').then(r => r.json()),
         fetch('/jitsi/configure-cloudflare/status').then(r => r.json()),
-    ]).then(([upgrade, install, preflight, cfConfigure]) => {
+        fetch('/jitsi/configure-secure-domain/status').then(r => r.json()),
+    ]).then(([upgrade, install, preflight, cfConfigure, sdConfigure]) => {
         if (upgrade.running) {
             _logLen = 0;
             document.getElementById('liveLog').textContent = '';
@@ -906,6 +1049,12 @@ function _resumeIfRunning() {
             document.getElementById('operationStatusBadge').innerHTML = '';
             _setOperationRunning(true);
             pollOperationStatus('/jitsi/configure-cloudflare/status', 'configure');
+        } else if (sdConfigure.running) {
+            _logLen = 0;
+            document.getElementById('liveLog').textContent = '';
+            document.getElementById('operationStatusBadge').innerHTML = '';
+            _setOperationRunning(true);
+            pollOperationStatus('/jitsi/configure-secure-domain/status', 'sd-configure');
         } else {
             if (upgrade.log && upgrade.log.length) {
                 document.getElementById('liveLog').textContent = upgrade.log.join('\n');
@@ -919,10 +1068,15 @@ function _resumeIfRunning() {
                 document.getElementById('liveLog').textContent = cfConfigure.log.join('\n');
                 _logLen = cfConfigure.log.length;
                 if (cfConfigure.success !== null) _setOperationBadge(cfConfigure.success, 'configure');
+            } else if (sdConfigure.log && sdConfigure.log.length) {
+                document.getElementById('liveLog').textContent = sdConfigure.log.join('\n');
+                _logLen = sdConfigure.log.length;
+                if (sdConfigure.success !== null) _setOperationBadge(sdConfigure.success, 'sd-configure');
             }
         }
     }).catch(() => {});
 }
 _resumeIfRunning();
+loadSdUsers();
 </script>
 {% endblock %}

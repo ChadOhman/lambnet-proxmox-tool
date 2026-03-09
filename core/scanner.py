@@ -2305,25 +2305,68 @@ def _stats_libretranslate(guest, service):
 
 
 def _stats_jitsi_videobridge(guest, service):
-    """Collect Jitsi Videobridge stats from the colibri REST API."""
+    """Collect Jitsi Videobridge stats via REST API.
+
+    JVB 2.3+ moved endpoints:
+      - Health:  /about/health  (was /colibri/rest/healthcheck)
+      - Stats:   /metrics (Prometheus format) or /colibri/stats (JSON)
+      - Version: /about/version (was embedded in /colibri/stats)
+
+    We try new endpoints first, falling back to legacy colibri paths.
+    """
     import json as _json
     stats = {}
     port = service.port or 8080
 
-    # Health check — also detects whether the REST API is enabled
+    # ---- Health check (also detects whether the REST API is enabled) ----
+    # Try new endpoint first (/about/health), fall back to legacy
     hc_out, _ = _execute_command(
         guest,
-        f"curl -sf -o /dev/null -w '%{{http_code}}' http://localhost:{port}/colibri/rest/healthcheck 2>/dev/null || echo 000",
+        f"curl -sf -o /dev/null -w '%{{http_code}}' http://localhost:{port}/about/health 2>/dev/null || echo 000",
         timeout=10,
     )
     http_code = (hc_out or "").strip()
+
+    if http_code == "404" or http_code == "000":
+        # New endpoint not available — try legacy colibri path
+        hc_out, _ = _execute_command(
+            guest,
+            f"curl -sf -o /dev/null -w '%{{http_code}}' http://localhost:{port}/colibri/rest/healthcheck 2>/dev/null || echo 000",
+            timeout=10,
+        )
+        http_code = (hc_out or "").strip()
+
     if http_code == "000":
         stats["rest_api_disabled"] = True
         return stats
 
     stats["jvb_healthy"] = http_code == "200"
 
-    # Colibri stats endpoint
+    # ---- Try Prometheus /metrics endpoint (JVB 2.3+) ----
+    metrics_out, _ = _execute_command(
+        guest,
+        f"curl -sf http://localhost:{port}/metrics 2>/dev/null",
+        timeout=15,
+    )
+
+    if metrics_out and "jitsi_jvb_" in metrics_out:
+        _parse_jvb_prometheus_metrics(stats, metrics_out)
+        # Get version from /about/version
+        ver_out, _ = _execute_command(
+            guest,
+            f"curl -sf http://localhost:{port}/about/version 2>/dev/null",
+            timeout=10,
+        )
+        if ver_out:
+            try:
+                ver_data = _json.loads(ver_out)
+                if "version" in ver_data:
+                    stats["jvb_version"] = ver_data["version"]
+            except _json.JSONDecodeError:
+                pass
+        return stats
+
+    # ---- Fallback: legacy /colibri/stats JSON endpoint ----
     out, _ = _execute_command(
         guest,
         f"curl -sf http://localhost:{port}/colibri/stats 2>/dev/null",
@@ -2370,6 +2413,81 @@ def _stats_jitsi_videobridge(guest, service):
         stats["jvb_version"] = data["version"]
 
     return stats
+
+
+def _parse_jvb_prometheus_metrics(stats, metrics_text):
+    """Parse Prometheus-format /metrics output into the stats dict.
+
+    Maps jitsi_jvb_* metric names to the keys expected by the template.
+    Lines are in the format: metric_name{labels} value
+    """
+    # Map from Prometheus metric name → stats dict key
+    _gauge_map = {
+        "jitsi_jvb_conferences": "conferences",
+        "jitsi_jvb_participants": "participants",
+        "jitsi_jvb_largest_conference": "largest_conference",
+        "jitsi_jvb_endpoints_sending_audio": "endpoints_sending_audio",
+        "jitsi_jvb_endpoints_sending_video": "endpoints_sending_video",
+        "jitsi_jvb_p2p_conferences": "p2p_conferences",
+        "jitsi_jvb_inactive_conferences": "inactive_conferences",
+        "jitsi_jvb_stress_level": "stress_level",
+        "jitsi_jvb_bit_rate_download": "bit_rate_download",
+        "jitsi_jvb_bit_rate_upload": "bit_rate_upload",
+        "jitsi_jvb_packet_rate_download": "packet_rate_download",
+        "jitsi_jvb_packet_rate_upload": "packet_rate_upload",
+        "jitsi_jvb_rtt_aggregate": "rtt_aggregate",
+        "jitsi_jvb_threads": "threads",
+        "jitsi_jvb_healthy": "_jvb_healthy",
+    }
+    _counter_map = {
+        "jitsi_jvb_conferences_created_total": "total_conferences_created",
+        "jitsi_jvb_conferences_completed_total": "total_conferences_completed",
+        "jitsi_jvb_participants_total": "total_participants",
+        "jitsi_jvb_conference_seconds_total": "total_conference_seconds",
+        "jitsi_jvb_bytes_received_total": "total_bytes_received",
+        "jitsi_jvb_bytes_sent_total": "total_bytes_sent",
+        "jitsi_jvb_ice_succeeded_total": "total_ice_succeeded",
+        "jitsi_jvb_ice_failed_total": "total_ice_failed",
+        "jitsi_jvb_ice_succeeded_relayed_total": "total_ice_succeeded_relayed",
+    }
+
+    # Also accept the short names (without jitsi_ prefix) that some JVB builds emit
+    _all_maps = {}
+    _all_maps.update(_gauge_map)
+    _all_maps.update(_counter_map)
+
+    for line in metrics_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        # Strip labels: "metric{label=val} 123" → "metric", "123"
+        metric_name = line.split("{")[0].split()[0] if "{" in line else line.split()[0]
+        parts = line.rsplit(None, 1)
+        if len(parts) != 2:
+            continue
+        raw_value = parts[1]
+
+        stat_key = _all_maps.get(metric_name)
+        if not stat_key:
+            continue
+
+        try:
+            value = float(raw_value)
+        except ValueError:
+            continue
+
+        if stat_key == "_jvb_healthy":
+            stats["jvb_healthy"] = value == 1.0
+        elif stat_key in ("stress_level",):
+            stats[stat_key] = value
+        elif stat_key in ("bit_rate_download", "bit_rate_upload",
+                          "packet_rate_download", "packet_rate_upload",
+                          "rtt_aggregate"):
+            stats[stat_key] = value
+        else:
+            # Integer metrics (conferences, participants, totals, threads)
+            stats[stat_key] = int(value)
 
 
 def _stats_prometheus(guest, service):

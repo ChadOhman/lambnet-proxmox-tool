@@ -88,6 +88,26 @@ class TestJitsiRouteAuth:
         resp = client.get("/jitsi/install/status", follow_redirects=False)
         assert resp.status_code == 302
 
+    def test_sd_configure_unauthenticated(self, client):
+        resp = client.post("/jitsi/configure-secure-domain", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_sd_configure_status_unauthenticated(self, client):
+        resp = client.get("/jitsi/configure-secure-domain/status", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_sd_list_users_unauthenticated(self, client):
+        resp = client.get("/jitsi/secure-domain/users", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_sd_add_user_unauthenticated(self, client):
+        resp = client.post("/jitsi/secure-domain/add-user", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_sd_remove_user_unauthenticated(self, client):
+        resp = client.post("/jitsi/secure-domain/remove-user", follow_redirects=False)
+        assert resp.status_code == 302
+
 
 class TestJitsiRouteViewer:
     """Viewer users (can_update=False) should be denied access."""
@@ -687,6 +707,158 @@ class TestJitsiServiceMonitoring:
             assert d["conferences"] == 3
             assert d["participants"] == 12
 
+    def test_configure_coturn_tls_adds_missing_directives(self):
+        """_configure_coturn_tls adds tls-listening-port and cert paths."""
+        from apps.jitsi import _configure_coturn_tls
+        ssh = MagicMock()
+        # Existing turnserver.conf without TLS
+        existing = "listening-port=3478\nrealm=meet.example.com\n"
+        ssh.execute_sudo.side_effect = [
+            (existing, "", 0),       # cat /etc/turnserver.conf
+            ("", "", 1),             # test LE certs (not found)
+            ("", "", 0),             # sed enable coturn
+            ("", "", 0),             # tee (write)
+            ("", "", 0),             # restart coturn
+        ]
+        logs = []
+        result = _configure_coturn_tls(ssh, "meet.example.com", logs.append)
+        assert result == 0
+        assert any("tls-listening-port" in msg for msg in logs)
+
+    def test_configure_coturn_tls_skips_when_configured(self):
+        """_configure_coturn_tls skips when all directives already present."""
+        from apps.jitsi import _configure_coturn_tls
+        ssh = MagicMock()
+        existing = (
+            "listening-port=3478\n"
+            "tls-listening-port=5349\n"
+            "cert=/etc/jitsi/meet/meet.example.com.crt\n"
+            "pkey=/etc/jitsi/meet/meet.example.com.key\n"
+            "no-multicast-peers\n"
+            "no-cli\n"
+            "no-loopback-peers\n"
+        )
+        ssh.execute_sudo.side_effect = [
+            (existing, "", 0),  # cat
+            ("", "", 1),        # test LE certs (not found)
+            ("", "", 0),        # sed enable coturn
+        ]
+        logs = []
+        result = _configure_coturn_tls(ssh, "meet.example.com", logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+
+    def test_configure_coturn_tls_uses_letsencrypt_certs(self):
+        """_configure_coturn_tls prefers LE certs when they exist."""
+        from apps.jitsi import _configure_coturn_tls
+        ssh = MagicMock()
+        existing = "listening-port=3478\n"
+        ssh.execute_sudo.side_effect = [
+            (existing, "", 0),    # cat
+            ("yes", "", 0),       # test LE certs (found)
+            ("", "", 0),          # sed enable coturn
+            ("", "", 0),          # tee (write)
+            ("", "", 0),          # restart coturn
+        ]
+        logs = []
+        result = _configure_coturn_tls(ssh, "meet.example.com", logs.append)
+        assert result == 0
+        assert any("Let's Encrypt" in msg for msg in logs)
+
+    def test_configure_coturn_tls_returns_warning_if_unreadable(self):
+        """_configure_coturn_tls returns 1 if turnserver.conf cannot be read."""
+        from apps.jitsi import _configure_coturn_tls
+        ssh = MagicMock()
+        ssh.execute_sudo.return_value = ("", "", 1)
+        logs = []
+        result = _configure_coturn_tls(ssh, "meet.example.com", logs.append)
+        assert result == 1
+        assert any("WARNING" in msg for msg in logs)
+
+    def test_configure_prosody_turn_adds_external_services(self):
+        """_configure_prosody_turn adds external_services block when missing."""
+        from apps.jitsi import _configure_prosody_turn
+        ssh = MagicMock()
+        prosody_cfg = (
+            'VirtualHost "meet.example.com"\n'
+            '  modules_enabled = {\n    "bosh";\n  }\n'
+            '\nComponent "conference.meet.example.com" "muc"\n'
+        )
+        ssh.execute_sudo.side_effect = [
+            (prosody_cfg, "", 0),        # cat prosody cfg
+            ("mysecret123", "", 0),      # cat TURN secret
+            ("", "", 0),                 # tee (write)
+            ("", "", 0),                 # restart prosody
+        ]
+        logs = []
+        result = _configure_prosody_turn(ssh, "meet.example.com", logs.append)
+        assert result == 0
+        assert any("external_services" in msg for msg in logs)
+
+    def test_configure_prosody_turn_skips_when_present(self):
+        """_configure_prosody_turn skips when turns entry already exists."""
+        from apps.jitsi import _configure_prosody_turn
+        ssh = MagicMock()
+        prosody_cfg = (
+            'VirtualHost "meet.example.com"\n'
+            'external_services = {\n'
+            '  { type = "turns", port = 5349 },\n'
+            '}\n'
+        )
+        ssh.execute_sudo.return_value = (prosody_cfg, "", 0)
+        logs = []
+        result = _configure_prosody_turn(ssh, "meet.example.com", logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+
+    def test_configure_prosody_turn_warns_on_missing_secret(self):
+        """_configure_prosody_turn warns if TURN secret cannot be found."""
+        from apps.jitsi import _configure_prosody_turn
+        ssh = MagicMock()
+        prosody_cfg = 'VirtualHost "meet.example.com"\n'
+        ssh.execute_sudo.side_effect = [
+            (prosody_cfg, "", 0),  # cat prosody cfg
+            ("", "", 1),           # cat TURN secret (not found)
+            ("", "", 1),           # grep turnserver.conf (not found)
+        ]
+        logs = []
+        result = _configure_prosody_turn(ssh, "meet.example.com", logs.append)
+        assert result == 1
+        assert any("WARNING" in msg for msg in logs)
+
+    def test_configure_jvb_nat_harvester_sets_ips(self):
+        """_configure_jvb_nat_harvester sets NAT harvester addresses."""
+        from apps.jitsi import _configure_jvb_nat_harvester
+        ssh = MagicMock()
+        existing = "org.jitsi.videobridge.SINGLE_PORT_HARVESTER_PORT=10000\n"
+        ssh.execute_sudo.side_effect = [
+            (existing, "", 0),  # cat sip-communicator.properties
+            ("", "", 0),        # tee (write)
+        ]
+        logs = []
+        result = _configure_jvb_nat_harvester(ssh, "10.0.0.5", "203.0.113.1", logs.append)
+        assert result == 0
+        assert any("NAT_HARVESTER" in msg for msg in logs)
+
+    def test_configure_jvb_nat_harvester_skips_without_public_ip(self):
+        """_configure_jvb_nat_harvester skips when no public IP given."""
+        from apps.jitsi import _configure_jvb_nat_harvester
+        ssh = MagicMock()
+        logs = []
+        result = _configure_jvb_nat_harvester(ssh, "10.0.0.5", "", logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+        ssh.execute_sudo.assert_not_called()
+
+    def test_configure_jvb_nat_harvester_rejects_invalid_ip(self):
+        """_configure_jvb_nat_harvester warns on invalid public IP."""
+        from apps.jitsi import _configure_jvb_nat_harvester
+        ssh = MagicMock()
+        logs = []
+        result = _configure_jvb_nat_harvester(ssh, "10.0.0.5", "not-an-ip", logs.append)
+        assert result == 1
+        assert any("WARNING" in msg for msg in logs)
+
     def test_enable_jvb_rest_api_idempotent(self):
         """_enable_jvb_rest_api should skip if REST API already enabled."""
         from apps.jitsi import _enable_jvb_rest_api
@@ -718,3 +890,559 @@ class TestJitsiServiceMonitoring:
         assert any("REST API enabled" in msg for msg in logs)
         # Should have called write (tee) and restart
         assert ssh.execute_sudo.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Prometheus metrics parsing tests
+# ---------------------------------------------------------------------------
+
+
+class TestJvbPrometheusMetrics:
+    """Tests for _parse_jvb_prometheus_metrics (JVB 2.3+ /metrics support)."""
+
+    def test_parse_gauge_metrics(self):
+        """Prometheus gauge metrics should map to expected stat keys."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = (
+            "# HELP jitsi_jvb_conferences location\n"
+            "# TYPE jitsi_jvb_conferences gauge\n"
+            "jitsi_jvb_conferences 3.0\n"
+            "jitsi_jvb_participants 7.0\n"
+            "jitsi_jvb_largest_conference 4.0\n"
+            "jitsi_jvb_endpoints_sending_audio 5.0\n"
+            "jitsi_jvb_endpoints_sending_video 6.0\n"
+            "jitsi_jvb_stress_level 0.123\n"
+            "jitsi_jvb_threads 42.0\n"
+        )
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert stats["conferences"] == 3
+        assert stats["participants"] == 7
+        assert stats["largest_conference"] == 4
+        assert stats["endpoints_sending_audio"] == 5
+        assert stats["endpoints_sending_video"] == 6
+        assert stats["stress_level"] == 0.123
+        assert stats["threads"] == 42
+
+    def test_parse_counter_metrics(self):
+        """Prometheus counter (total) metrics should map to cumulative stat keys."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = (
+            "jitsi_jvb_conferences_created_total 100.0\n"
+            "jitsi_jvb_conferences_completed_total 95.0\n"
+            "jitsi_jvb_participants_total 500.0\n"
+            "jitsi_jvb_conference_seconds_total 36000.0\n"
+            "jitsi_jvb_bytes_received_total 1048576.0\n"
+            "jitsi_jvb_bytes_sent_total 2097152.0\n"
+            "jitsi_jvb_ice_succeeded_total 80.0\n"
+            "jitsi_jvb_ice_failed_total 5.0\n"
+            "jitsi_jvb_ice_succeeded_relayed_total 10.0\n"
+        )
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert stats["total_conferences_created"] == 100
+        assert stats["total_conferences_completed"] == 95
+        assert stats["total_participants"] == 500
+        assert stats["total_conference_seconds"] == 36000
+        assert stats["total_bytes_received"] == 1048576
+        assert stats["total_bytes_sent"] == 2097152
+        assert stats["total_ice_succeeded"] == 80
+        assert stats["total_ice_failed"] == 5
+        assert stats["total_ice_succeeded_relayed"] == 10
+
+    def test_parse_healthy_metric(self):
+        """jitsi_jvb_healthy 1.0 should set jvb_healthy=True."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, "jitsi_jvb_healthy 1.0\n")
+        assert stats["jvb_healthy"] is True
+
+    def test_parse_unhealthy_metric(self):
+        """jitsi_jvb_healthy 0.0 should set jvb_healthy=False."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, "jitsi_jvb_healthy 0.0\n")
+        assert stats["jvb_healthy"] is False
+
+    def test_parse_bitrate_metrics(self):
+        """Bitrate and RTT should be kept as floats."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = (
+            "jitsi_jvb_bit_rate_download 1234.5\n"
+            "jitsi_jvb_bit_rate_upload 567.8\n"
+            "jitsi_jvb_rtt_aggregate 12.3\n"
+        )
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert stats["bit_rate_download"] == 1234.5
+        assert stats["bit_rate_upload"] == 567.8
+        assert stats["rtt_aggregate"] == 12.3
+
+    def test_parse_skips_comments_and_empty_lines(self):
+        """Comments and empty lines should be ignored."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = (
+            "# HELP jitsi_jvb_conferences desc\n"
+            "# TYPE jitsi_jvb_conferences gauge\n"
+            "\n"
+            "jitsi_jvb_conferences 2.0\n"
+            "\n"
+        )
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert stats["conferences"] == 2
+        assert len(stats) == 1
+
+    def test_parse_skips_unknown_metrics(self):
+        """Unknown metric names should be silently ignored."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = (
+            "some_other_metric 42.0\n"
+            "jitsi_jvb_conferences 1.0\n"
+        )
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert "some_other_metric" not in stats
+        assert stats["conferences"] == 1
+
+    def test_parse_metrics_with_labels(self):
+        """Metrics with labels (e.g., {region=...}) should still parse."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = 'jitsi_jvb_conferences{region="us-east"} 5.0\n'
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert stats["conferences"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Secure Domain config patching tests
+# ---------------------------------------------------------------------------
+
+# Minimal Prosody config for testing
+_PROSODY_CFG = '''VirtualHost "meet.example.com"
+    authentication = "jitsi-anonymous"
+    modules_enabled = {
+        "bosh";
+        "pubsub";
+    }
+    c2s_require_encryption = false
+
+Component "conference.meet.example.com" "muc"
+    modules_enabled = { "muc_meeting_id"; }
+'''
+
+_PROSODY_CFG_ENABLED = '''VirtualHost "meet.example.com"
+    authentication = "internal_hashed"
+    modules_enabled = {
+        "bosh";
+        "pubsub";
+    }
+    c2s_require_encryption = false
+
+-- Guest domain for unauthenticated participants (auto-configured)
+VirtualHost "guest.meet.example.com"
+    authentication = "jitsi-anonymous"
+    modules_enabled = {
+        "turncredentials";
+    }
+    c2s_require_encryption = false
+
+Component "conference.meet.example.com" "muc"
+    modules_enabled = { "muc_meeting_id"; }
+'''
+
+_MEET_CONFIG_JS = '''var config = {
+    hosts: {
+        domain: 'meet.example.com',
+        muc: 'conference.meet.example.com'
+    },
+    bosh: '//meet.example.com/http-bind'
+};
+'''
+
+_JICOFO_CONF = '''jicofo {
+  xmpp {
+    client {
+      hostname = "meet.example.com"
+    }
+  }
+}
+'''
+
+_JICOFO_CONF_ENABLED = '''jicofo {
+  xmpp {
+    client {
+      hostname = "meet.example.com"
+    }
+  }
+  authentication {
+    enabled = true
+    type = "XMPP"
+    login-url = "meet.example.com"
+  }
+}
+'''
+
+
+class TestSecureDomainPatchProsody:
+    """Tests for _sd_patch_prosody."""
+
+    def test_enable_patches_auth_and_adds_guest(self):
+        from apps.jitsi import _sd_patch_prosody
+        ssh = MagicMock()
+        ssh.execute_sudo.side_effect = [
+            (_PROSODY_CFG, "", 0),  # cat
+            ("", "", 0),  # tee (write)
+        ]
+        logs = []
+        result = _sd_patch_prosody(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        # Check the written content
+        write_call = ssh.execute_sudo.call_args_list[1]
+        written_cmd = write_call[0][0]
+        assert "base64" in written_cmd
+        assert any("internal_hashed" in msg for msg in logs)
+        assert any("guest.meet.example.com" in msg for msg in logs)
+
+    def test_enable_idempotent(self):
+        from apps.jitsi import _sd_patch_prosody
+        ssh = MagicMock()
+        ssh.execute_sudo.return_value = (_PROSODY_CFG_ENABLED, "", 0)
+        logs = []
+        result = _sd_patch_prosody(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+        # Should only have called cat, not write
+        assert ssh.execute_sudo.call_count == 1
+
+    def test_disable_reverts_auth_and_removes_guest(self):
+        from apps.jitsi import _sd_patch_prosody
+        ssh = MagicMock()
+        ssh.execute_sudo.side_effect = [
+            (_PROSODY_CFG_ENABLED, "", 0),  # cat
+            ("", "", 0),  # tee (write)
+        ]
+        logs = []
+        result = _sd_patch_prosody(ssh, "meet.example.com", False, logs.append)
+        assert result == 0
+        assert any("jitsi-anonymous" in msg for msg in logs)
+        assert any("Removed" in msg for msg in logs)
+
+    def test_disable_already_disabled(self):
+        from apps.jitsi import _sd_patch_prosody
+        ssh = MagicMock()
+        ssh.execute_sudo.return_value = (_PROSODY_CFG, "", 0)
+        logs = []
+        result = _sd_patch_prosody(ssh, "meet.example.com", False, logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+
+
+class TestSecureDomainPatchMeetConfig:
+    """Tests for _sd_patch_meet_config_js."""
+
+    def test_enable_adds_anonymousdomain(self):
+        from apps.jitsi import _sd_patch_meet_config_js
+        ssh = MagicMock()
+        ssh.execute_sudo.side_effect = [
+            (_MEET_CONFIG_JS, "", 0),  # cat
+            ("", "", 0),  # tee
+        ]
+        logs = []
+        result = _sd_patch_meet_config_js(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        assert any("anonymousdomain" in msg for msg in logs)
+
+    def test_enable_idempotent(self):
+        from apps.jitsi import _sd_patch_meet_config_js
+        ssh = MagicMock()
+        content = _MEET_CONFIG_JS + "\nconfig.hosts.anonymousdomain = 'guest.meet.example.com';\n"
+        ssh.execute_sudo.return_value = (content, "", 0)
+        logs = []
+        result = _sd_patch_meet_config_js(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+
+    def test_disable_removes_anonymousdomain(self):
+        from apps.jitsi import _sd_patch_meet_config_js
+        ssh = MagicMock()
+        content = _MEET_CONFIG_JS + "\nconfig.hosts.anonymousdomain = 'guest.meet.example.com';\n"
+        ssh.execute_sudo.side_effect = [
+            (content, "", 0),  # cat
+            ("", "", 0),  # tee
+        ]
+        logs = []
+        result = _sd_patch_meet_config_js(ssh, "meet.example.com", False, logs.append)
+        assert result == 0
+        assert any("Removed" in msg for msg in logs)
+
+
+class TestSecureDomainPatchJicofo:
+    """Tests for _sd_patch_jicofo_conf."""
+
+    def test_enable_adds_auth_block(self):
+        from apps.jitsi import _sd_patch_jicofo_conf
+        ssh = MagicMock()
+        ssh.execute_sudo.side_effect = [
+            (_JICOFO_CONF, "", 0),  # cat
+            ("", "", 0),  # tee
+        ]
+        logs = []
+        result = _sd_patch_jicofo_conf(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        assert any("authentication block" in msg for msg in logs)
+
+    def test_enable_idempotent(self):
+        from apps.jitsi import _sd_patch_jicofo_conf
+        ssh = MagicMock()
+        ssh.execute_sudo.return_value = (_JICOFO_CONF_ENABLED, "", 0)
+        logs = []
+        result = _sd_patch_jicofo_conf(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+
+    def test_disable_removes_auth_block(self):
+        from apps.jitsi import _sd_patch_jicofo_conf
+        ssh = MagicMock()
+        ssh.execute_sudo.side_effect = [
+            (_JICOFO_CONF_ENABLED, "", 0),  # cat
+            ("", "", 0),  # tee
+        ]
+        logs = []
+        result = _sd_patch_jicofo_conf(ssh, "meet.example.com", False, logs.append)
+        assert result == 0
+        assert any("Removed" in msg for msg in logs)
+
+    def test_disable_already_disabled(self):
+        from apps.jitsi import _sd_patch_jicofo_conf
+        ssh = MagicMock()
+        ssh.execute_sudo.return_value = (_JICOFO_CONF, "", 0)
+        logs = []
+        result = _sd_patch_jicofo_conf(ssh, "meet.example.com", False, logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+
+
+# ---------------------------------------------------------------------------
+# Jitsi JVB Prometheus exporter integration
+# ---------------------------------------------------------------------------
+
+
+class TestJvbExporterRegistry:
+    """Verify jitsi_jvb is registered as a builtin exporter."""
+
+    def test_jitsi_jvb_in_known_exporters(self):
+        from apps.exporters import KNOWN_EXPORTERS
+        assert "jitsi_jvb" in KNOWN_EXPORTERS
+
+    def test_jitsi_jvb_is_builtin(self):
+        from apps.exporters import KNOWN_EXPORTERS
+        info = KNOWN_EXPORTERS["jitsi_jvb"]
+        assert info.get("builtin") is True
+        assert info["binary_name"] is None
+        assert info["default_port"] == 8080
+        assert info["job_name"] == "jitsi_jvb"
+
+
+class TestJvbPrometheusQueryClient:
+    """Test get_jvb_metrics_exporter method."""
+
+    def test_get_jvb_metrics_exporter_returns_snapshots(self, app):
+        from unittest.mock import patch
+        from clients.prometheus_query import PrometheusQueryClient
+
+        with app.app_context():
+            from models import Setting, db
+            Setting.set("prometheus_url", "http://localhost:9090")
+            db.session.commit()
+
+            with patch.object(PrometheusQueryClient, '_run_snapshot_queries') as mock_rsq:
+                mock_rsq.return_value = {"snapshots": [{"conferences": 5}], "source": "jitsi_jvb"}
+                prom = PrometheusQueryClient()
+                result = prom.get_jvb_metrics_exporter("10.0.0.5:8080", "day")
+                assert result["source"] == "jitsi_jvb"
+                assert len(result["snapshots"]) == 1
+                # Verify the right queries were passed
+                queries = mock_rsq.call_args[0][0]
+                assert "conferences" in queries
+                assert "stress_level" in queries
+                assert "ice_succeeded_total" in queries
+                assert "ice_failed_total" in queries
+                assert "bit_rate_download" in queries
+                assert "bit_rate_upload" in queries
+
+
+class TestJvbTargetHelper:
+    """Test _get_jvb_target helper."""
+
+    def test_returns_none_when_scrape_disabled(self, app):
+        from clients.prometheus_query import _get_jvb_target
+        with app.app_context():
+            from models import Setting, db
+            Setting.set("jitsi_prometheus_scrape", "false")
+            db.session.commit()
+            assert _get_jvb_target() is None
+
+    def test_returns_target_when_enabled(self, app):
+        from clients.prometheus_query import _get_jvb_target
+        with app.app_context():
+            from models import Setting, Guest, db
+            Setting.set("jitsi_prometheus_scrape", "true")
+            guest = Guest(name="jitsi-vm", vmid=200, ip_address="10.0.0.5",
+                          guest_type="qemu", enabled=True)
+            db.session.add(guest)
+            db.session.commit()
+            Setting.set("jitsi_guest_id", str(guest.id))
+            db.session.commit()
+            target = _get_jvb_target()
+            assert target == "10.0.0.5:8080"
+
+    def test_returns_none_when_no_guest(self, app):
+        from clients.prometheus_query import _get_jvb_target
+        with app.app_context():
+            from models import Setting, db
+            Setting.set("jitsi_prometheus_scrape", "true")
+            Setting.set("jitsi_guest_id", "")
+            db.session.commit()
+            assert _get_jvb_target() is None
+
+    def test_returns_none_when_guest_has_dhcp(self, app):
+        from clients.prometheus_query import _get_jvb_target
+        with app.app_context():
+            from models import Setting, Guest, db
+            Setting.set("jitsi_prometheus_scrape", "true")
+            guest = Guest(name="jitsi-vm", vmid=200, ip_address="dhcp",
+                          guest_type="qemu", enabled=True)
+            db.session.add(guest)
+            db.session.commit()
+            Setting.set("jitsi_guest_id", str(guest.id))
+            db.session.commit()
+            assert _get_jvb_target() is None
+
+
+class TestJitsiSavePrometheusScrape:
+    """Test that saving Jitsi settings persists prometheus_scrape."""
+
+    def test_save_persists_prometheus_scrape(self, app, auth_client):
+        from models import Setting
+
+        auth_client.post(
+            "/jitsi/save",
+            data={"jitsi_prometheus_scrape": "on"},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            assert Setting.get("jitsi_prometheus_scrape") == "true"
+
+    def test_save_disables_prometheus_scrape(self, app, auth_client):
+        from models import Setting
+
+        # Enable first
+        with app.app_context():
+            Setting.set("jitsi_prometheus_scrape", "true")
+        # Save without the checkbox
+        auth_client.post(
+            "/jitsi/save",
+            data={},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            assert Setting.get("jitsi_prometheus_scrape") == "false"
+
+
+class TestConfigureJvbRestBinding:
+    """Test configure_jvb_rest_binding for Prometheus network access."""
+
+    def test_bind_all_inserts_http_servers_block(self, app):
+        from unittest.mock import patch, MagicMock
+        from apps.jitsi import configure_jvb_rest_binding
+
+        jvb_conf = (
+            "videobridge {\n"
+            "  apis {\n"
+            "    rest {\n"
+            "      enabled = true\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+        )
+
+        mock_ssh = MagicMock()
+        mock_ssh.execute_sudo.side_effect = [
+            (jvb_conf, "", 0),  # cat jvb.conf
+            ("", "", 0),        # tee (write)
+            ("", "", 0),        # systemctl restart
+        ]
+        mock_guest = MagicMock()
+
+        with app.app_context():
+            with patch("apps.jitsi._sd_get_ssh", return_value=(mock_ssh, mock_guest, None)):
+                ok, msg = configure_jvb_rest_binding(bind_all=True)
+
+        assert ok is True
+        assert "0.0.0.0" in msg
+
+    def test_bind_all_already_set(self, app):
+        from unittest.mock import patch, MagicMock
+        from apps.jitsi import configure_jvb_rest_binding
+
+        jvb_conf = (
+            "videobridge {\n"
+            "  http-servers {\n"
+            "    private {\n"
+            "      host = 0.0.0.0\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+        )
+
+        mock_ssh = MagicMock()
+        mock_ssh.execute_sudo.return_value = (jvb_conf, "", 0)
+        mock_guest = MagicMock()
+
+        with app.app_context():
+            with patch("apps.jitsi._sd_get_ssh", return_value=(mock_ssh, mock_guest, None)):
+                ok, msg = configure_jvb_rest_binding(bind_all=True)
+
+        assert ok is True
+        assert "already" in msg
+
+    def test_revert_to_localhost(self, app):
+        from unittest.mock import patch, MagicMock
+        from apps.jitsi import configure_jvb_rest_binding
+
+        jvb_conf = (
+            "videobridge {\n"
+            "  http-servers {\n"
+            "    private {\n"
+            "      host = 0.0.0.0\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+        )
+
+        mock_ssh = MagicMock()
+        mock_ssh.execute_sudo.side_effect = [
+            (jvb_conf, "", 0),  # cat jvb.conf
+            ("", "", 0),        # tee (write)
+            ("", "", 0),        # systemctl restart
+        ]
+        mock_guest = MagicMock()
+
+        with app.app_context():
+            with patch("apps.jitsi._sd_get_ssh", return_value=(mock_ssh, mock_guest, None)):
+                ok, msg = configure_jvb_rest_binding(bind_all=False)
+
+        assert ok is True
+        assert "127.0.0.1" in msg
+
+    def test_returns_error_when_no_ssh(self, app):
+        from unittest.mock import patch
+        from apps.jitsi import configure_jvb_rest_binding
+
+        with app.app_context():
+            with patch("apps.jitsi._sd_get_ssh", return_value=(None, None, "No SSH credential")):
+                ok, msg = configure_jvb_rest_binding(bind_all=True)
+
+        assert ok is False
+        assert "No SSH credential" in msg

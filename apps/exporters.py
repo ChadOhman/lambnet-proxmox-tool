@@ -51,6 +51,15 @@ KNOWN_EXPORTERS = {
         "job_name": "redis",
         "asset_version_prefix": "v",
     },
+    "jitsi_jvb": {
+        "display_name": "Jitsi Videobridge",
+        "binary_name": None,
+        "default_port": 8080,
+        "systemd_unit": "jitsi-videobridge2.service",
+        "requires_config": False,
+        "job_name": "jitsi_jvb",
+        "builtin": True,
+    },
 }
 
 # Built-in exporters — these are part of the application itself (no binary to install).
@@ -117,6 +126,8 @@ def check_exporter_release(exporter_type):
     info = KNOWN_EXPORTERS.get(exporter_type)
     if not info:
         return None, f"Unknown exporter type: {exporter_type}"
+    if info.get("builtin"):
+        return None, f"{info['display_name']} is a builtin exporter (no separate install needed)"
 
     try:
         url = f"https://api.github.com/repos/{info['github_repo']}/releases/latest"
@@ -140,6 +151,8 @@ def detect_exporter_version(guest, exporter_type):
     info = KNOWN_EXPORTERS.get(exporter_type)
     if not info:
         return None, f"Unknown exporter type: {exporter_type}"
+    if info.get("builtin"):
+        return None, f"{info['display_name']} is a builtin exporter"
 
     credential = guest.credential
     if not credential:
@@ -504,6 +517,22 @@ def _regenerate_prometheus_config(_log=None):
         if not ip or ip.lower() in ("dhcp", "dhcp6", "auto"):
             continue
         by_type.setdefault(exp.exporter_type, []).append(f"{ip}:{exp.port}")
+
+    # Include builtin exporters (e.g. JVB) from settings
+    if Setting.get("jitsi_prometheus_scrape", "false") == "true":
+        jitsi_guest_id = Setting.get("jitsi_guest_id", "")
+        if jitsi_guest_id:
+            try:
+                jitsi_guest = Guest.query.get(int(jitsi_guest_id))
+                if jitsi_guest and jitsi_guest.ip_address and jitsi_guest.ip_address.lower() not in (
+                    "dhcp", "dhcp6", "auto"
+                ):
+                    jvb_info = KNOWN_EXPORTERS["jitsi_jvb"]
+                    by_type.setdefault("jitsi_jvb", []).append(
+                        f"{jitsi_guest.ip_address}:{jvb_info['default_port']}"
+                    )
+            except (TypeError, ValueError):
+                pass
 
     extra_configs = ""
     for etype, targets in sorted(by_type.items()):
