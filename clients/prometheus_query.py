@@ -408,9 +408,9 @@ class PrometheusQueryClient:
             "sidekiq_throughput": f'sum(rate(ruby_sidekiq_jobs_total{{{inst}}}[{ri}]))',
             "sidekiq_failure_rate": f'sum(rate(ruby_sidekiq_failed_jobs_total{{{inst}}}[{ri}]))',
             "sidekiq_avg_duration": _summary_avg("ruby_sidekiq_job_duration_seconds"),
-            "sidekiq_enqueued": f'sum(ruby_sidekiq_jobs_enqueued{{{inst}}})',
-            "sidekiq_retry_queue": f'sum(ruby_sidekiq_restarted_jobs_total{{{inst}}})',
-            "sidekiq_dead_queue": f'sum(ruby_sidekiq_dead_jobs_total{{{inst}}})',
+            "sidekiq_enqueued": f'sum(ruby_sidekiq_stats_enqueued{{{inst}}})',
+            "sidekiq_retry_queue": f'sum(ruby_sidekiq_stats_retry_size{{{inst}}})',
+            "sidekiq_dead_queue": f'sum(ruby_sidekiq_stats_dead_size{{{inst}}})',
             # -- ActiveRecord --
             "db_pool_utilization": (
                 f'sum(ruby_active_record_connection_pool_busy{{{inst}}}) / '
