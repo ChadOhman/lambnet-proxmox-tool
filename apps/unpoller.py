@@ -764,7 +764,7 @@ def _get_config():
     """Read all relevant settings into a dict."""
     return {
         "guest_id": Setting.get("prometheus_guest_id", ""),
-        "unifi_url": Setting.get("unifi_url", ""),
+        "unifi_url": Setting.get("unifi_base_url", ""),
         "unifi_user": Setting.get("unifi_username", ""),
         "unifi_pass": Setting.get("unifi_password", ""),
         "unifi_site": Setting.get("unpoller_site_name", "default"),

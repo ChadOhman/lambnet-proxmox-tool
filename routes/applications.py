@@ -57,5 +57,12 @@ def index():
             "latest_version": Setting.get("prometheus_latest_version", ""),
             "installed": Setting.get("prometheus_installed", "false") == "true",
         },
+        "unpoller": {
+            "auto_upgrade": Setting.get("unpoller_auto_upgrade", "false") == "true",
+            "update_available": Setting.get("unpoller_update_available", "false") == "true",
+            "current_version": Setting.get("unpoller_current_version", ""),
+            "latest_version": Setting.get("unpoller_latest_version", ""),
+            "installed": Setting.get("unpoller_installed", "false") == "true",
+        },
     }
     return render_template("applications.html", apps=apps)
