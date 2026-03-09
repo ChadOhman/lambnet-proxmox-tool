@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+{% block title %}Unpoller - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/applications">Applications</a></li>
+        <li class="breadcrumb-item active">Unpoller Management</li>
+    </ol>
+</nav>
+
+<h2 class="mb-4"><i class="bi bi-router"></i> Unpoller</h2>
+<p class="text-muted mb-4">
+    <a href="https://unpoller.com" target="_blank" rel="noopener">Unpoller</a> polls your UniFi controller
+    and exports 100+ Prometheus metrics for devices, clients, radios, DPI, and more.
+    It installs on the same guest as Prometheus.
+</p>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card bg-dark">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-gear"></i> Configuration</h5>
+            </div>
+            <div class="card-body">
+                {% if not settings.prometheus_guest_id %}
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>Prometheus guest not configured.</strong>
+                    Unpoller installs on the same guest as Prometheus.
+                    <a href="/prometheus/manage" class="alert-link">Configure Prometheus first</a>.
+                </div>
+                {% elif not settings.prometheus_installed %}
+                <div class="alert alert-info mb-3">
+                    <i class="bi bi-info-circle"></i>
+                    Prometheus is configured but not yet installed.
+                    <a href="/prometheus/manage" class="alert-link">Install Prometheus first</a>.
+                </div>
+                {% endif %}
+
+                {% if not unifi_configured %}
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>UniFi controller not configured.</strong>
+                    Unpoller needs the controller URL and credentials.
+                    <a href="/settings" class="alert-link">Configure UniFi in Settings</a>.
+                </div>
+                {% endif %}
+
+                {% if prom_guest %}
+                <div class="mb-3">
+                    <small class="text-muted d-block">Target Guest (same as Prometheus)</small>
+                    <span class="fs-6">{{ prom_guest.name }} ({{ prom_guest.ip_address or 'no IP' }})</span>
+                </div>
+                {% endif %}
+
+                <form method="post" action="/unpoller/save">
+                    <div class="mb-3">
+                        <label class="form-label">Metric Namespace Prefix</label>
+                        <input type="text" class="form-control font-monospace" name="unpoller_metric_prefix"
+                               value="{{ settings.metric_prefix or 'unpoller' }}" placeholder="unpoller">
+                        <div class="form-text">Prometheus metric prefix (default: <code>unpoller</code>).</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">UniFi Site Name</label>
+                        <input type="text" class="form-control" name="unpoller_site_name"
+                               value="{{ settings.site_name or 'default' }}" placeholder="default">
+                        <div class="form-text">The site name configured on your UniFi controller.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Listen Port</label>
+                        <input type="number" class="form-control" name="unpoller_listen_port"
+                               value="{{ settings.listen_port or '9130' }}" min="1" max="65535" style="max-width: 120px;">
+                        <div class="form-text">Port unpoller listens on for Prometheus scrapes (default: 9130).</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" class="form-check-input" id="autoUpgrade" name="unpoller_auto_upgrade"
+                                   {{ 'checked' if settings.auto_upgrade == 'true' }}>
+                            <label class="form-check-label" for="autoUpgrade">
+                                Auto-upgrade when new versions are available
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary me-2">Save Settings</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <!-- Version & Status -->
+        <div class="card bg-dark mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Version & Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    {% if settings.installed %}
+                    <span class="badge bg-success me-2"><i class="bi bi-check-lg"></i> Installed</span>
+                    {% else %}
+                    <span class="badge bg-secondary me-2">Not installed</span>
+                    {% endif %}
+                    {% if settings.enabled %}
+                    <span class="badge bg-info me-2">Integration enabled</span>
+                    {% endif %}
+                    {% if settings.update_available %}
+                    <span class="badge bg-warning text-dark">Update available</span>
+                    {% endif %}
+                </div>
+
+                {% if settings.current_version %}
+                <p class="mb-1">
+                    <strong>Current:</strong> v{{ settings.current_version }}
+                    {% if settings.update_available and settings.latest_version %}
+                    &rarr; v{{ settings.latest_version }}
+                    {% endif %}
+                </p>
+                {% endif %}
+
+                {% if settings.latest_version and not settings.current_version %}
+                <p class="mb-1"><strong>Latest:</strong> v{{ settings.latest_version }}</p>
+                {% endif %}
+
+                <div class="mt-3">
+                    <form method="post" action="/unpoller/detect-version" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-light me-1"
+                                aria-label="Detect installed version"
+                                {{ 'disabled' if not settings.prometheus_guest_id }}>
+                            <i class="bi bi-search"></i> Detect Version
+                        </button>
+                    </form>
+                    <form method="post" action="/unpoller/check" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-light me-1"
+                                aria-label="Check for updates">
+                            <i class="bi bi-arrow-repeat"></i> Check for Updates
+                        </button>
+                    </form>
+                </div>
+
+                {% if settings.last_install_at %}
+                <hr>
+                <small class="text-muted">
+                    Last install: {{ settings.last_install_at | local_dt('%Y-%m-%d %H:%M') }}
+                    <span class="badge {{ 'bg-success' if settings.last_install_status == 'success' else 'bg-danger' }}">
+                        {{ settings.last_install_status }}
+                    </span>
+                </small>
+                {% endif %}
+                {% if settings.last_upgrade_at %}
+                <br>
+                <small class="text-muted">
+                    Last upgrade: {{ settings.last_upgrade_at | local_dt('%Y-%m-%d %H:%M') }}
+                    <span class="badge {{ 'bg-success' if settings.last_upgrade_status == 'success' else 'bg-danger' }}">
+                        {{ settings.last_upgrade_status }}
+                    </span>
+                </small>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="card bg-dark">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-lightning"></i> Actions</h5>
+            </div>
+            <div class="card-body">
+                {% if settings.prometheus_guest_id %}
+                <button type="button" class="btn btn-outline-secondary me-2" id="preflightBtn"
+                        onclick="startPreflight()">
+                    <i class="bi bi-clipboard2-check"></i> Pre-flight Check
+                </button>
+                {% endif %}
+                {% if not settings.installed %}
+                <form method="post" action="/unpoller/install" class="d-inline"
+                      data-confirm="Install unpoller on the Prometheus guest? A snapshot/backup will be taken first.">
+                    <button type="submit" class="btn btn-success" id="installBtn"
+                            {{ 'disabled' if not settings.prometheus_guest_id or not settings.prometheus_installed or not unifi_configured }}>
+                        <i class="bi bi-download"></i> Install Unpoller
+                    </button>
+                </form>
+                {% else %}
+                <form method="post" action="/unpoller/upgrade"
+                      data-confirm="Upgrade unpoller to v{{ settings.latest_version }}? A snapshot/backup will be taken first."
+                      class="d-inline">
+                    <button type="submit" class="btn btn-warning" id="upgradeBtn"
+                            {{ 'disabled' if not settings.update_available }}>
+                        <i class="bi bi-arrow-up-circle"></i> Upgrade
+                        {% if settings.update_available %}to v{{ settings.latest_version }}{% endif %}
+                    </button>
+                </form>
+                <form method="post" action="/unpoller/reconfig" class="d-inline ms-2"
+                      data-confirm="Regenerate unpoller config with current UniFi credentials and restart the service?">
+                    <button type="submit" class="btn btn-outline-info">
+                        <i class="bi bi-arrow-clockwise"></i> Reconfigure
+                    </button>
+                </form>
+                {% endif %}
+
+                <div class="mt-2" id="preflightStatusBadge"></div>
+
+                <!-- Operation log output -->
+                <div id="operationLog" class="mt-3 d-none">
+                    <h6>Operation Log</h6>
+                    <pre class="bg-black text-light p-3 rounded" style="max-height: 400px; overflow-y: auto; font-size: 0.85rem;" id="logOutput"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function pollStatus(endpoint, onUpdate, onDone) {
+    const poll = () => {
+        fetch(endpoint)
+            .then(r => r.json())
+            .then(data => {
+                onUpdate(data);
+                if (data.running) {
+                    setTimeout(poll, 1500);
+                } else if (onDone) {
+                    onDone(data);
+                }
+            })
+            .catch(() => setTimeout(poll, 3000));
+    };
+    poll();
+}
+
+function showLog(lines) {
+    const el = document.getElementById('operationLog');
+    const out = document.getElementById('logOutput');
+    el.classList.remove('d-none');
+    out.textContent = lines.join('\n');
+    out.scrollTop = out.scrollHeight;
+}
+
+function startPreflight() {
+    const btn = document.getElementById('preflightBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Running…';
+
+    fetch('/unpoller/preflight', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-clipboard2-check"></i> Pre-flight Check';
+                alert(data.error);
+                return;
+            }
+            pollStatus('/unpoller/preflight/status',
+                data => showLog(data.log),
+                data => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-clipboard2-check"></i> Pre-flight Check';
+                    const badge = document.getElementById('preflightStatusBadge');
+                    if (data.success) {
+                        badge.innerHTML = '<span class="badge bg-success">All checks passed</span>';
+                    } else {
+                        badge.innerHTML = '<span class="badge bg-danger">Some checks failed</span>';
+                    }
+                }
+            );
+        });
+}
+
+// Auto-poll if an operation is running on page load
+(function() {
+    const endpoints = [
+        ['/unpoller/install/status', 'installBtn'],
+        ['/unpoller/upgrade/status', 'upgradeBtn'],
+        ['/unpoller/reconfig/status', null],
+    ];
+    endpoints.forEach(([url, btnId]) => {
+        fetch(url).then(r => r.json()).then(data => {
+            if (data.running) {
+                if (btnId) {
+                    const btn = document.getElementById(btnId);
+                    if (btn) btn.disabled = true;
+                }
+                pollStatus(url,
+                    data => showLog(data.log),
+                    () => location.reload()
+                );
+            }
+        }).catch(() => {});
+    });
+})();
+</script>
+{% endblock %}

@@ -882,6 +882,51 @@ def _check_prometheus_release(app):
             logger.error("Failed to check Prometheus releases: %s", e)
 
 
+def _check_unpoller_release(app):
+    """Check for new unpoller releases on GitHub."""
+    with app.app_context():
+        import json
+        import urllib.request
+
+        from models import Setting
+
+        if Setting.get("unpoller_installed", "false") != "true":
+            return
+
+        try:
+            url = "https://api.github.com/repos/unpoller/unpoller/releases/latest"
+            req = urllib.request.Request(url, headers={"User-Agent": "mstdnca-proxmox-tool"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                latest = data.get("tag_name", "").lstrip("v")
+                if not latest:
+                    return
+
+            Setting.set("unpoller_latest_version", latest)
+            current = Setting.get("unpoller_current_version", "")
+
+            from apps.utils import _version_gt
+            update_available = bool(current and _version_gt(latest, current))
+            Setting.set("unpoller_update_available", "true" if update_available else "false")
+
+            if update_available:
+                logger.info("Unpoller update available: v%s -> v%s", current, latest)
+
+                # Auto-upgrade if enabled
+                if Setting.get("unpoller_auto_upgrade", "false") == "true":
+                    logger.info("Auto-upgrade enabled, starting unpoller upgrade...")
+                    from apps.unpoller import run_unpoller_upgrade
+                    from auth.audit import log_action
+                    from models import db
+                    ok, _ = run_unpoller_upgrade()
+                    log_action("unpoller_upgrade", "settings", resource_name="unpoller",
+                               details={"status": "success" if ok else "error", "trigger": "auto"})
+                    db.session.commit()
+
+        except Exception as e:
+            logger.error("Failed to check unpoller releases: %s", e)
+
+
 def init_scheduler(app):
     global _scheduler
 
@@ -1071,6 +1116,17 @@ def init_scheduler(app):
         args=[app],
         id="prometheus_check",
         name="Check for Prometheus releases",
+        replace_existing=True,
+        max_instances=1,
+    )
+
+    # Unpoller release check - runs alongside other release checks
+    _scheduler.add_job(
+        _check_unpoller_release,
+        trigger=IntervalTrigger(hours=interval_hours),
+        args=[app],
+        id="unpoller_check",
+        name="Check for unpoller releases",
         replace_existing=True,
         max_instances=1,
     )
