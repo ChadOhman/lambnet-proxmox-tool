@@ -2116,6 +2116,9 @@ function refreshStats() {
                 setEl('stat-redis-clients',  data.connected_clients || '0');
                 setEl('stat-redis-ops',      data.ops_per_sec       || '0');
                 setEl('stat-redis-hitratio', data.hit_ratio         || 'N/A');
+
+                // Refresh charts after each stat update
+                if (typeof redisLoadCharts === 'function') redisLoadCharts();
             }
 
             // JVB
