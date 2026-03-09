@@ -2,11 +2,10 @@
 
 import json
 import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from models import db, User, Setting
 import auth.cloudflare_access as cloudflare_access
-
+from models import Setting, User, db
 
 # ---------------------------------------------------------------------------
 # Helpers

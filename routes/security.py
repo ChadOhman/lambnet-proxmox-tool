@@ -1,9 +1,10 @@
 import re
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash
-from flask_login import login_required, current_user
-from models import db, User, Role, Tag, TagUnifiNetwork, Setting, AuditLog, Credential, ScanResult
+from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+
 from auth.audit import log_action
+from models import AuditLog, Credential, Role, ScanResult, Setting, Tag, TagUnifiNetwork, User, db
 
 # Strict hex-color validation: #RRGGBB only
 _HEX_COLOR_RE = re.compile(r'^#[0-9a-fA-F]{6}$')

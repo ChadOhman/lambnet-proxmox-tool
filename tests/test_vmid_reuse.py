@@ -1,8 +1,9 @@
 """Tests for VMID reuse detection during discovery and manual guest reset/type override."""
-import pytest
-from unittest.mock import patch, MagicMock
-from models import db, Guest, ProxmoxHost, UpdatePackage, ScanResult, GuestService
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from models import Guest, GuestService, ProxmoxHost, ScanResult, UpdatePackage, db
 
 # ---------------------------------------------------------------------------
 # Fixtures

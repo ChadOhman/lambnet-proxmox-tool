@@ -1,10 +1,12 @@
 import logging
 import threading as _threading
 from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
-from models import db, Setting, Guest
+
 from auth.audit import log_action
+from models import Guest, Setting, db
 
 
 def _parse_iso(value):
@@ -223,8 +225,9 @@ def install_status():
 
 @bp.route("/preflight", methods=["POST"])
 def preflight():
-    from apps.jitsi import run_jitsi_preflight
     from flask import current_app
+
+    from apps.jitsi import run_jitsi_preflight
 
     if _upgrade_job["running"] or _install_job["running"]:
         return jsonify({"error": "An operation is already in progress"}), 409
@@ -260,9 +263,10 @@ def preflight():
 
 @bp.route("/upgrade", methods=["POST"])
 def upgrade():
-    from apps.jitsi import run_jitsi_upgrade
     from flask import current_app
     from flask_login import current_user
+
+    from apps.jitsi import run_jitsi_upgrade
 
     if _upgrade_job["running"] or _install_job["running"]:
         flash("An operation is already in progress.", "warning")
@@ -316,8 +320,9 @@ def upgrade():
 
 @bp.route("/install", methods=["POST"])
 def install():
-    from apps.jitsi import run_jitsi_install
     from flask import current_app
+
+    from apps.jitsi import run_jitsi_install
 
     if _upgrade_job["running"] or _install_job["running"]:
         flash("An operation is already in progress.", "warning")
@@ -416,8 +421,9 @@ def cf_configure_status():
 
 @bp.route("/configure-cloudflare", methods=["POST"])
 def cf_configure():
-    from apps.jitsi import run_cloudflare_configure
     from flask import current_app
+
+    from apps.jitsi import run_cloudflare_configure
 
     if Setting.get("jitsi_installed", "") != "true":
         flash("Jitsi must be installed before configuring Cloudflare.", "warning")
@@ -480,8 +486,9 @@ def sd_configure_status():
 
 @bp.route("/configure-secure-domain", methods=["POST"])
 def sd_configure():
-    from apps.jitsi import run_secure_domain_configure
     from flask import current_app
+
+    from apps.jitsi import run_secure_domain_configure
 
     if Setting.get("jitsi_installed", "") != "true":
         flash("Jitsi must be installed before configuring Secure Domain.", "warning")

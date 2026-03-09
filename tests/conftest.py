@@ -2,8 +2,10 @@ import os
 import tempfile
 
 import pytest
+
 from app import create_app
-from models import db as _db, User
+from models import User
+from models import db as _db
 
 _TEST_ADMIN_PASSWORD = "TestPass123!"
 
@@ -18,8 +20,8 @@ _TEST_CONFIG = {
 @pytest.fixture(autouse=True, scope="session")
 def _isolate_credential_store():
     """Redirect credential_store key to a temp file so tests never touch /etc/mstdnca."""
-    import config as cfg
     import auth.credential_store as credential_store
+    import config as cfg
 
     tmp_dir = tempfile.mkdtemp(prefix="mstdnca-test-")
     key_path = os.path.join(tmp_dir, "secret.key")

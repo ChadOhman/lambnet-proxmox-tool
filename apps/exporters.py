@@ -506,8 +506,8 @@ def run_exporter_uninstall(instance_id, log_callback=None):
 
 def _regenerate_prometheus_config(_log=None):
     """Regenerate prometheus.yml with all installed exporter targets and push to Prometheus guest."""
-    from models import Credential, ExporterInstance, Guest, Setting
     from apps.prometheus_app import _generate_prometheus_yml
+    from models import Credential, ExporterInstance, Guest, Setting
 
     _log = _log or (lambda msg: None)
 
@@ -617,6 +617,7 @@ def enable_mastodon_exporter(guest_id, config=None, log_callback=None):
     ExporterInstance record, and regenerates the Prometheus scrape config.
     """
     from datetime import datetime, timezone
+
     from models import Credential, ExporterInstance, Guest, Setting, db
 
     _log = log_callback or (lambda msg: None)

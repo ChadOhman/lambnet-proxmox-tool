@@ -1,7 +1,8 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
-from flask_login import login_required, current_user
-from models import db, MaintenanceWindow
+from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+
 from auth.audit import log_action
+from models import MaintenanceWindow, db
 
 bp = Blueprint("schedules", __name__)
 

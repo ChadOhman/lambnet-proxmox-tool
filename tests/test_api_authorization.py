@@ -1,6 +1,6 @@
 """Authorization tests for API status/cancel endpoints."""
-from routes.api import _proxmox_jobs, _update_jobs, ProxmoxJob, UpdateJob
-from models import db, Guest, Role, User
+from models import Guest, Role, User, db
+from routes.api import ProxmoxJob, UpdateJob, _proxmox_jobs, _update_jobs
 
 
 def _login(client, username, password):

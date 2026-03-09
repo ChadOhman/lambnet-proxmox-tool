@@ -17,13 +17,13 @@ fetched and cached from https://<team-domain>/cdn-cgi/access/certs.
 import json
 import logging
 import time
-from urllib.request import urlopen, Request
+from urllib.request import Request, urlopen
 
 import jwt as pyjwt  # PyJWT library
-from flask import request, abort, g, session
+from flask import abort, g, request, session
 from flask_login import login_user
 
-from models import db, User, Role, Setting
+from models import Role, Setting, User, db
 
 logger = logging.getLogger(__name__)
 

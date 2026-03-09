@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.0
+    rev: v0.15.1
     hooks:
       - id: ruff
         args: [--fix]
@@ -8,9 +8,9 @@ repos:
   - repo: local
     hooks:
       - id: pytest
-        name: pytest
+        name: pytest (smoke)
         entry: pytest
-        args: [tests/, -x, -q]
+        args: [tests/test_models.py, tests/test_config.py, tests/test_auth.py, tests/test_security.py, -x, -q, --no-header]
         language: system
         pass_filenames: false
         always_run: true

@@ -2,7 +2,6 @@
 import sys
 from unittest.mock import MagicMock
 
-
 # ---------------------------------------------------------------------------
 # Helpers (mirror test_elk.py patterns)
 # ---------------------------------------------------------------------------
@@ -113,7 +112,7 @@ class TestJitsiRouteViewer:
     """Viewer users (can_update=False) should be denied access."""
 
     def test_viewer_denied_upgrade_page(self, app, client):
-        from models import db, User, Role
+        from models import Role, User, db
 
         with app.app_context():
             viewer_role = Role.query.filter_by(name="viewer").first()
@@ -602,7 +601,7 @@ class TestJitsiServiceMonitoring:
 
     def test_jvb_metrics_history_unauthenticated(self, app, client):
         """Metrics history endpoint should redirect unauthenticated users."""
-        from models import db, Guest, GuestService
+        from models import Guest, GuestService, db
         with app.app_context():
             guest = Guest.query.first()
             if not guest:
@@ -624,7 +623,7 @@ class TestJitsiServiceMonitoring:
 
     def test_jvb_metrics_history_wrong_service_type(self, app, auth_client):
         """Metrics history returns 400 for non-JVB services."""
-        from models import db, Guest, GuestService
+        from models import Guest, GuestService, db
         with app.app_context():
             guest = Guest.query.first()
             if not guest:
@@ -646,7 +645,7 @@ class TestJitsiServiceMonitoring:
 
     def test_jvb_metrics_history_empty(self, app, auth_client):
         """Metrics history returns empty snapshots for a JVB service with no data."""
-        from models import db, Guest, GuestService
+        from models import Guest, GuestService, db
         with app.app_context():
             guest = Guest.query.first()
             if not guest:
@@ -671,7 +670,8 @@ class TestJitsiServiceMonitoring:
     def test_stats_route_saves_jvb_snapshot(self, app, auth_client):
         """Stats route should persist a JVB metric snapshot."""
         from unittest.mock import patch
-        from models import db, Guest, GuestService, ServiceMetricSnapshot
+
+        from models import Guest, GuestService, ServiceMetricSnapshot, db
         with app.app_context():
             guest = Guest.query.first()
             if not guest:
@@ -1249,6 +1249,7 @@ class TestJvbPrometheusQueryClient:
 
     def test_get_jvb_metrics_exporter_returns_snapshots(self, app):
         from unittest.mock import patch
+
         from clients.prometheus_query import PrometheusQueryClient
 
         with app.app_context():
@@ -1286,7 +1287,7 @@ class TestJvbTargetHelper:
     def test_returns_target_when_enabled(self, app):
         from clients.prometheus_query import _get_jvb_target
         with app.app_context():
-            from models import Setting, Guest, db
+            from models import Guest, Setting, db
             Setting.set("jitsi_prometheus_scrape", "true")
             guest = Guest(name="jitsi-vm", vmid=200, ip_address="10.0.0.5",
                           guest_type="qemu", enabled=True)
@@ -1309,7 +1310,7 @@ class TestJvbTargetHelper:
     def test_returns_none_when_guest_has_dhcp(self, app):
         from clients.prometheus_query import _get_jvb_target
         with app.app_context():
-            from models import Setting, Guest, db
+            from models import Guest, Setting, db
             Setting.set("jitsi_prometheus_scrape", "true")
             guest = Guest(name="jitsi-vm", vmid=200, ip_address="dhcp",
                           guest_type="qemu", enabled=True)
@@ -1354,7 +1355,8 @@ class TestConfigureJvbRestBinding:
     """Test configure_jvb_rest_binding for Prometheus network access."""
 
     def test_bind_all_inserts_http_servers_block(self, app):
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from apps.jitsi import configure_jvb_rest_binding
 
         jvb_conf = (
@@ -1383,7 +1385,8 @@ class TestConfigureJvbRestBinding:
         assert "0.0.0.0" in msg
 
     def test_bind_all_already_set(self, app):
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from apps.jitsi import configure_jvb_rest_binding
 
         jvb_conf = (
@@ -1408,7 +1411,8 @@ class TestConfigureJvbRestBinding:
         assert "already" in msg
 
     def test_revert_to_localhost(self, app):
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from apps.jitsi import configure_jvb_rest_binding
 
         jvb_conf = (
@@ -1438,6 +1442,7 @@ class TestConfigureJvbRestBinding:
 
     def test_returns_error_when_no_ssh(self, app):
         from unittest.mock import patch
+
         from apps.jitsi import configure_jvb_rest_binding
 
         with app.app_context():

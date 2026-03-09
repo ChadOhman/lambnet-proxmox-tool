@@ -2,8 +2,6 @@
 import sys
 from unittest.mock import MagicMock, patch
 
-
-
 # ---------------------------------------------------------------------------
 # Helpers (mirror test_peertube.py patterns)
 # ---------------------------------------------------------------------------
@@ -94,7 +92,7 @@ class TestElkRouteViewer:
     """Viewer users (can_update=False) should be denied access."""
 
     def test_viewer_denied_upgrade_page(self, app, client):
-        from models import db, User, Role
+        from models import Role, User, db
 
         with app.app_context():
             viewer_role = Role.query.filter_by(name="viewer").first()

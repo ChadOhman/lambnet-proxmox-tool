@@ -1,10 +1,12 @@
-import os
 import logging
+import os
 from urllib.parse import urlparse
+
 from flask import Flask
 from flask_login import LoginManager
-from config import Config, BASE_DIR, DATA_DIR
-from models import db, User, Role, DEFAULT_ROLES
+
+from config import BASE_DIR, DATA_DIR, Config
+from models import DEFAULT_ROLES, Role, User, db
 
 logger = logging.getLogger(__name__)
 
@@ -88,26 +90,26 @@ def create_app(test_config=None):
     app.config["GIT_BRANCH"] = git_branch
 
     # Register blueprints
+    from routes.api import bp as api_bp
+    from routes.applications import bp as applications_bp
     from routes.auth import bp as auth_bp
-    from routes.dashboard import bp as dashboard_bp
-    from routes.hosts import bp as hosts_bp
-    from routes.guests import bp as guests_bp
     from routes.credentials import bp as credentials_bp
-    from routes.settings import bp as settings_bp
+    from routes.dashboard import bp as dashboard_bp
+    from routes.elk import bp as elk_bp
+    from routes.ghost import bp as ghost_bp
+    from routes.guests import bp as guests_bp
+    from routes.hosts import bp as hosts_bp
+    from routes.jitsi import bp as jitsi_bp
+    from routes.mastodon import bp as mastodon_bp
+    from routes.peertube import bp as peertube_bp
+    from routes.prometheus_app import bp as prometheus_app_bp
+    from routes.prometheus_metrics import bp as prometheus_metrics_bp
     from routes.schedules import bp as schedules_bp
     from routes.security import bp as security_bp
-    from routes.terminal import bp as terminal_bp
-    from routes.mastodon import bp as mastodon_bp
-    from routes.ghost import bp as ghost_bp
-    from routes.peertube import bp as peertube_bp
-    from routes.elk import bp as elk_bp
-    from routes.jitsi import bp as jitsi_bp
-    from routes.api import bp as api_bp
     from routes.services import bp as services_bp
+    from routes.settings import bp as settings_bp
+    from routes.terminal import bp as terminal_bp
     from routes.unifi import bp as unifi_bp
-    from routes.applications import bp as applications_bp
-    from routes.prometheus_metrics import bp as prometheus_metrics_bp
-    from routes.prometheus_app import bp as prometheus_app_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -159,9 +161,11 @@ def create_app(test_config=None):
     init_cf_access(app)
 
     # Custom Jinja filters
-    from datetime import datetime, timezone as tz
-    from markupsafe import Markup
     import zoneinfo
+    from datetime import datetime
+    from datetime import timezone as tz
+
+    from markupsafe import Markup
 
     def _tz_span(dt, fmt):
         """Return a Markup <span data-utc="ISO"> with server-side tz conversion."""
@@ -209,7 +213,7 @@ def create_app(test_config=None):
 
         Accept only same-origin requests for unsafe HTTP methods.
         """
-        from flask import request, abort
+        from flask import abort, request
 
         if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
             return
@@ -263,7 +267,7 @@ def create_app(test_config=None):
 
     @app.route("/toggle-safety-mode", methods=["POST"])
     def toggle_safety_mode():
-        from flask import session, redirect, request
+        from flask import redirect, request, session
         from flask_login import current_user
         if not current_user.is_authenticated:
             from flask import abort

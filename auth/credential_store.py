@@ -1,6 +1,8 @@
 import os
 import threading
+
 from cryptography.fernet import Fernet
+
 from config import SECRET_KEY_PATH
 
 _fernet: "Fernet | None" = None

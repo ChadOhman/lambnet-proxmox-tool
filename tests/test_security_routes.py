@@ -1,6 +1,5 @@
 """Tests for security blueprint POST routes (user, role, tag, and access management)."""
-from models import db, User, Role, Tag, Setting
-
+from models import Role, Setting, Tag, User, db
 
 # ---------------------------------------------------------------------------
 # Helpers

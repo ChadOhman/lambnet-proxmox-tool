@@ -13,14 +13,13 @@ Covers endpoints that do not require Proxmox / SSH connectivity:
 """
 from datetime import datetime
 
-from models import db, Guest, UpdatePackage
+from models import Guest, UpdatePackage, db
 from routes.api import (
-    _update_jobs,
-    _proxmox_jobs,
-    UpdateJob,
     ProxmoxJob,
+    UpdateJob,
+    _proxmox_jobs,
+    _update_jobs,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

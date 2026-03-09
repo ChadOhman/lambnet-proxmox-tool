@@ -18,27 +18,26 @@ network activity occurs.  The test suite exercises:
 """
 import json
 import urllib.error
-from unittest.mock import patch, MagicMock
 from io import BytesIO
+from unittest.mock import MagicMock, patch
 
-from models import db, Setting
 from core.notifier import (
-    _send_discord,
     _get_discord_config,
+    _send_discord,
+    send_app_update_notification,
+    send_elk_update_notification,
+    send_exporter_notification,
+    send_ghost_update_notification,
+    send_host_update_notification,
+    send_jitsi_update_notification,
+    send_mastodon_update_notification,
+    send_peertube_update_notification,
     send_test_notification,
     send_update_notification,
-    send_host_update_notification,
-    send_mastodon_update_notification,
-    send_ghost_update_notification,
-    send_peertube_update_notification,
-    send_elk_update_notification,
-    send_jitsi_update_notification,
-    send_upgrade_started_notification,
     send_upgrade_result_notification,
-    send_exporter_notification,
-    send_app_update_notification,
+    send_upgrade_started_notification,
 )
-
+from models import Setting, db
 
 # ---------------------------------------------------------------------------
 # Helpers

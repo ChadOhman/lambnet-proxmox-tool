@@ -1,15 +1,17 @@
-import queue
-import time
-import threading
 import logging
+import queue
+import threading
+import time
 import zoneinfo
 from datetime import datetime, timezone
-from flask import Blueprint, redirect, url_for, flash, request, render_template, jsonify, Response, stream_with_context
-from flask_login import login_required, current_user
-from models import db, Guest, ProxmoxHost, Tag, Setting
-from core.scanner import scan_guest, scan_all_guests
-from core.notifier import send_update_notification
+
+from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, stream_with_context, url_for
+from flask_login import current_user, login_required
+
 from auth.audit import log_action
+from core.notifier import send_update_notification
+from core.scanner import scan_all_guests, scan_guest
+from models import Guest, ProxmoxHost, Setting, Tag, db
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +74,8 @@ class UpdateJob:
 
 def _run_update_background(app, guest_id, dist_upgrade=False):
     """Run apt upgrade in a background thread with streaming output."""
-    from clients.ssh_client import SSHClient
     from clients.proxmox_api import ProxmoxClient
+    from clients.ssh_client import SSHClient
 
     with app.app_context():
         job = _update_jobs.get(guest_id)
@@ -274,7 +276,7 @@ def apply(guest_id):
 
     # Snapshot gating for non-admin users
     if not current_user.is_admin:
-        from routes.guests import guest_requires_snapshot, auto_snapshot_if_needed
+        from routes.guests import auto_snapshot_if_needed, guest_requires_snapshot
         if guest_requires_snapshot(guest):
             ok, msg = auto_snapshot_if_needed(guest)
             if not ok:

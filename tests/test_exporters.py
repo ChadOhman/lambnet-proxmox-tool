@@ -2,8 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from models import db, Guest, Credential, ExporterInstance, ProxmoxHost, Setting
-
+from models import Credential, ExporterInstance, Guest, ProxmoxHost, Setting, db
 
 # ---------------------------------------------------------------------------
 # Helpers

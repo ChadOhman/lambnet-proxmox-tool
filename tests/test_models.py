@@ -1,6 +1,7 @@
 """Unit tests for model helpers."""
 import pytest
-from models import db, Guest, UpdatePackage, Setting
+
+from models import Guest, Setting, UpdatePackage, db
 
 
 @pytest.fixture()

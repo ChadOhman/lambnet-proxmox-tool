@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 
 from markupsafe import Markup
 
-
 # ---------------------------------------------------------------------------
 # POST /toggle-safety-mode
 # ---------------------------------------------------------------------------

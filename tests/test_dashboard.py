@@ -1,6 +1,6 @@
 """Tests for the dashboard route."""
 
-from models import db, Guest
+from models import Guest, db
 
 
 class TestDashboard:

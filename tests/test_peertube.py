@@ -2,8 +2,6 @@
 import sys
 from unittest.mock import MagicMock, patch
 
-
-
 # ---------------------------------------------------------------------------
 # Helpers (mirror test_scheduler.py patterns)
 # ---------------------------------------------------------------------------
@@ -95,7 +93,7 @@ class TestPeerTubeRouteViewer:
     """Viewer users (can_update=False) should be denied access."""
 
     def test_viewer_denied_upgrade_page(self, app, client):
-        from models import db, User, Role
+        from models import Role, User, db
 
         with app.app_context():
             viewer_role = Role.query.filter_by(name="viewer").first()
@@ -280,8 +278,8 @@ class TestPeerTubeRouteAuthed:
 
     def test_save_keeps_existing_password_when_blank(self, app, auth_client):
         """Submitting blank password preserves existing encrypted value."""
-        from models import Setting
         from auth.credential_store import encrypt
+        from models import Setting
 
         with app.app_context():
             Setting.set("peertube_db_password", encrypt("existing"))

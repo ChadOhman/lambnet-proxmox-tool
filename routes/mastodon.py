@@ -1,10 +1,12 @@
 import logging
 import threading as _threading
 from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
-from models import db, Setting, Guest
+
 from auth.audit import log_action
+from models import Guest, Setting, db
 
 # ---------------------------------------------------------------------------
 # In-memory upgrade job state — tracks the currently-running upgrade so the
@@ -184,8 +186,9 @@ def preflight_status():
 
 @bp.route("/preflight", methods=["POST"])
 def preflight():
-    from apps.mastodon import run_mastodon_preflight
     from flask import current_app
+
+    from apps.mastodon import run_mastodon_preflight
 
     if _upgrade_job["running"]:
         return jsonify({"error": "An upgrade is already in progress"}), 409
@@ -221,9 +224,10 @@ def preflight():
 
 @bp.route("/upgrade", methods=["POST"])
 def upgrade():
-    from apps.mastodon import run_mastodon_upgrade
     from flask import current_app
     from flask_login import current_user
+
+    from apps.mastodon import run_mastodon_upgrade
 
     if _upgrade_job["running"]:
         flash("An upgrade is already in progress.", "warning")
@@ -278,8 +282,8 @@ def upgrade():
 
 @bp.route("/detect-versions", methods=["POST"])
 def detect_versions():
-    from core.scanner import _execute_command
     from apps.mastodon import _validate_shell_param
+    from core.scanner import _execute_command
 
     guest_id = Setting.get("mastodon_guest_id", "")
     db_guest_id = Setting.get("mastodon_db_guest_id", "")

@@ -1,7 +1,7 @@
 """Tests for credentials routes and credential_store encrypt/decrypt helpers."""
 import pytest
-from models import db, Credential
 
+from models import Credential, db
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -366,7 +366,7 @@ class TestCredentialStore:
         credential_store._fernet = None
 
     def test_encrypt_decrypt_roundtrip(self):
-        from auth.credential_store import encrypt, decrypt
+        from auth.credential_store import decrypt, encrypt
 
         plaintext = "super-secret-value-42"
         ciphertext = encrypt(plaintext)
