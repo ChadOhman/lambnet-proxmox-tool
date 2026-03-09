@@ -687,6 +687,158 @@ class TestJitsiServiceMonitoring:
             assert d["conferences"] == 3
             assert d["participants"] == 12
 
+    def test_configure_coturn_tls_adds_missing_directives(self):
+        """_configure_coturn_tls adds tls-listening-port and cert paths."""
+        from apps.jitsi import _configure_coturn_tls
+        ssh = MagicMock()
+        # Existing turnserver.conf without TLS
+        existing = "listening-port=3478\nrealm=meet.example.com\n"
+        ssh.execute_sudo.side_effect = [
+            (existing, "", 0),       # cat /etc/turnserver.conf
+            ("", "", 1),             # test LE certs (not found)
+            ("", "", 0),             # sed enable coturn
+            ("", "", 0),             # tee (write)
+            ("", "", 0),             # restart coturn
+        ]
+        logs = []
+        result = _configure_coturn_tls(ssh, "meet.example.com", logs.append)
+        assert result == 0
+        assert any("tls-listening-port" in msg for msg in logs)
+
+    def test_configure_coturn_tls_skips_when_configured(self):
+        """_configure_coturn_tls skips when all directives already present."""
+        from apps.jitsi import _configure_coturn_tls
+        ssh = MagicMock()
+        existing = (
+            "listening-port=3478\n"
+            "tls-listening-port=5349\n"
+            "cert=/etc/jitsi/meet/meet.example.com.crt\n"
+            "pkey=/etc/jitsi/meet/meet.example.com.key\n"
+            "no-multicast-peers\n"
+            "no-cli\n"
+            "no-loopback-peers\n"
+        )
+        ssh.execute_sudo.side_effect = [
+            (existing, "", 0),  # cat
+            ("", "", 1),        # test LE certs (not found)
+            ("", "", 0),        # sed enable coturn
+        ]
+        logs = []
+        result = _configure_coturn_tls(ssh, "meet.example.com", logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+
+    def test_configure_coturn_tls_uses_letsencrypt_certs(self):
+        """_configure_coturn_tls prefers LE certs when they exist."""
+        from apps.jitsi import _configure_coturn_tls
+        ssh = MagicMock()
+        existing = "listening-port=3478\n"
+        ssh.execute_sudo.side_effect = [
+            (existing, "", 0),    # cat
+            ("yes", "", 0),       # test LE certs (found)
+            ("", "", 0),          # sed enable coturn
+            ("", "", 0),          # tee (write)
+            ("", "", 0),          # restart coturn
+        ]
+        logs = []
+        result = _configure_coturn_tls(ssh, "meet.example.com", logs.append)
+        assert result == 0
+        assert any("Let's Encrypt" in msg for msg in logs)
+
+    def test_configure_coturn_tls_returns_warning_if_unreadable(self):
+        """_configure_coturn_tls returns 1 if turnserver.conf cannot be read."""
+        from apps.jitsi import _configure_coturn_tls
+        ssh = MagicMock()
+        ssh.execute_sudo.return_value = ("", "", 1)
+        logs = []
+        result = _configure_coturn_tls(ssh, "meet.example.com", logs.append)
+        assert result == 1
+        assert any("WARNING" in msg for msg in logs)
+
+    def test_configure_prosody_turn_adds_external_services(self):
+        """_configure_prosody_turn adds external_services block when missing."""
+        from apps.jitsi import _configure_prosody_turn
+        ssh = MagicMock()
+        prosody_cfg = (
+            'VirtualHost "meet.example.com"\n'
+            '  modules_enabled = {\n    "bosh";\n  }\n'
+            '\nComponent "conference.meet.example.com" "muc"\n'
+        )
+        ssh.execute_sudo.side_effect = [
+            (prosody_cfg, "", 0),        # cat prosody cfg
+            ("mysecret123", "", 0),      # cat TURN secret
+            ("", "", 0),                 # tee (write)
+            ("", "", 0),                 # restart prosody
+        ]
+        logs = []
+        result = _configure_prosody_turn(ssh, "meet.example.com", logs.append)
+        assert result == 0
+        assert any("external_services" in msg for msg in logs)
+
+    def test_configure_prosody_turn_skips_when_present(self):
+        """_configure_prosody_turn skips when turns entry already exists."""
+        from apps.jitsi import _configure_prosody_turn
+        ssh = MagicMock()
+        prosody_cfg = (
+            'VirtualHost "meet.example.com"\n'
+            'external_services = {\n'
+            '  { type = "turns", port = 5349 },\n'
+            '}\n'
+        )
+        ssh.execute_sudo.return_value = (prosody_cfg, "", 0)
+        logs = []
+        result = _configure_prosody_turn(ssh, "meet.example.com", logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+
+    def test_configure_prosody_turn_warns_on_missing_secret(self):
+        """_configure_prosody_turn warns if TURN secret cannot be found."""
+        from apps.jitsi import _configure_prosody_turn
+        ssh = MagicMock()
+        prosody_cfg = 'VirtualHost "meet.example.com"\n'
+        ssh.execute_sudo.side_effect = [
+            (prosody_cfg, "", 0),  # cat prosody cfg
+            ("", "", 1),           # cat TURN secret (not found)
+            ("", "", 1),           # grep turnserver.conf (not found)
+        ]
+        logs = []
+        result = _configure_prosody_turn(ssh, "meet.example.com", logs.append)
+        assert result == 1
+        assert any("WARNING" in msg for msg in logs)
+
+    def test_configure_jvb_nat_harvester_sets_ips(self):
+        """_configure_jvb_nat_harvester sets NAT harvester addresses."""
+        from apps.jitsi import _configure_jvb_nat_harvester
+        ssh = MagicMock()
+        existing = "org.jitsi.videobridge.SINGLE_PORT_HARVESTER_PORT=10000\n"
+        ssh.execute_sudo.side_effect = [
+            (existing, "", 0),  # cat sip-communicator.properties
+            ("", "", 0),        # tee (write)
+        ]
+        logs = []
+        result = _configure_jvb_nat_harvester(ssh, "10.0.0.5", "203.0.113.1", logs.append)
+        assert result == 0
+        assert any("NAT_HARVESTER" in msg for msg in logs)
+
+    def test_configure_jvb_nat_harvester_skips_without_public_ip(self):
+        """_configure_jvb_nat_harvester skips when no public IP given."""
+        from apps.jitsi import _configure_jvb_nat_harvester
+        ssh = MagicMock()
+        logs = []
+        result = _configure_jvb_nat_harvester(ssh, "10.0.0.5", "", logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+        ssh.execute_sudo.assert_not_called()
+
+    def test_configure_jvb_nat_harvester_rejects_invalid_ip(self):
+        """_configure_jvb_nat_harvester warns on invalid public IP."""
+        from apps.jitsi import _configure_jvb_nat_harvester
+        ssh = MagicMock()
+        logs = []
+        result = _configure_jvb_nat_harvester(ssh, "10.0.0.5", "not-an-ip", logs.append)
+        assert result == 1
+        assert any("WARNING" in msg for msg in logs)
+
     def test_enable_jvb_rest_api_idempotent(self):
         """_enable_jvb_rest_api should skip if REST API already enabled."""
         from apps.jitsi import _enable_jvb_rest_api
