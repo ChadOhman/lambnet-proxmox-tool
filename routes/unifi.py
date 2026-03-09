@@ -349,26 +349,37 @@ def health():
             subsystems[name] = sub
 
     # Normalize WAN fields — UDM uses different keys than legacy controllers
+    # Multi-WAN setups may also have wan2 subsystem
     if "wan" in subsystems:
         wan = subsystems["wan"]
-        # Latency: UDM may use "internet" or "latency" or "wan1_latency"
-        if "latency" not in wan:
-            wan["latency"] = wan.get("internet_latency") or wan.get("wan1_latency")
-        # Uptime: may be "uptime" or "wan_uptime"
-        if "uptime" not in wan:
-            wan["uptime"] = wan.get("wan_uptime")
+        logger.info("WAN health raw data: %s", {k: v for k, v in wan.items() if k != "subsystem"})
+        # Latency: try multiple known key variants
+        if not wan.get("latency"):
+            for key in ("internet_latency", "wan1_latency", "latency_average"):
+                if wan.get(key):
+                    wan["latency"] = wan[key]
+                    break
+        # Uptime: try variants
+        if not wan.get("uptime"):
+            for key in ("wan_uptime", "gw_system-stats.uptime"):
+                if wan.get(key):
+                    wan["uptime"] = wan[key]
+                    break
+            # Nested gw_system_stats
+            gw_stats = wan.get("gw_system-stats") or wan.get("gw_system_stats") or {}
+            if not wan.get("uptime") and gw_stats.get("uptime"):
+                wan["uptime"] = int(gw_stats["uptime"])
         # Speedtest: may use different naming
-        if "speedtest_lastrun_download" not in wan:
+        if not wan.get("speedtest_lastrun_download"):
             wan["speedtest_lastrun_download"] = wan.get("xput_down")
-        if "speedtest_lastrun_upload" not in wan:
+        if not wan.get("speedtest_lastrun_upload"):
             wan["speedtest_lastrun_upload"] = wan.get("xput_up")
         # WAN IP
-        if "wan_ip" not in wan:
+        if not wan.get("wan_ip"):
             wan["wan_ip"] = wan.get("gw") or wan.get("ip")
         # ISP
-        if "isp_name" not in wan:
+        if not wan.get("isp_name"):
             wan["isp_name"] = wan.get("isp_organization") or wan.get("ISP")
-        logger.debug("WAN health keys: %s", list(wan.keys()))
 
     return render_template(
         "unifi_health.html",
