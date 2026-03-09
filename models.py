@@ -400,7 +400,7 @@ class Guest(db.Model):
     auto_update = db.Column(db.Boolean, default=False)
     maintenance_window_id = db.Column(db.Integer, db.ForeignKey("maintenance_windows.id"), nullable=True)
     last_scan = db.Column(db.DateTime, nullable=True)
-    status = db.Column(db.String(32), default="unknown")  # unknown, up-to-date, updates-available, error
+    status = db.Column(db.String(32), default="unknown", index=True)  # unknown, up-to-date, updates-available, error
     enabled = db.Column(db.Boolean, default=True)
     replication_target = db.Column(db.String(128), nullable=True)  # node name if replicated
     mac_address = db.Column(db.String(17), nullable=True)  # MAC from Proxmox config (for UniFi matching)
@@ -449,6 +449,9 @@ class Guest(db.Model):
         return f"<Guest {self.name} ({self.guest_type})>"
 
 
+db.Index("ix_guest_host_vmid", Guest.proxmox_host_id, Guest.vmid)
+
+
 class UpdatePackage(db.Model):
     __tablename__ = "update_packages"
 
@@ -469,6 +472,9 @@ class UpdatePackage(db.Model):
 
     def __repr__(self):
         return f"<UpdatePackage {self.package_name} on guest {self.guest_id}>"
+
+
+db.Index("ix_update_pkg_guest_status", UpdatePackage.guest_id, UpdatePackage.status)
 
 
 class ScanResult(db.Model):
