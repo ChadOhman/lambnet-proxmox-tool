@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from models import db, MaintenanceWindow
+from auth.audit import log_action
 
 bp = Blueprint("schedules", __name__)
 
@@ -39,6 +40,8 @@ def add():
         update_type=update_type,
     )
     db.session.add(window)
+    db.session.flush()
+    log_action("schedule_create", "schedule", resource_id=window.id, resource_name=name)
     db.session.commit()
 
     flash(f"Maintenance schedule '{name}' created.", "success")
@@ -49,6 +52,7 @@ def add():
 def toggle(schedule_id):
     window = MaintenanceWindow.query.get_or_404(schedule_id)
     window.enabled = not window.enabled
+    log_action("schedule_toggle", "schedule", resource_id=window.id, resource_name=window.name)
     db.session.commit()
     state = "enabled" if window.enabled else "disabled"
     flash(f"Schedule '{window.name}' {state}.", "success")
@@ -59,6 +63,7 @@ def toggle(schedule_id):
 def delete(schedule_id):
     window = MaintenanceWindow.query.get_or_404(schedule_id)
     name = window.name
+    log_action("schedule_delete", "schedule", resource_id=window.id, resource_name=name)
     db.session.delete(window)
     db.session.commit()
     flash(f"Schedule '{name}' deleted.", "warning")

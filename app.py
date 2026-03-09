@@ -59,18 +59,18 @@ def create_app(test_config=None):
     try:
         git_commit = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
-            cwd=BASE_DIR, stderr=subprocess.DEVNULL
+            cwd=BASE_DIR, stderr=subprocess.DEVNULL, timeout=5
         ).decode().strip()
         git_branch = subprocess.check_output(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=BASE_DIR, stderr=subprocess.DEVNULL
+            cwd=BASE_DIR, stderr=subprocess.DEVNULL, timeout=5
         ).decode().strip()
         # Check if current commit is tagged with the VERSION file's version
         if file_version != "unknown":
             try:
                 tag_commit = subprocess.check_output(
                     ["git", "rev-parse", "--short", f"v{file_version}"],
-                    cwd=BASE_DIR, stderr=subprocess.DEVNULL
+                    cwd=BASE_DIR, stderr=subprocess.DEVNULL, timeout=5
                 ).decode().strip()
                 version_matches_tag = (tag_commit == git_commit)
             except Exception:
@@ -434,6 +434,20 @@ def _migrate_schema():
         db.session.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_update_pkg_guest_status "
             "ON update_packages (guest_id, status)"
+        ))
+        db.session.commit()
+
+    if "scan_results" in table_names:
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_scan_results_guest_id "
+            "ON scan_results (guest_id)"
+        ))
+        db.session.commit()
+
+    if "guest_services" in table_names:
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_guest_services_guest_id "
+            "ON guest_services (guest_id)"
         ))
         db.session.commit()
 

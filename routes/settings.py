@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import subprocess
 from datetime import datetime, timezone
@@ -8,6 +9,8 @@ from models import db, Setting
 from auth.credential_store import encrypt
 from config import BASE_DIR, DATA_DIR
 from auth.audit import log_action
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_iso(value):
@@ -241,7 +244,7 @@ def save_scan():
         from core.scheduler import reschedule_jobs
         reschedule_jobs(int(interval), int(discovery_interval), int(service_check_interval))
     except Exception:
-        pass  # Scheduler not running (e.g. tests or CLI context)
+        logger.warning("Failed to reschedule background jobs", exc_info=True)
 
     flash("Scan & discovery settings saved.", "success")
     return redirect(url_for("settings.index"))

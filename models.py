@@ -473,7 +473,7 @@ class ScanResult(db.Model):
     __tablename__ = "scan_results"
 
     id = db.Column(db.Integer, primary_key=True)
-    guest_id = db.Column(db.Integer, db.ForeignKey("guests.id"), nullable=False)
+    guest_id = db.Column(db.Integer, db.ForeignKey("guests.id"), nullable=False, index=True)
     scanned_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     total_updates = db.Column(db.Integer, default=0)
     security_updates = db.Column(db.Integer, default=0)
@@ -502,7 +502,7 @@ class GuestService(db.Model):
     }
 
     id = db.Column(db.Integer, primary_key=True)
-    guest_id = db.Column(db.Integer, db.ForeignKey("guests.id"), nullable=False)
+    guest_id = db.Column(db.Integer, db.ForeignKey("guests.id"), nullable=False, index=True)
     service_name = db.Column(db.String(64), nullable=False)  # e.g. "elasticsearch"
     unit_name = db.Column(db.String(128), nullable=False)  # e.g. "elasticsearch.service"
     port = db.Column(db.Integer, nullable=True)
