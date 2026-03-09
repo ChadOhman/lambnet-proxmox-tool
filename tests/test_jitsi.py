@@ -88,6 +88,26 @@ class TestJitsiRouteAuth:
         resp = client.get("/jitsi/install/status", follow_redirects=False)
         assert resp.status_code == 302
 
+    def test_sd_configure_unauthenticated(self, client):
+        resp = client.post("/jitsi/configure-secure-domain", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_sd_configure_status_unauthenticated(self, client):
+        resp = client.get("/jitsi/configure-secure-domain/status", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_sd_list_users_unauthenticated(self, client):
+        resp = client.get("/jitsi/secure-domain/users", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_sd_add_user_unauthenticated(self, client):
+        resp = client.post("/jitsi/secure-domain/add-user", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_sd_remove_user_unauthenticated(self, client):
+        resp = client.post("/jitsi/secure-domain/remove-user", follow_redirects=False)
+        assert resp.status_code == 302
+
 
 class TestJitsiRouteViewer:
     """Viewer users (can_update=False) should be denied access."""
@@ -992,3 +1012,212 @@ class TestJvbPrometheusMetrics:
         stats = {}
         _parse_jvb_prometheus_metrics(stats, metrics)
         assert stats["conferences"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Secure Domain config patching tests
+# ---------------------------------------------------------------------------
+
+# Minimal Prosody config for testing
+_PROSODY_CFG = '''VirtualHost "meet.example.com"
+    authentication = "jitsi-anonymous"
+    modules_enabled = {
+        "bosh";
+        "pubsub";
+    }
+    c2s_require_encryption = false
+
+Component "conference.meet.example.com" "muc"
+    modules_enabled = { "muc_meeting_id"; }
+'''
+
+_PROSODY_CFG_ENABLED = '''VirtualHost "meet.example.com"
+    authentication = "internal_hashed"
+    modules_enabled = {
+        "bosh";
+        "pubsub";
+    }
+    c2s_require_encryption = false
+
+-- Guest domain for unauthenticated participants (auto-configured)
+VirtualHost "guest.meet.example.com"
+    authentication = "jitsi-anonymous"
+    modules_enabled = {
+        "turncredentials";
+    }
+    c2s_require_encryption = false
+
+Component "conference.meet.example.com" "muc"
+    modules_enabled = { "muc_meeting_id"; }
+'''
+
+_MEET_CONFIG_JS = '''var config = {
+    hosts: {
+        domain: 'meet.example.com',
+        muc: 'conference.meet.example.com'
+    },
+    bosh: '//meet.example.com/http-bind'
+};
+'''
+
+_JICOFO_CONF = '''jicofo {
+  xmpp {
+    client {
+      hostname = "meet.example.com"
+    }
+  }
+}
+'''
+
+_JICOFO_CONF_ENABLED = '''jicofo {
+  xmpp {
+    client {
+      hostname = "meet.example.com"
+    }
+  }
+  authentication {
+    enabled = true
+    type = "XMPP"
+    login-url = "meet.example.com"
+  }
+}
+'''
+
+
+class TestSecureDomainPatchProsody:
+    """Tests for _sd_patch_prosody."""
+
+    def test_enable_patches_auth_and_adds_guest(self):
+        from apps.jitsi import _sd_patch_prosody
+        ssh = MagicMock()
+        ssh.execute_sudo.side_effect = [
+            (_PROSODY_CFG, "", 0),  # cat
+            ("", "", 0),  # tee (write)
+        ]
+        logs = []
+        result = _sd_patch_prosody(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        # Check the written content
+        write_call = ssh.execute_sudo.call_args_list[1]
+        written_cmd = write_call[0][0]
+        assert "base64" in written_cmd
+        assert any("internal_hashed" in msg for msg in logs)
+        assert any("guest.meet.example.com" in msg for msg in logs)
+
+    def test_enable_idempotent(self):
+        from apps.jitsi import _sd_patch_prosody
+        ssh = MagicMock()
+        ssh.execute_sudo.return_value = (_PROSODY_CFG_ENABLED, "", 0)
+        logs = []
+        result = _sd_patch_prosody(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+        # Should only have called cat, not write
+        assert ssh.execute_sudo.call_count == 1
+
+    def test_disable_reverts_auth_and_removes_guest(self):
+        from apps.jitsi import _sd_patch_prosody
+        ssh = MagicMock()
+        ssh.execute_sudo.side_effect = [
+            (_PROSODY_CFG_ENABLED, "", 0),  # cat
+            ("", "", 0),  # tee (write)
+        ]
+        logs = []
+        result = _sd_patch_prosody(ssh, "meet.example.com", False, logs.append)
+        assert result == 0
+        assert any("jitsi-anonymous" in msg for msg in logs)
+        assert any("Removed" in msg for msg in logs)
+
+    def test_disable_already_disabled(self):
+        from apps.jitsi import _sd_patch_prosody
+        ssh = MagicMock()
+        ssh.execute_sudo.return_value = (_PROSODY_CFG, "", 0)
+        logs = []
+        result = _sd_patch_prosody(ssh, "meet.example.com", False, logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+
+
+class TestSecureDomainPatchMeetConfig:
+    """Tests for _sd_patch_meet_config_js."""
+
+    def test_enable_adds_anonymousdomain(self):
+        from apps.jitsi import _sd_patch_meet_config_js
+        ssh = MagicMock()
+        ssh.execute_sudo.side_effect = [
+            (_MEET_CONFIG_JS, "", 0),  # cat
+            ("", "", 0),  # tee
+        ]
+        logs = []
+        result = _sd_patch_meet_config_js(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        assert any("anonymousdomain" in msg for msg in logs)
+
+    def test_enable_idempotent(self):
+        from apps.jitsi import _sd_patch_meet_config_js
+        ssh = MagicMock()
+        content = _MEET_CONFIG_JS + "\nconfig.hosts.anonymousdomain = 'guest.meet.example.com';\n"
+        ssh.execute_sudo.return_value = (content, "", 0)
+        logs = []
+        result = _sd_patch_meet_config_js(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+
+    def test_disable_removes_anonymousdomain(self):
+        from apps.jitsi import _sd_patch_meet_config_js
+        ssh = MagicMock()
+        content = _MEET_CONFIG_JS + "\nconfig.hosts.anonymousdomain = 'guest.meet.example.com';\n"
+        ssh.execute_sudo.side_effect = [
+            (content, "", 0),  # cat
+            ("", "", 0),  # tee
+        ]
+        logs = []
+        result = _sd_patch_meet_config_js(ssh, "meet.example.com", False, logs.append)
+        assert result == 0
+        assert any("Removed" in msg for msg in logs)
+
+
+class TestSecureDomainPatchJicofo:
+    """Tests for _sd_patch_jicofo_conf."""
+
+    def test_enable_adds_auth_block(self):
+        from apps.jitsi import _sd_patch_jicofo_conf
+        ssh = MagicMock()
+        ssh.execute_sudo.side_effect = [
+            (_JICOFO_CONF, "", 0),  # cat
+            ("", "", 0),  # tee
+        ]
+        logs = []
+        result = _sd_patch_jicofo_conf(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        assert any("authentication block" in msg for msg in logs)
+
+    def test_enable_idempotent(self):
+        from apps.jitsi import _sd_patch_jicofo_conf
+        ssh = MagicMock()
+        ssh.execute_sudo.return_value = (_JICOFO_CONF_ENABLED, "", 0)
+        logs = []
+        result = _sd_patch_jicofo_conf(ssh, "meet.example.com", True, logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)
+
+    def test_disable_removes_auth_block(self):
+        from apps.jitsi import _sd_patch_jicofo_conf
+        ssh = MagicMock()
+        ssh.execute_sudo.side_effect = [
+            (_JICOFO_CONF_ENABLED, "", 0),  # cat
+            ("", "", 0),  # tee
+        ]
+        logs = []
+        result = _sd_patch_jicofo_conf(ssh, "meet.example.com", False, logs.append)
+        assert result == 0
+        assert any("Removed" in msg for msg in logs)
+
+    def test_disable_already_disabled(self):
+        from apps.jitsi import _sd_patch_jicofo_conf
+        ssh = MagicMock()
+        ssh.execute_sudo.return_value = (_JICOFO_CONF, "", 0)
+        logs = []
+        result = _sd_patch_jicofo_conf(ssh, "meet.example.com", False, logs.append)
+        assert result == 0
+        assert any("SKIP" in msg for msg in logs)

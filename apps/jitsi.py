@@ -263,6 +263,7 @@ def _get_jitsi_config():
         "installed": Setting.get("jitsi_installed", "false") == "true",
         "cf_mode": Setting.get("jitsi_cf_mode", "none"),
         "public_ip": Setting.get("jitsi_public_ip", ""),
+        "secure_domain": Setting.get("jitsi_secure_domain", "false") == "true",
     }
 
 
@@ -1675,3 +1676,475 @@ def _configure_jvb_nat_harvester(ssh, guest_ip, public_ip, log):
 
     log("=== Configuring JVB NAT Harvester ===")
     return _cf_patch_nat_harvester(ssh, guest_ip, public_ip, log)
+
+
+# ---------------------------------------------------------------------------
+# Secure Domain (authenticated room creation)
+# ---------------------------------------------------------------------------
+
+# Username regex: alphanumeric, dots, hyphens, underscores — safe for prosodyctl
+_SD_USERNAME_RE = re.compile(r'^[a-zA-Z0-9._-]{1,64}$')
+
+
+def _sd_patch_prosody(ssh, hostname, enable, log):
+    """Patch Prosody config to enable or disable secure domain.
+
+    Enable: changes main VirtualHost auth to internal_hashed, adds guest VirtualHost.
+    Disable: reverts to jitsi-anonymous, removes guest VirtualHost.
+
+    Returns warning count.
+    """
+    log("=== Patching Prosody config for secure domain ===")
+    path = f"/etc/prosody/conf.d/{hostname}.cfg.lua"
+
+    stdout, stderr, code = ssh.execute_sudo(f"cat {path} 2>/dev/null", timeout=10)
+    if code != 0 or not stdout:
+        log(f"  WARNING: Could not read {path}")
+        return 1
+
+    content = stdout
+
+    if enable:
+        # --- Enable: internal_hashed + guest VirtualHost ---
+        if 'authentication = "internal_hashed"' in content and f'VirtualHost "guest.{hostname}"' in content:
+            log("  [SKIP] Secure domain already configured in Prosody")
+            return 0
+
+        # Change main VirtualHost authentication
+        if 'authentication = "jitsi-anonymous"' in content:
+            content = content.replace(
+                'authentication = "jitsi-anonymous"',
+                'authentication = "internal_hashed"',
+                1,  # only first occurrence (main VirtualHost)
+            )
+            log('  Changed authentication to "internal_hashed"')
+        elif 'authentication = "internal_hashed"' in content:
+            log("  [SKIP] Authentication already set to internal_hashed")
+        else:
+            log("  WARNING: Could not find authentication line in Prosody config")
+            return 1
+
+        # Add guest VirtualHost if not present
+        if f'VirtualHost "guest.{hostname}"' not in content:
+            guest_block = f'''
+-- Guest domain for unauthenticated participants (auto-configured)
+VirtualHost "guest.{hostname}"
+    authentication = "jitsi-anonymous"
+    modules_enabled = {{
+        "turncredentials";
+    }}
+    c2s_require_encryption = false
+'''
+            # Insert before first Component line (same pattern as _configure_prosody_turn)
+            component_idx = content.find('\nComponent "')
+            if component_idx >= 0:
+                content = content[:component_idx] + guest_block + content[component_idx:]
+            else:
+                content = content.rstrip() + "\n" + guest_block + "\n"
+            log(f'  Added VirtualHost "guest.{hostname}"')
+        else:
+            log("  [SKIP] Guest VirtualHost already exists")
+
+    else:
+        # --- Disable: revert to jitsi-anonymous, remove guest VirtualHost ---
+        if 'authentication = "jitsi-anonymous"' in content and f'VirtualHost "guest.{hostname}"' not in content:
+            log("  [SKIP] Secure domain already disabled in Prosody")
+            return 0
+
+        if 'authentication = "internal_hashed"' in content:
+            content = content.replace(
+                'authentication = "internal_hashed"',
+                'authentication = "jitsi-anonymous"',
+                1,
+            )
+            log('  Reverted authentication to "jitsi-anonymous"')
+
+        # Remove the guest VirtualHost block
+        guest_marker = f'VirtualHost "guest.{hostname}"'
+        if guest_marker in content:
+            lines = content.split("\n")
+            new_lines = []
+            skip = False
+            # Also skip the comment line before the VirtualHost
+            pending_comment = None
+            for line in lines:
+                if line.strip().startswith("-- Guest domain") and "auto-configured" in line:
+                    pending_comment = line
+                    continue
+                if guest_marker in line:
+                    skip = True
+                    pending_comment = None
+                    continue
+                if skip:
+                    # Stop skipping at next VirtualHost, Component, or non-indented non-empty line
+                    stripped = line.strip()
+                    if stripped and not stripped.startswith(("--",)) and not line.startswith((" ", "\t")):
+                        skip = False
+                        new_lines.append(line)
+                    # Skip indented lines and comments within the block
+                    continue
+                if pending_comment is not None:
+                    new_lines.append(pending_comment)
+                    pending_comment = None
+                new_lines.append(line)
+            content = "\n".join(new_lines)
+            log(f'  Removed VirtualHost "guest.{hostname}"')
+
+    if _ssh_write_file(ssh, path, content, log):
+        return 0
+    return 1
+
+
+def _sd_patch_meet_config_js(ssh, hostname, enable, log):
+    """Patch Jitsi Meet config.js for secure domain (anonymousdomain).
+
+    Returns warning count.
+    """
+    log("")
+    log("=== Patching Jitsi Meet config.js for secure domain ===")
+    path = f"/etc/jitsi/meet/{hostname}-config.js"
+
+    stdout, stderr, code = ssh.execute_sudo(f"cat {path} 2>/dev/null", timeout=10)
+    if code != 0 or not stdout:
+        log(f"  WARNING: Could not read {path}")
+        return 1
+
+    content = stdout
+
+    if enable:
+        if "anonymousdomain" in content:
+            log("  [SKIP] anonymousdomain already set in config.js")
+            return 0
+        content = content.rstrip() + f"\nconfig.hosts.anonymousdomain = 'guest.{hostname}';\n"
+        log(f"  Added: config.hosts.anonymousdomain = 'guest.{hostname}'")
+    else:
+        if "anonymousdomain" not in content:
+            log("  [SKIP] anonymousdomain not present — nothing to remove")
+            return 0
+        lines = content.split("\n")
+        lines = [ln for ln in lines if "anonymousdomain" not in ln]
+        content = "\n".join(lines)
+        log("  Removed anonymousdomain from config.js")
+
+    if _ssh_write_file(ssh, path, content, log):
+        return 0
+    return 1
+
+
+def _sd_patch_jicofo_conf(ssh, hostname, enable, log):
+    """Patch jicofo.conf for secure domain authentication.
+
+    Returns warning count.
+    """
+    log("")
+    log("=== Patching Jicofo config for secure domain ===")
+    path = "/etc/jitsi/jicofo/jicofo.conf"
+
+    stdout, stderr, code = ssh.execute_sudo(f"cat {path} 2>/dev/null", timeout=10)
+    if code != 0 or not stdout:
+        log(f"  WARNING: Could not read {path}")
+        return 1
+
+    content = stdout
+
+    if enable:
+        if "authentication {" in content and "login-url" in content:
+            log("  [SKIP] Jicofo authentication block already present")
+            return 0
+
+        auth_block = (
+            "  authentication {\n"
+            "    enabled = true\n"
+            "    type = \"XMPP\"\n"
+            f"    login-url = \"{hostname}\"\n"
+            "  }"
+        )
+
+        # Insert inside the jicofo { } block, before its closing brace
+        lines = content.split("\n")
+        # Find last } that closes the jicofo block
+        insert_idx = None
+        for i in range(len(lines) - 1, -1, -1):
+            if "}" in lines[i]:
+                insert_idx = i
+                break
+
+        if insert_idx is None:
+            log("  WARNING: Could not find jicofo block boundary — skipping")
+            return 1
+
+        lines.insert(insert_idx, auth_block)
+        content = "\n".join(lines)
+        log("  Added authentication block to jicofo.conf")
+
+    else:
+        if "authentication {" not in content:
+            log("  [SKIP] No authentication block in jicofo.conf — nothing to remove")
+            return 0
+
+        # Remove the authentication { ... } block
+        lines = content.split("\n")
+        new_lines = []
+        skip = False
+        brace_depth = 0
+        for line in lines:
+            if not skip and line.strip().startswith("authentication {"):
+                skip = True
+                brace_depth = 1
+                continue
+            if skip:
+                brace_depth += line.count("{") - line.count("}")
+                if brace_depth <= 0:
+                    skip = False
+                continue
+            new_lines.append(line)
+        content = "\n".join(new_lines)
+        log("  Removed authentication block from jicofo.conf")
+
+    if _ssh_write_file(ssh, path, content, log):
+        return 0
+    return 1
+
+
+def run_secure_domain_configure(log_callback=None):
+    """Enable or disable Jitsi Secure Domain via SSH.
+
+    Mirrors run_cloudflare_configure: validates config, SSHes in, patches
+    Prosody/Jicofo/Meet configs, restarts services, verifies health.
+
+    Returns (success: bool, log_output: str).
+    """
+    from models import Credential
+
+    config = _get_jitsi_config()
+    log_lines = []
+
+    def log(msg):
+        logger.info(msg)
+        log_lines.append(msg)
+        if log_callback:
+            log_callback(msg)
+
+    if not config.get("installed"):
+        return False, "Jitsi must be installed before configuring Secure Domain"
+
+    hostname = config.get("hostname", "")
+    if not hostname:
+        return False, "Jitsi hostname not configured"
+
+    if not config["guest_id"]:
+        return False, "Jitsi guest not configured"
+
+    app_guest = Guest.query.get(int(config["guest_id"]))
+    if not app_guest:
+        return False, "Jitsi guest not found"
+
+    credential = app_guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        return False, "No SSH credential available"
+    if not app_guest.ip_address:
+        return False, "Jitsi guest has no IP address"
+
+    enable = config.get("secure_domain", False)
+    action = "Enabling" if enable else "Disabling"
+
+    log(f"=== {action} Jitsi Secure Domain ===")
+    log(f"Guest: {app_guest.name} ({app_guest.ip_address})")
+    log(f"Hostname: {hostname}")
+    log("")
+
+    warnings = 0
+
+    try:
+        with SSHClient.from_credential(app_guest.ip_address, credential) as ssh:
+            warnings += _sd_patch_prosody(ssh, hostname, enable, log)
+            warnings += _sd_patch_meet_config_js(ssh, hostname, enable, log)
+            warnings += _sd_patch_jicofo_conf(ssh, hostname, enable, log)
+
+            # Restart services
+            log("")
+            log("=== Restarting Jitsi services ===")
+            for svc in _JITSI_SERVICES:
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"systemctl restart {svc} 2>&1", timeout=30
+                )
+                if code != 0:
+                    log(f"  WARNING: {svc} restart returned exit code {code}")
+                    warnings += 1
+                else:
+                    log(f"  {svc} restarted")
+
+            time.sleep(3)
+
+            # Verify services
+            log("")
+            log("=== Verifying services ===")
+            for svc in _JITSI_SERVICES:
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"systemctl is-active {svc} 2>/dev/null", timeout=10
+                )
+                status = (stdout or "").strip()
+                if status == "active":
+                    log(f"  {svc}: active")
+                else:
+                    log(f"  WARNING: {svc}: {status or 'unknown'}")
+                    warnings += 1
+
+            log("")
+            if warnings:
+                log(f"=== Secure Domain configuration complete with {warnings} warning(s) ===")
+            else:
+                log(f"=== Secure Domain {action.lower().replace('ing', 'ed')} successfully ===")
+            return True, "\n".join(log_lines)
+
+    except Exception as e:
+        log(f"FATAL ERROR: {e}")
+        return False, "\n".join(log_lines)
+
+
+def _sd_get_ssh(config=None):
+    """Open an SSH connection to the Jitsi guest. Returns (ssh, guest, error)."""
+    from models import Credential
+
+    if config is None:
+        config = _get_jitsi_config()
+
+    if not config.get("guest_id"):
+        return None, None, "Jitsi guest not configured"
+
+    guest = Guest.query.get(int(config["guest_id"]))
+    if not guest:
+        return None, None, "Jitsi guest not found"
+    if not guest.ip_address:
+        return None, None, "Jitsi guest has no IP address"
+
+    credential = guest.credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        return None, None, "No SSH credential available"
+
+    try:
+        ssh = SSHClient.from_credential(guest.ip_address, credential)
+        return ssh, guest, None
+    except Exception as e:
+        return None, None, str(e)
+
+
+def sd_list_users():
+    """List Prosody user accounts for the Jitsi hostname.
+
+    Returns (users_list, error_message).
+    """
+    config = _get_jitsi_config()
+    hostname = config.get("hostname", "")
+    if not hostname:
+        return [], "Hostname not configured"
+
+    ssh, guest, err = _sd_get_ssh(config)
+    if err:
+        return [], err
+
+    # Prosody encodes dots as %2e in its data directory
+    encoded_host = hostname.replace(".", "%2e")
+    try:
+        with ssh:
+            stdout, stderr, code = ssh.execute_sudo(
+                f"ls /var/lib/prosody/{encoded_host}/accounts/ 2>/dev/null",
+                timeout=10,
+            )
+            if code != 0 or not stdout:
+                return [], None  # No users or directory doesn't exist
+            users = [f.replace(".dat", "") for f in stdout.strip().split("\n") if f.strip().endswith(".dat")]
+            return users, None
+    except Exception as e:
+        return [], str(e)
+
+
+def sd_add_user(username, password):
+    """Register a Prosody user account for the Jitsi hostname.
+
+    Returns (success, message).
+    """
+    if not username or not _SD_USERNAME_RE.match(username):
+        return False, "Invalid username (alphanumeric, dots, hyphens, underscores only; max 64 chars)"
+    if not password or len(password) < 8:
+        return False, "Password must be at least 8 characters"
+
+    config = _get_jitsi_config()
+    hostname = config.get("hostname", "")
+    if not hostname:
+        return False, "Hostname not configured"
+
+    ssh, guest, err = _sd_get_ssh(config)
+    if err:
+        return False, err
+
+    try:
+        _validate_shell_param(username, "username")
+        _validate_shell_param(hostname, "hostname")
+    except ValueError as e:
+        return False, str(e)
+
+    # Pass password via base64 stdin to avoid shell exposure
+    pw_b64 = base64.b64encode(password.encode("utf-8")).decode("ascii")
+    try:
+        with ssh:
+            stdout, stderr, code = ssh.execute_sudo(
+                f"printf '%s' '{pw_b64}' | base64 -d | prosodyctl register {username} {hostname} --stdin",
+                timeout=15,
+            )
+            # Some prosodyctl versions don't support --stdin; fall back to positional arg
+            if code != 0 and "--stdin" in (stderr or ""):
+                _validate_shell_param(password, "password")
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"prosodyctl register {username} {hostname} '{password}'",
+                    timeout=15,
+                )
+            if code != 0:
+                err_msg = (stderr or stdout or "").strip()
+                if "user already exists" in err_msg.lower():
+                    return False, f"User '{username}' already exists"
+                return False, f"Failed to register user: {err_msg}"
+            return True, f"User '{username}' registered successfully"
+    except Exception as e:
+        return False, str(e)
+
+
+def sd_remove_user(username):
+    """Delete a Prosody user account for the Jitsi hostname.
+
+    Returns (success, message).
+    """
+    if not username or not _SD_USERNAME_RE.match(username):
+        return False, "Invalid username"
+
+    config = _get_jitsi_config()
+    hostname = config.get("hostname", "")
+    if not hostname:
+        return False, "Hostname not configured"
+
+    ssh, guest, err = _sd_get_ssh(config)
+    if err:
+        return False, err
+
+    try:
+        _validate_shell_param(username, "username")
+        _validate_shell_param(hostname, "hostname")
+    except ValueError as e:
+        return False, str(e)
+
+    try:
+        with ssh:
+            stdout, stderr, code = ssh.execute_sudo(
+                f"prosodyctl deluser {username}@{hostname}",
+                timeout=15,
+            )
+            if code != 0:
+                err_msg = (stderr or stdout or "").strip()
+                return False, f"Failed to delete user: {err_msg}"
+            return True, f"User '{username}' deleted successfully"
+    except Exception as e:
+        return False, str(e)
