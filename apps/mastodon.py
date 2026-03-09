@@ -551,6 +551,12 @@ def run_mastodon_preflight(log_callback=None):
         _validate_shell_param(app_dir, "Mastodon app_dir")
         if branch:
             _validate_shell_param(branch, "Git branch")
+        _validate_shell_param(config.get("direct_db_host", ""), "Direct DB host")
+        _validate_shell_param(config.get("pgbouncer_host", ""), "PGBouncer host")
+        if not re.match(r'^\d+$', str(config.get("direct_db_port", ""))):
+            raise ValueError("Direct DB port must be numeric")
+        if not re.match(r'^\d+$', str(config.get("pgbouncer_port", ""))):
+            raise ValueError("PGBouncer port must be numeric")
         check("Shell-safe config values", True)
     except ValueError as e:
         check("Shell-safe config values", False, str(e))
