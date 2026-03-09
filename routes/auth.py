@@ -34,12 +34,36 @@ def _record_failed_login(ip: str) -> None:
 
 
 def _get_client_ip() -> str:
-    """Return the real client IP, preferring Cloudflare's CF-Connecting-IP header."""
-    return (
-        request.headers.get("CF-Connecting-IP")
-        or request.remote_addr
-        or "unknown"
-    )
+    """Return the real client IP, respecting proxy headers only from trusted sources.
+
+    Only trust CF-Connecting-IP / X-Forwarded-For when the direct connection is
+    from a loopback or private address (i.e. a reverse proxy).  This prevents
+    external clients from spoofing headers to bypass rate limiting.
+    """
+    import ipaddress
+
+    remote_addr = request.remote_addr or "unknown"
+
+    try:
+        remote_ip = ipaddress.ip_address(remote_addr)
+        trust_forwarded = remote_ip.is_loopback or remote_ip.is_private
+    except ValueError:
+        return remote_addr
+
+    if trust_forwarded:
+        cf_ip = request.headers.get("CF-Connecting-IP")
+        if cf_ip:
+            return cf_ip.strip()
+
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+
+    return remote_addr
 
 
 def _is_safe_next_url(target):
