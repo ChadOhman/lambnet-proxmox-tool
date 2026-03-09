@@ -272,7 +272,7 @@ def install():
         ok = False
         try:
             with _app.app_context():
-                send_upgrade_started_notification("unpoller", "", "manual")
+                send_upgrade_started_notification("prometheus", "", "manual")
                 ok, _ = run_unpoller_install(log_callback=_cb)
         except Exception as e:
             _cb(f"FATAL ERROR: {e}")
@@ -280,7 +280,7 @@ def install():
         _install_job["running"] = False
         _install_job["success"] = ok
         with _app.app_context():
-            send_upgrade_result_notification("unpoller", "", ok, "manual")
+            send_upgrade_result_notification("prometheus", "", ok, "manual")
             now = datetime.now(timezone.utc).isoformat()
             Setting.set("unpoller_last_install_at", now)
             Setting.set("unpoller_last_install_status", "success" if ok else "error")
@@ -318,7 +318,7 @@ def upgrade():
         ok = False
         try:
             with _app.app_context():
-                send_upgrade_started_notification("unpoller", "", "manual")
+                send_upgrade_started_notification("prometheus", "", "manual")
                 ok, _ = run_unpoller_upgrade(log_callback=_cb)
         except Exception as e:
             _cb(f"FATAL ERROR: {e}")
@@ -326,7 +326,7 @@ def upgrade():
         _upgrade_job["running"] = False
         _upgrade_job["success"] = ok
         with _app.app_context():
-            send_upgrade_result_notification("unpoller", "", ok, "manual")
+            send_upgrade_result_notification("prometheus", "", ok, "manual")
             now = datetime.now(timezone.utc).isoformat()
             Setting.set("unpoller_last_upgrade_at", now)
             Setting.set("unpoller_last_upgrade_status", "success" if ok else "error")
