@@ -208,7 +208,7 @@ class TestUnifiLoggingSettings:
             "/settings/unifi-logging",
             data={
                 "unifi_geoip_enabled": "on",
-                "unifi_geoip_db_path": "/var/lib/lambnet/GeoLite2-City.mmdb",
+                "unifi_geoip_db_path": "/var/lib/mstdnca/GeoLite2-City.mmdb",
                 "unifi_api_poll_enabled": "on",
                 "unifi_api_poll_interval": "15",
                 "unifi_log_retention_days": "90",
@@ -219,7 +219,7 @@ class TestUnifiLoggingSettings:
 
         with app.app_context():
             assert Setting.get("unifi_geoip_enabled") == "true"
-            assert Setting.get("unifi_geoip_db_path") == "/var/lib/lambnet/GeoLite2-City.mmdb"
+            assert Setting.get("unifi_geoip_db_path") == "/var/lib/mstdnca/GeoLite2-City.mmdb"
             assert Setting.get("unifi_api_poll_enabled") == "true"
             assert Setting.get("unifi_api_poll_interval") == "15"
             assert Setting.get("unifi_log_retention_days") == "90"

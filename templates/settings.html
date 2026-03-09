@@ -309,7 +309,7 @@
                         <div class="input-group input-group-sm">
                             <input type="text" id="geoip-path-input" class="form-control form-control-sm font-monospace" name="unifi_geoip_db_path"
                                    value="{{ settings.unifi_geoip_db_path or '' }}"
-                                   placeholder="/etc/lambnet/GeoLite2-City.mmdb">
+                                   placeholder="/etc/mstdnca/GeoLite2-City.mmdb">
                             <span class="input-group-text" id="geoip-path-icon">
                                 {% if geoip_db_info and geoip_db_info.size_mb is not none %}
                                 <i class="bi bi-check-circle-fill text-success" title="File found ({{ geoip_db_info.size_mb }} MB)"></i>

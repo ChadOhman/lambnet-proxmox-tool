@@ -347,13 +347,13 @@ class TestCredentialStore:
     @pytest.fixture(autouse=True)
     def _isolated_key(self, monkeypatch, tmp_path):
         """
-        Point LAMBNET_SECRET_KEY at a temporary file and reset the cached
+        Point MSTDNCA_SECRET_KEY at a temporary file and reset the cached
         Fernet instance so every test starts with a fresh, known key.
         """
         import auth.credential_store as credential_store
 
         key_path = str(tmp_path / "test_secret.key")
-        monkeypatch.setenv("LAMBNET_SECRET_KEY", key_path)
+        monkeypatch.setenv("MSTDNCA_SECRET_KEY", key_path)
 
         # Patch SECRET_KEY_PATH in config and credential_store together.
         import config as cfg

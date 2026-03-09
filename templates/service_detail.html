@@ -2927,7 +2927,7 @@ function pgLoadCharts() {
         if (!snaps.length) return;
         var srcBadge = document.getElementById('pgChartSource');
         if (data.source && srcBadge) {
-            var srcLabels = {postgres_exporter: 'postgres_exporter', lambnet: 'Prometheus'};
+            var srcLabels = {postgres_exporter: 'postgres_exporter', mstdnca: 'Prometheus'};
             srcBadge.textContent = srcLabels[data.source] || data.source;
             srcBadge.classList.remove('d-none');
         }
@@ -3008,7 +3008,7 @@ function redisLoadCharts(timeframe) {
 
         var srcBadge = document.getElementById('redisChartSource');
         if (data.source && srcBadge) {
-            var srcLabels = {redis_exporter: 'redis_exporter', lambnet: 'Prometheus', sqlite: 'SQLite'};
+            var srcLabels = {redis_exporter: 'redis_exporter', mstdnca: 'Prometheus', sqlite: 'SQLite'};
             srcBadge.textContent = srcLabels[data.source] || data.source;
             srcBadge.classList.remove('d-none');
         }
@@ -3146,7 +3146,7 @@ function pumaLoadCharts(timeframe) {
 
         var srcBadge = document.getElementById('pumaChartSource');
         if (data.source && srcBadge) {
-            var srcLabels = {mastodon_exporter: 'prometheus_exporter', lambnet: 'Prometheus', none: 'None'};
+            var srcLabels = {mastodon_exporter: 'prometheus_exporter', mstdnca: 'Prometheus', none: 'None'};
             srcBadge.textContent = srcLabels[data.source] || data.source;
             srcBadge.classList.remove('d-none');
         }
@@ -3242,7 +3242,7 @@ function sidekiqLoadCharts(timeframe) {
 
         var srcBadge = document.getElementById('sidekiqChartSource');
         if (data.source && srcBadge) {
-            var srcLabels = {mastodon_exporter: 'prometheus_exporter', lambnet: 'Prometheus', none: 'None'};
+            var srcLabels = {mastodon_exporter: 'prometheus_exporter', mstdnca: 'Prometheus', none: 'None'};
             srcBadge.textContent = srcLabels[data.source] || data.source;
             srcBadge.classList.remove('d-none');
         }

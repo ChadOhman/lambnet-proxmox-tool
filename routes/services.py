@@ -535,12 +535,12 @@ def pg_metrics_history(service_id):
                 data = prom.get_pg_metrics_exporter(pg_target, timeframe)
             else:
                 pg_metrics = [
-                    "lambnet_pg_connections_total",
-                    "lambnet_pg_cache_hit_ratio",
-                    "lambnet_pg_connections_active",
-                    "lambnet_pg_lock_waits",
-                    "lambnet_pg_commits_total",
-                    "lambnet_pg_rollbacks_total",
+                    "mstdnca_pg_connections_total",
+                    "mstdnca_pg_cache_hit_ratio",
+                    "mstdnca_pg_connections_active",
+                    "mstdnca_pg_lock_waits",
+                    "mstdnca_pg_commits_total",
+                    "mstdnca_pg_rollbacks_total",
                 ]
                 data = prom.get_service_metrics_history(svc.id, pg_metrics, timeframe)
                 # Rename keys to match the SQLite snapshot format the chart JS expects
@@ -601,11 +601,11 @@ def redis_metrics_history(service_id):
                 data = prom.get_redis_metrics_exporter(redis_target, timeframe)
             else:
                 redis_metrics = [
-                    "lambnet_redis_memory_used_bytes",
-                    "lambnet_redis_connected_clients",
-                    "lambnet_redis_ops_per_sec",
-                    "lambnet_redis_hit_ratio",
-                    "lambnet_redis_evicted_keys_total",
+                    "mstdnca_redis_memory_used_bytes",
+                    "mstdnca_redis_connected_clients",
+                    "mstdnca_redis_ops_per_sec",
+                    "mstdnca_redis_hit_ratio",
+                    "mstdnca_redis_evicted_keys_total",
                 ]
                 data = prom.get_service_metrics_history(svc.id, redis_metrics, timeframe)
                 # Rename keys to match chart-friendly names
@@ -790,17 +790,17 @@ def jvb_metrics_history(service_id):
                 if data and data.get("snapshots"):
                     return jsonify(data)
         except Exception:
-            logger.debug("Native JVB Prometheus query failed, trying lambnet gauges")
+            logger.debug("Native JVB Prometheus query failed, trying mstdnca gauges")
 
-        # Fall back to lambnet gauges
+        # Fall back to mstdnca gauges
         try:
             from clients.prometheus_query import PrometheusQueryClient
             prom = PrometheusQueryClient()
             jvb_metrics = [
-                "lambnet_jitsi_conferences",
-                "lambnet_jitsi_participants",
-                "lambnet_jitsi_stress_level",
-                "lambnet_jitsi_bitrate_download_bps",
+                "mstdnca_jitsi_conferences",
+                "mstdnca_jitsi_participants",
+                "mstdnca_jitsi_stress_level",
+                "mstdnca_jitsi_bitrate_download_bps",
             ]
             data = prom.get_service_metrics_history(svc.id, jvb_metrics, timeframe)
             if data and data.get("snapshots"):

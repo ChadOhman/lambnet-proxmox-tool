@@ -1,13 +1,13 @@
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.environ.get("LAMBNET_DATA_DIR", "/var/lib/lambnet")
-SECRET_KEY_PATH = os.environ.get("LAMBNET_SECRET_KEY", "/etc/lambnet/secret.key")
+DATA_DIR = os.environ.get("MSTDNCA_DATA_DIR", os.environ.get("LAMBNET_DATA_DIR", "/var/lib/mstdnca"))
+SECRET_KEY_PATH = os.environ.get("MSTDNCA_SECRET_KEY", os.environ.get("LAMBNET_SECRET_KEY", "/etc/mstdnca/secret.key"))
 
 
 def _load_flask_secret():
     """Load Flask secret key from file or environment, generating one if needed."""
-    key_file = os.environ.get("FLASK_SECRET_KEY_FILE", "/etc/lambnet/flask_secret")
+    key_file = os.environ.get("FLASK_SECRET_KEY_FILE", "/etc/mstdnca/flask_secret")
     if os.path.exists(key_file):
         with open(key_file) as f:
             key = f.read().strip()
@@ -36,7 +36,7 @@ def _load_flask_secret():
 class Config:
     SECRET_KEY = _load_flask_secret()
     SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL", f"sqlite:///{os.path.join(DATA_DIR, 'lambnet.db')}"
+        "DATABASE_URL", f"sqlite:///{os.path.join(DATA_DIR, 'mstdnca.db')}"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

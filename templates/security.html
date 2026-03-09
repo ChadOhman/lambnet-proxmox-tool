@@ -463,7 +463,7 @@
                                     <li>Select your existing tunnel and click <strong>Configure</strong></li>
                                     <li>Under <strong>Public Hostname</strong>, add a new entry:
                                         <ul>
-                                            <li>Subdomain: e.g. <code>lambnet</code></li>
+                                            <li>Subdomain: e.g. <code>mstdnca</code></li>
                                             <li>Domain: your domain</li>
                                             <li>Service: <code>http://{{ request.host.split(':')[0] if request.host else 'CT-IP' }}:5000</code></li>
                                         </ul>
@@ -478,7 +478,7 @@
                                 <ol class="small mb-0">
                                     <li>Install cloudflared: <code>bash setup.sh --cloudflared</code></li>
                                     <li>Authenticate: <code>cloudflared tunnel login</code></li>
-                                    <li>Create tunnel: <code>cloudflared tunnel create lambnet</code></li>
+                                    <li>Create tunnel: <code>cloudflared tunnel create mstdnca</code></li>
                                     <li>Configure the tunnel to route to <code>http://localhost:5000</code></li>
                                     <li>In Zero Trust dashboard, create an Access Application for your tunnel's hostname</li>
                                     <li>Copy the Application Audience (AUD) tag and paste it above</li>

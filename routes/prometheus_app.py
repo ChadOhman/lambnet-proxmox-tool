@@ -58,7 +58,7 @@ def _get_settings():
         "protection_type": Setting.get("prometheus_protection_type", "snapshot"),
         "backup_storage": Setting.get("prometheus_backup_storage", ""),
         "backup_mode": Setting.get("prometheus_backup_mode", "snapshot"),
-        "lambnet_metrics_url": Setting.get("prometheus_lambnet_metrics_url", ""),
+        "mstdnca_metrics_url": Setting.get("prometheus_mstdnca_metrics_url", ""),
         "last_install_at": _parse_iso(Setting.get("prometheus_last_install_at", "")),
         "last_install_status": Setting.get("prometheus_last_install_status", ""),
         "last_install_log": Setting.get("prometheus_last_install_log", ""),
@@ -129,8 +129,8 @@ def save():
                 "true" if "prometheus_enabled" in request.form else "false")
     Setting.set("prometheus_auto_upgrade",
                 "true" if "prometheus_auto_upgrade" in request.form else "false")
-    Setting.set("prometheus_lambnet_metrics_url",
-                request.form.get("prometheus_lambnet_metrics_url", "").strip())
+    Setting.set("prometheus_mstdnca_metrics_url",
+                request.form.get("prometheus_mstdnca_metrics_url", "").strip())
 
     retention = request.form.get("prometheus_retention_days", "365").strip()
     try:

@@ -193,7 +193,7 @@ class TestPrometheusYmlGeneration:
         from apps.prometheus_app import _generate_prometheus_yml
         yml = _generate_prometheus_yml("10.0.0.10:5000")
         assert 'job_name: "prometheus"' in yml
-        assert 'job_name: "lambnet"' in yml
+        assert 'job_name: "mstdnca"' in yml
         assert "10.0.0.10:5000" in yml
 
     def test_yml_with_extra_configs(self):
@@ -213,11 +213,11 @@ class TestPrometheusYmlGeneration:
         assert "Bearer" in yml
         assert "secret123" in yml
 
-    def test_yml_without_lambnet_url(self):
+    def test_yml_without_mstdnca_url(self):
         from apps.prometheus_app import _generate_prometheus_yml
         yml = _generate_prometheus_yml("")
         assert 'job_name: "prometheus"' in yml
-        assert "lambnet" not in yml
+        assert "mstdnca" not in yml
 
 
 # ---------------------------------------------------------------------------
@@ -663,7 +663,7 @@ class TestExporterAwareQueries:
             db.session.commit()
 
     @patch("clients.prometheus_query.requests.get")
-    def test_get_guest_rrd_falls_back_to_lambnet(self, mock_get, app):
+    def test_get_guest_rrd_falls_back_to_mstdnca(self, mock_get, app):
         from clients.prometheus_query import PrometheusQueryClient
 
         mock_resp = MagicMock()
@@ -684,10 +684,10 @@ class TestExporterAwareQueries:
 
             client = PrometheusQueryClient(base_url="http://localhost:9090")
             result = client.get_guest_rrd(100, "hour", guest_id=guest.id)
-            assert result["source"] == "lambnet"
+            assert result["source"] == "mstdnca"
 
             all_urls_and_params = str(mock_get.call_args_list)
-            assert "lambnet_guest_cpu_usage_percent" in all_urls_and_params
+            assert "mstdnca_guest_cpu_usage_percent" in all_urls_and_params
 
             db.session.delete(guest)
             db.session.commit()
@@ -708,7 +708,7 @@ class TestExporterAwareQueries:
         with app.app_context():
             client = PrometheusQueryClient(base_url="http://localhost:9090")
             result = client.get_guest_rrd(100, "hour")
-            assert result["source"] == "lambnet"
+            assert result["source"] == "mstdnca"
 
     @patch("clients.prometheus_query.requests.get")
     def test_get_pg_metrics_exporter(self, mock_get, app):

@@ -17,23 +17,23 @@ _TEST_CONFIG = {
 
 @pytest.fixture(autouse=True, scope="session")
 def _isolate_credential_store():
-    """Redirect credential_store key to a temp file so tests never touch /etc/lambnet."""
+    """Redirect credential_store key to a temp file so tests never touch /etc/mstdnca."""
     import config as cfg
     import auth.credential_store as credential_store
 
-    tmp_dir = tempfile.mkdtemp(prefix="lambnet-test-")
+    tmp_dir = tempfile.mkdtemp(prefix="mstdnca-test-")
     key_path = os.path.join(tmp_dir, "secret.key")
     original_path = cfg.SECRET_KEY_PATH
     original_fernet = credential_store._fernet
 
     cfg.SECRET_KEY_PATH = key_path
-    os.environ["LAMBNET_SECRET_KEY"] = key_path
+    os.environ["MSTDNCA_SECRET_KEY"] = key_path
     credential_store._fernet = None
 
     yield
 
     cfg.SECRET_KEY_PATH = original_path
-    os.environ.pop("LAMBNET_SECRET_KEY", None)
+    os.environ.pop("MSTDNCA_SECRET_KEY", None)
     credential_store._fernet = original_fernet
 
     # Clean up temp key file

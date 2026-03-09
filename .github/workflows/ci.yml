@@ -40,7 +40,7 @@ jobs:
         env:
           FLASK_SECRET_KEY: ci-test-secret
           DATABASE_URL: "sqlite:////tmp/ci-test.db"
-          LAMBNET_DATA_DIR: /tmp/lambnet-ci
+          MSTDNCA_DATA_DIR: /tmp/mstdnca-ci
         run: python -c "from app import create_app; create_app()"
 
   ruff:
@@ -76,8 +76,8 @@ jobs:
         env:
           FLASK_SECRET_KEY: ci-test-secret
           DATABASE_URL: "sqlite:////tmp/ci-test.db"
-          LAMBNET_DATA_DIR: /tmp/lambnet-ci
-          LAMBNET_SECRET_KEY: /tmp/lambnet-ci/secret.key
+          MSTDNCA_DATA_DIR: /tmp/mstdnca-ci
+          MSTDNCA_SECRET_KEY: /tmp/mstdnca-ci/secret.key
         run: pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=40
 
   shellcheck:

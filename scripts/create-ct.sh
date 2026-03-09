@@ -7,7 +7,7 @@ set -e
 #
 # Usage: bash create-ct.sh [OPTIONS]
 #   --ctid <ID>          CT ID (default: next available)
-#   --hostname <NAME>    Hostname (default: lambnet)
+#   --hostname <NAME>    Hostname (default: mstdnca)
 #   --storage <STORE>    Storage for CT (default: local-lvm)
 #   --template <PATH>    CT template (default: auto-download latest Debian)
 #   --memory <MB>        Memory in MB (default: 1024)
@@ -23,7 +23,7 @@ set -e
 
 # Defaults
 CTID=""
-HOSTNAME="lambnet"
+HOSTNAME="mstdnca"
 STORAGE="local-lvm"
 TEMPLATE=""
 MEMORY=1024
@@ -200,27 +200,27 @@ echo "[4/5] Installing Mastodon Canada Administration Tool..."
 
 # Install git and clone repo
 pct exec "$CTID" -- bash -c "apt-get update -qq && apt-get install -y -qq git curl > /dev/null 2>&1"
-pct exec "$CTID" -- bash -c "git clone --quiet '$REPO_URL' /tmp/lambnet-install"
+pct exec "$CTID" -- bash -c "git clone --quiet '$REPO_URL' /tmp/mstdnca-install"
 
 # Run setup.sh from the cloned repo
 SETUP_ARGS="$INSTALL_CLOUDFLARED"
 if [ -n "$TARGET_VERSION" ]; then
     SETUP_ARGS="$SETUP_ARGS --version $TARGET_VERSION"
 fi
-pct exec "$CTID" -- bash -c "cd /tmp/lambnet-install && bash setup.sh $SETUP_ARGS"
+pct exec "$CTID" -- bash -c "cd /tmp/mstdnca-install && bash setup.sh $SETUP_ARGS"
 
 # Cleanup install temp
-pct exec "$CTID" -- bash -c "rm -rf /tmp/lambnet-install"
+pct exec "$CTID" -- bash -c "rm -rf /tmp/mstdnca-install"
 
 echo ""
 echo "[5/5] Verifying installation..."
 sleep 3
 
-if pct exec "$CTID" -- systemctl is-active --quiet lambnet-update-manager; then
+if pct exec "$CTID" -- systemctl is-active --quiet mstdnca-proxmox-tool; then
     echo "  Service is running."
 else
     echo "  WARNING: Service may not be running. Check with:"
-    echo "  pct exec $CTID -- journalctl -u lambnet-update-manager"
+    echo "  pct exec $CTID -- journalctl -u mstdnca-proxmox-tool"
 fi
 
 # Get CT IP
@@ -236,8 +236,8 @@ CT Root Password: $CT_ROOT_PASS
 Web UI: ${WEB_URL}
 App Username: admin
 App Password: admin (change after first login)
-App Directory: /opt/lambnet
-Data Directory: /var/lib/lambnet
+App Directory: /opt/mstdnca
+Data Directory: /var/lib/mstdnca
 Provisioned: $(date '+%Y-%m-%d %H:%M:%S')"
 
 pct set "$CTID" --description "$NOTES" 2>/dev/null || true
@@ -266,7 +266,7 @@ echo "   pct stop $CTID               # Stop CT"
 echo "   pct start $CTID              # Start CT"
 echo ""
 echo " App commands (inside CT):"
-echo "   systemctl status lambnet-update-manager"
-echo "   journalctl -u lambnet-update-manager -f"
-echo "   bash /opt/lambnet/update.sh  # Manual update"
+echo "   systemctl status mstdnca-proxmox-tool"
+echo "   journalctl -u mstdnca-proxmox-tool -f"
+echo "   bash /opt/mstdnca/update.sh  # Manual update"
 echo ""

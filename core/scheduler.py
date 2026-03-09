@@ -783,7 +783,7 @@ def _check_prometheus_release(app):
 
         try:
             url = "https://api.github.com/repos/prometheus/prometheus/releases/latest"
-            req = urllib.request.Request(url, headers={"User-Agent": "lambnet-proxmox-tool"})
+            req = urllib.request.Request(url, headers={"User-Agent": "mstdnca-proxmox-tool"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
                 latest = data.get("tag_name", "").lstrip("v")

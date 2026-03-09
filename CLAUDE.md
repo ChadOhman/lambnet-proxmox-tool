@@ -16,11 +16,11 @@ make install-dev
 make test
 
 # Run a single test file
-FLASK_SECRET_KEY=dev-secret DATABASE_URL="sqlite:////tmp/lambnet-dev-test.db" LAMBNET_DATA_DIR=/tmp/lambnet-dev \
+FLASK_SECRET_KEY=dev-secret DATABASE_URL="sqlite:////tmp/mstdnca-dev-test.db" MSTDNCA_DATA_DIR=/tmp/mstdnca-dev \
   pytest tests/test_auth.py -v
 
 # Run a single test
-FLASK_SECRET_KEY=dev-secret DATABASE_URL="sqlite:////tmp/lambnet-dev-test.db" LAMBNET_DATA_DIR=/tmp/lambnet-dev \
+FLASK_SECRET_KEY=dev-secret DATABASE_URL="sqlite:////tmp/mstdnca-dev-test.db" MSTDNCA_DATA_DIR=/tmp/mstdnca-dev \
   pytest tests/test_auth.py::TestLogin::test_valid_login -v
 
 # Lint
@@ -91,7 +91,7 @@ make all           # lint → security → test
 
 **Auth layers:** Local login → Cloudflare Access JWT (`auth/cloudflare_access.py`) → Local network auto-login (`auth/local_network.py`, trusted CIDRs). Role-based permissions: super_admin > admin > operator > viewer with 13 permission flags on the `Role` model.
 
-**Credentials:** Fernet symmetric encryption (`auth/credential_store.py`), key at `/etc/lambnet/secret.key`. Fernet instance cached at module level with thread-safe double-checked locking.
+**Credentials:** Fernet symmetric encryption (`auth/credential_store.py`), key at `/etc/mstdnca/secret.key`. Fernet instance cached at module level with thread-safe double-checked locking.
 
 **Frontend:** Jinja2 templates with Bootstrap 5.3.3 dark theme + htmx 2.0.4 + xterm.js, all from CDN. Single `static/style.css`.
 
@@ -120,6 +120,6 @@ make all           # lint → security → test
 
 - Tests use in-memory SQLite and a session-scoped app fixture (`tests/conftest.py`)
 - `auth_client` fixture provides a pre-authenticated admin client
-- Credential store is redirected to a temp file — tests never touch `/etc/lambnet`
+- Credential store is redirected to a temp file — tests never touch `/etc/mstdnca`
 - No integration tests for Proxmox/SSH/UniFi — those modules are omitted from coverage
 - CI coverage threshold: 40% (`--cov-fail-under=40`); local Makefile uses 18%

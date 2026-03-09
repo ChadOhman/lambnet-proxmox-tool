@@ -130,7 +130,7 @@ class PrometheusQueryClient:
         """Query Prometheus for guest performance metrics and return Chart.js-ready JSON.
 
         When *guest_id* is provided and a node_exporter is installed on that guest,
-        queries standard node_exporter metrics instead of lambnet_* gauges.
+        queries standard node_exporter metrics instead of mstdnca_* gauges.
         """
         dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
         end = time.time()
@@ -139,7 +139,7 @@ class PrometheusQueryClient:
 
         # Check for node_exporter
         target = _get_exporter_target(guest_id, "node_exporter") if guest_id else None
-        source = "node_exporter" if target else "lambnet"
+        source = "node_exporter" if target else "mstdnca"
 
         if target:
             inst = f'instance="{target}"'
@@ -162,19 +162,19 @@ class PrometheusQueryClient:
             )
         else:
             vmid_str = str(vmid)
-            cpu_data = self._range_single(f'lambnet_guest_cpu_usage_percent{{vmid="{vmid_str}"}}', start, end, step)
-            mem_used = self._range_single(f'lambnet_guest_memory_used_bytes{{vmid="{vmid_str}"}}', start, end, step)
-            mem_total = self._range_single(f'lambnet_guest_memory_total_bytes{{vmid="{vmid_str}"}}', start, end, step)
+            cpu_data = self._range_single(f'mstdnca_guest_cpu_usage_percent{{vmid="{vmid_str}"}}', start, end, step)
+            mem_used = self._range_single(f'mstdnca_guest_memory_used_bytes{{vmid="{vmid_str}"}}', start, end, step)
+            mem_total = self._range_single(f'mstdnca_guest_memory_total_bytes{{vmid="{vmid_str}"}}', start, end, step)
             netin = self._range_single(
-                f'lambnet_guest_network_in_bytes_per_sec{{vmid="{vmid_str}"}}', start, end, step,
+                f'mstdnca_guest_network_in_bytes_per_sec{{vmid="{vmid_str}"}}', start, end, step,
             )
             netout = self._range_single(
-                f'lambnet_guest_network_out_bytes_per_sec{{vmid="{vmid_str}"}}', start, end, step,
+                f'mstdnca_guest_network_out_bytes_per_sec{{vmid="{vmid_str}"}}', start, end, step,
             )
 
         return self._build_guest_result(cpu_data, mem_used, mem_total, netin, netout, source)
 
-    def _build_guest_result(self, cpu_data, mem_used, mem_total, netin, netout, source="lambnet"):
+    def _build_guest_result(self, cpu_data, mem_used, mem_total, netin, netout, source="mstdnca"):
         """Build Chart.js-ready JSON from raw range query results."""
         timestamps = cpu_data.get("timestamps") or mem_used.get("timestamps") or []
         utz = _user_tz()
@@ -235,12 +235,12 @@ class PrometheusQueryClient:
 
         hid = str(host_id)
 
-        cpu_data = self._range_single(f'lambnet_host_cpu_usage_percent{{host_id="{hid}"}}', start, end, step)
-        mem_used = self._range_single(f'lambnet_host_memory_used_bytes{{host_id="{hid}"}}', start, end, step)
-        mem_total = self._range_single(f'lambnet_host_memory_total_bytes{{host_id="{hid}"}}', start, end, step)
-        netin = self._range_single(f'lambnet_host_network_in_bytes_per_sec{{host_id="{hid}"}}', start, end, step)
-        netout = self._range_single(f'lambnet_host_network_out_bytes_per_sec{{host_id="{hid}"}}', start, end, step)
-        rootfs = self._range_single(f'lambnet_host_rootfs_used_percent{{host_id="{hid}"}}', start, end, step)
+        cpu_data = self._range_single(f'mstdnca_host_cpu_usage_percent{{host_id="{hid}"}}', start, end, step)
+        mem_used = self._range_single(f'mstdnca_host_memory_used_bytes{{host_id="{hid}"}}', start, end, step)
+        mem_total = self._range_single(f'mstdnca_host_memory_total_bytes{{host_id="{hid}"}}', start, end, step)
+        netin = self._range_single(f'mstdnca_host_network_in_bytes_per_sec{{host_id="{hid}"}}', start, end, step)
+        netout = self._range_single(f'mstdnca_host_network_out_bytes_per_sec{{host_id="{hid}"}}', start, end, step)
+        rootfs = self._range_single(f'mstdnca_host_rootfs_used_percent{{host_id="{hid}"}}', start, end, step)
 
         timestamps = cpu_data.get("timestamps") or mem_used.get("timestamps") or []
         utz = _user_tz()
@@ -321,11 +321,11 @@ class PrometheusQueryClient:
             snap = {"captured_at": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()}
             for metric_name, values in all_series.items():
                 # Use the short name (strip prefix)
-                short = metric_name.split("{")[0].replace("lambnet_", "")
+                short = metric_name.split("{")[0].replace("mstdnca_", "")
                 snap[short] = values[i] if i < len(values) else None
             snapshots.append(snap)
 
-        return {"snapshots": snapshots, "source": "lambnet"}
+        return {"snapshots": snapshots, "source": "mstdnca"}
 
     def get_pg_metrics_exporter(self, target, timeframe="day"):
         """Query postgres_exporter metrics and return snapshots matching PG format."""

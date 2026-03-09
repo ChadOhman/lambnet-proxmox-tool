@@ -24,7 +24,7 @@ Run this on any Proxmox host to create a ready-to-use CT:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/mstdnca-proxmox-tool/main/create-ct.sh)" -- \
-  --hostname lambnet \
+  --hostname mstdnca \
   --storage local-lvm \
   --memory 1024 \
   --disk 8 \
@@ -37,7 +37,7 @@ With a static IP:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/mstdnca-proxmox-tool/main/create-ct.sh)" -- \
-  --hostname lambnet \
+  --hostname mstdnca \
   --ip 10.0.0.100/24 \
   --gateway 10.0.0.1
 ```
@@ -46,7 +46,7 @@ With Cloudflare Tunnel support:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/mstdnca-proxmox-tool/main/create-ct.sh)" -- \
-  --hostname lambnet \
+  --hostname mstdnca \
   --ip dhcp \
   --cloudflared
 ```
@@ -56,7 +56,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChadOhman/mstdnca-proxmo
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--ctid <ID>` | next available | Proxmox CT ID |
-| `--hostname <NAME>` | `lambnet` | CT hostname |
+| `--hostname <NAME>` | `mstdnca` | CT hostname |
 | `--storage <STORE>` | `local-lvm` | Storage for CT rootfs |
 | `--template <PATH>` | auto-download Debian 12 | CT template path |
 | `--memory <MB>` | `1024` | Memory allocation |
@@ -73,8 +73,8 @@ Create a Debian 12 or Ubuntu 22.04+ CT in Proxmox, then inside the CT:
 
 ```bash
 apt-get update && apt-get install -y git
-git clone https://github.com/ChadOhman/mstdnca-proxmox-tool.git /tmp/lambnet
-cd /tmp/lambnet && bash setup.sh
+git clone https://github.com/ChadOhman/mstdnca-proxmox-tool.git /tmp/mstdnca
+cd /tmp/mstdnca && bash setup.sh
 ```
 
 ### First Login
@@ -218,7 +218,7 @@ If you already have `cloudflared` running on another CT, VM, or your Proxmox hos
 If you don't have a tunnel yet:
 
 1. Run `bash setup.sh --cloudflared` inside the MCAT CT to install cloudflared
-2. `cloudflared tunnel login` and `cloudflared tunnel create lambnet`
+2. `cloudflared tunnel login` and `cloudflared tunnel create mstdnca`
 3. Configure the tunnel to route to `http://localhost:5000`
 4. Create an Access Application in the Zero Trust dashboard
 5. Enter the team domain and AUD tag in MCAT settings
@@ -241,7 +241,7 @@ Go to **Settings > Application** and click **Check for Updates**. If a new versi
 ### From the Command Line
 
 ```bash
-bash /opt/lambnet/update.sh
+bash /opt/mstdnca/update.sh
 ```
 
 This backs up the database, pulls the latest code, updates dependencies, and restarts the service.
@@ -322,9 +322,9 @@ Installed automatically by `setup.sh`:
 ## File Layout
 
 ```
-/opt/lambnet/          # Application code + Python venv
-/var/lib/lambnet/      # SQLite database + backups
-/etc/lambnet/          # Encryption keys (secret.key, flask_secret)
+/opt/mstdnca/          # Application code + Python venv
+/var/lib/mstdnca/      # SQLite database + backups
+/etc/mstdnca/          # Encryption keys (secret.key, flask_secret)
 ```
 
 ## License
