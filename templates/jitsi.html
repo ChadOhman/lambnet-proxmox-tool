@@ -596,6 +596,7 @@ config.openBridgeChannel = 'websocket';</pre>
                     {% if settings.installed %}
                     <form method="post" action="/jitsi/configure-secure-domain" id="sdConfigureForm"
                           onsubmit="return startSdConfigure(event)">
+                        <input type="hidden" name="secure_domain_enabled" id="sdEnabledHidden" value="0">
                         <button type="submit" class="btn btn-outline-warning mt-2" id="sdConfigureBtn">
                             <i class="bi bi-shield-lock"></i> Configure Secure Domain
                         </button>
@@ -944,6 +945,8 @@ function startCfConfigure(e) {
 function startSdConfigure(e) {
     const enabled = document.getElementById('secureDomain');
     const action = (enabled && enabled.checked) ? 'enable' : 'disable';
+    // Pass the current checkbox state to the form so the route can persist it
+    document.getElementById('sdEnabledHidden').value = (enabled && enabled.checked) ? '1' : '0';
     const msg = 'This will ' + action + ' Jitsi Secure Domain.\n\n'
         + (action === 'enable'
             ? 'Room creation will require Prosody authentication.\nGuests can still join existing rooms.\n\n'

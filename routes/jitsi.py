@@ -468,6 +468,11 @@ def sd_configure():
         flash("An operation is already in progress.", "warning")
         return redirect(url_for("jitsi.upgrade_page"))
 
+    # Persist the checkbox state so the background job reads the correct value
+    sd_enabled = request.form.get("secure_domain_enabled") == "1"
+    Setting.set("jitsi_secure_domain", "true" if sd_enabled else "false")
+    db.session.commit()
+
     _sd_configure_job.update({"running": True, "success": None, "log": []})
 
     def _cb(msg):
