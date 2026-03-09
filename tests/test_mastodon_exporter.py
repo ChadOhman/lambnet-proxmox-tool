@@ -325,13 +325,14 @@ class TestMastodonMetricsQuery:
             assert len(data["snapshots"]) == 2
             snap = data["snapshots"][0]
             assert "captured_at" in snap
-            assert "request_rate" in snap
+            assert "puma_request_rate" in snap
 
-            # Verify the PromQL queries contain expected metric names
+            # Verify the PromQL queries contain expected ruby_* metric names
             all_queries = str(mock_query_range.call_args_list)
-            assert "http_server_requests_total" in all_queries
-            assert "sidekiq_jobs_executed_total" in all_queries
-            assert "sidekiq_queue_latency_seconds" in all_queries
+            assert "ruby_http_requests" in all_queries
+            assert "ruby_sidekiq_jobs_total" in all_queries
+            assert "ruby_sidekiq_failed_jobs_total" in all_queries
+            assert "ruby_active_record_connection_pool_busy" in all_queries
 
     @patch("clients.prometheus_query.PrometheusQueryClient.query_range")
     def test_get_mastodon_metrics_empty_data(self, mock_query_range, app):

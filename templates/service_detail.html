@@ -1026,14 +1026,64 @@
         </div>
         <div id="pumaChartError" class="text-center text-muted py-3 d-none"></div>
         <div id="pumaCharts" class="d-none">
-            <div class="row g-3">
-                <div class="col-md-6">
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">
                     <div class="text-muted small mb-1">Request Rate (req/sec)</div>
                     <canvas id="puma-chart-reqrate" height="120" role="img" aria-label="Puma request rate over time"></canvas>
                 </div>
-                <div class="col-md-6">
-                    <div class="text-muted small mb-1">Response Time P95 (seconds)</div>
-                    <canvas id="puma-chart-latency" height="120" role="img" aria-label="Puma P95 response time over time"></canvas>
+                <div class="col-md-4">
+                    <div class="text-muted small mb-1">Avg Response Time (ms)</div>
+                    <canvas id="puma-chart-response" height="120" role="img" aria-label="Puma average response time over time"></canvas>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-muted small mb-1">SQL Duration (ms)</div>
+                    <canvas id="puma-chart-sql" height="120" role="img" aria-label="Puma SQL query duration over time"></canvas>
+                </div>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="text-muted small mb-1">Redis Duration (ms)</div>
+                    <canvas id="puma-chart-redis" height="120" role="img" aria-label="Puma Redis duration over time"></canvas>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-muted small mb-1">Thread Utilization (%)</div>
+                    <canvas id="puma-chart-threads" height="120" role="img" aria-label="Puma thread utilization over time"></canvas>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-muted small mb-1">RSS Memory (MB)</div>
+                    <canvas id="puma-chart-rss" height="120" role="img" aria-label="Puma RSS memory over time"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- DB & Runtime Charts (shared between puma and sidekiq) -->
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-database"></i> Database &amp; Ruby Runtime</h5>
+    </div>
+    <div class="card-body">
+        <div id="dbRuntimeChartLoading" class="text-center text-muted py-3">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading...
+        </div>
+        <div id="dbRuntimeCharts" class="d-none">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="text-muted small mb-1">DB Pool Utilization (%)</div>
+                    <canvas id="db-chart-pool" height="120" role="img" aria-label="Database connection pool utilization over time"></canvas>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small mb-1">DB Pool Waiting</div>
+                    <canvas id="db-chart-waiting" height="120" role="img" aria-label="Database pool waiting connections over time"></canvas>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small mb-1">GC Rate (gc/sec)</div>
+                    <canvas id="ruby-chart-gc" height="120" role="img" aria-label="Ruby garbage collection rate over time"></canvas>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small mb-1">Heap Live Slots</div>
+                    <canvas id="ruby-chart-heap" height="120" role="img" aria-label="Ruby heap live slots over time"></canvas>
                 </div>
             </div>
         </div>
@@ -1245,18 +1295,64 @@
         </div>
         <div id="sidekiqChartError" class="text-center text-muted py-3 d-none"></div>
         <div id="sidekiqCharts" class="d-none">
-            <div class="row g-3">
+            <div class="row g-3 mb-3">
                 <div class="col-md-4">
                     <div class="text-muted small mb-1">Job Throughput (jobs/sec)</div>
                     <canvas id="sidekiq-chart-throughput" height="120" role="img" aria-label="Sidekiq job throughput over time"></canvas>
                 </div>
                 <div class="col-md-4">
-                    <div class="text-muted small mb-1">Queue Latency (seconds)</div>
-                    <canvas id="sidekiq-chart-latency" height="120" role="img" aria-label="Sidekiq queue latency over time"></canvas>
+                    <div class="text-muted small mb-1">Failure Rate (jobs/sec)</div>
+                    <canvas id="sidekiq-chart-failures" height="120" role="img" aria-label="Sidekiq failure rate over time"></canvas>
                 </div>
                 <div class="col-md-4">
-                    <div class="text-muted small mb-1">Queue Size</div>
-                    <canvas id="sidekiq-chart-qsize" height="120" role="img" aria-label="Sidekiq queue size over time"></canvas>
+                    <div class="text-muted small mb-1">Avg Job Duration (ms)</div>
+                    <canvas id="sidekiq-chart-duration" height="120" role="img" aria-label="Sidekiq average job duration over time"></canvas>
+                </div>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="text-muted small mb-1">Enqueued Jobs</div>
+                    <canvas id="sidekiq-chart-enqueued" height="120" role="img" aria-label="Sidekiq enqueued jobs over time"></canvas>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-muted small mb-1">Retry Queue</div>
+                    <canvas id="sidekiq-chart-retry" height="120" role="img" aria-label="Sidekiq retry queue over time"></canvas>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-muted small mb-1">Dead Queue</div>
+                    <canvas id="sidekiq-chart-dead" height="120" role="img" aria-label="Sidekiq dead queue over time"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- DB & Runtime Charts (shared between puma and sidekiq) -->
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-database"></i> Database &amp; Ruby Runtime</h5>
+    </div>
+    <div class="card-body">
+        <div id="dbRuntimeChartLoading" class="text-center text-muted py-3">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading...
+        </div>
+        <div id="dbRuntimeCharts" class="d-none">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="text-muted small mb-1">DB Pool Utilization (%)</div>
+                    <canvas id="db-chart-pool" height="120" role="img" aria-label="Database connection pool utilization over time"></canvas>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small mb-1">DB Pool Waiting</div>
+                    <canvas id="db-chart-waiting" height="120" role="img" aria-label="Database pool waiting connections over time"></canvas>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small mb-1">GC Rate (gc/sec)</div>
+                    <canvas id="ruby-chart-gc" height="120" role="img" aria-label="Ruby garbage collection rate over time"></canvas>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small mb-1">Heap Live Slots</div>
+                    <canvas id="ruby-chart-heap" height="120" role="img" aria-label="Ruby heap live slots over time"></canvas>
                 </div>
             </div>
         </div>
@@ -2978,9 +3074,56 @@ document.querySelectorAll('#redisChartTimeframe button').forEach(btn => {
 document.addEventListener('DOMContentLoaded', function() { redisLoadCharts('day'); });
 {% endif %}{# stats.type == 'redis' #}
 
+{% if stats.type in ('puma', 'sidekiq') %}
+let _dbRtCharts = {};
+
+function _loadDbRuntimeCharts(snaps, labels) {
+    var el = document.getElementById('dbRuntimeChartLoading');
+    if (el) el.classList.add('d-none');
+    var container = document.getElementById('dbRuntimeCharts');
+    if (!container) return;
+    container.classList.remove('d-none');
+
+    const chartOpts = {
+        type: 'line',
+        options: {
+            responsive: true,
+            animation: false,
+            plugins: {legend: {display: false}},
+            scales: {
+                x: {ticks: {color: '#6c757d', maxTicksLimit: 8}, grid: {color: '#2d2d2d'}},
+                y: {ticks: {color: '#6c757d'}, grid: {color: '#2d2d2d'}, beginAtZero: true},
+            },
+        },
+    };
+
+    function makeOrUpdate(chart, canvasId, label, dataArr, color, yCallback) {
+        var opts = JSON.parse(JSON.stringify(chartOpts));
+        if (yCallback) opts.options.scales.y.ticks.callback = yCallback;
+        if (chart) {
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = dataArr;
+            chart.update();
+            return chart;
+        }
+        opts.data = {labels: labels, datasets: [{label: label, data: dataArr, borderColor: color, backgroundColor: color + '22', fill: true, tension: 0.3, pointRadius: 0}]};
+        return new Chart(document.getElementById(canvasId), opts);
+    }
+
+    const poolUtil = snaps.map(s => s.db_pool_utilization != null ? +Number(s.db_pool_utilization).toFixed(1) : null);
+    const poolWait = snaps.map(s => s.db_pool_waiting ?? null);
+    const gcRate = snaps.map(s => s.ruby_gc_rate != null ? +Number(s.ruby_gc_rate).toFixed(2) : null);
+    const heapSlots = snaps.map(s => s.ruby_heap_live_slots ?? null);
+
+    _dbRtCharts.pool = makeOrUpdate(_dbRtCharts.pool, 'db-chart-pool', 'Utilization %', poolUtil, '#22c55e', v => v + '%');
+    _dbRtCharts.waiting = makeOrUpdate(_dbRtCharts.waiting, 'db-chart-waiting', 'Waiting', poolWait, '#ef4444');
+    _dbRtCharts.gc = makeOrUpdate(_dbRtCharts.gc, 'ruby-chart-gc', 'GC/sec', gcRate, '#f59e0b');
+    _dbRtCharts.heap = makeOrUpdate(_dbRtCharts.heap, 'ruby-chart-heap', 'Live Slots', heapSlots, '#8b5cf6');
+}
+{% endif %}
+
 {% if stats.type == 'puma' %}
-let _pumaReqChart = null;
-let _pumaLatChart = null;
+let _pumaCharts = {};
 
 function pumaLoadCharts(timeframe) {
     timeframe = timeframe || 'day';
@@ -3003,7 +3146,7 @@ function pumaLoadCharts(timeframe) {
 
         var srcBadge = document.getElementById('pumaChartSource');
         if (data.source && srcBadge) {
-            var srcLabels = {mastodon: 'mastodon (prometheus_exporter)', lambnet: 'Prometheus', none: 'None'};
+            var srcLabels = {mastodon_exporter: 'prometheus_exporter', lambnet: 'Prometheus', none: 'None'};
             srcBadge.textContent = srcLabels[data.source] || data.source;
             srcBadge.classList.remove('d-none');
         }
@@ -3013,9 +3156,6 @@ function pumaLoadCharts(timeframe) {
             const _ctz = window.USER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
             return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', timeZone: _ctz});
         });
-
-        const reqRate = snaps.map(s => s.request_rate != null ? +Number(s.request_rate).toFixed(2) : null);
-        const latP95 = snaps.map(s => s.request_duration_p95 != null ? +Number(s.request_duration_p95).toFixed(4) : null);
 
         const chartOpts = {
             type: 'line',
@@ -3043,8 +3183,22 @@ function pumaLoadCharts(timeframe) {
             return new Chart(document.getElementById(canvasId), opts);
         }
 
-        _pumaReqChart = makeOrUpdate(_pumaReqChart, 'puma-chart-reqrate', 'Req/sec', reqRate, '#3b82f6');
-        _pumaLatChart = makeOrUpdate(_pumaLatChart, 'puma-chart-latency', 'P95 (s)', latP95, '#f59e0b', v => v + 's');
+        // Convert seconds to ms for duration metrics
+        const reqRate = snaps.map(s => s.puma_request_rate != null ? +Number(s.puma_request_rate).toFixed(2) : null);
+        const avgResp = snaps.map(s => s.puma_avg_response_time != null ? +(s.puma_avg_response_time * 1000).toFixed(1) : null);
+        const sqlDur = snaps.map(s => s.puma_sql_duration != null ? +(s.puma_sql_duration * 1000).toFixed(1) : null);
+        const redisDur = snaps.map(s => s.puma_redis_duration != null ? +(s.puma_redis_duration * 1000).toFixed(1) : null);
+        const threadUtil = snaps.map(s => s.puma_thread_utilization != null ? +Number(s.puma_thread_utilization).toFixed(1) : null);
+        const rssMb = snaps.map(s => s.puma_rss_memory != null ? +(s.puma_rss_memory / 1048576).toFixed(1) : null);
+
+        _pumaCharts.req = makeOrUpdate(_pumaCharts.req, 'puma-chart-reqrate', 'Req/sec', reqRate, '#3b82f6');
+        _pumaCharts.resp = makeOrUpdate(_pumaCharts.resp, 'puma-chart-response', 'Avg (ms)', avgResp, '#f59e0b', v => v + 'ms');
+        _pumaCharts.sql = makeOrUpdate(_pumaCharts.sql, 'puma-chart-sql', 'SQL (ms)', sqlDur, '#8b5cf6', v => v + 'ms');
+        _pumaCharts.redis = makeOrUpdate(_pumaCharts.redis, 'puma-chart-redis', 'Redis (ms)', redisDur, '#ef4444', v => v + 'ms');
+        _pumaCharts.threads = makeOrUpdate(_pumaCharts.threads, 'puma-chart-threads', 'Utilization %', threadUtil, '#22c55e', v => v + '%');
+        _pumaCharts.rss = makeOrUpdate(_pumaCharts.rss, 'puma-chart-rss', 'RSS (MB)', rssMb, '#06b6d4', v => v + 'MB');
+
+        _loadDbRuntimeCharts(snaps, labels);
     })
     .catch(err => {
         document.getElementById('pumaChartLoading').classList.add('d-none');
@@ -3065,9 +3219,7 @@ document.addEventListener('DOMContentLoaded', function() { pumaLoadCharts('day')
 {% endif %}{# stats.type == 'puma' #}
 
 {% if stats.type == 'sidekiq' %}
-let _sqThroughputChart = null;
-let _sqLatencyChart = null;
-let _sqQsizeChart = null;
+let _sqCharts = {};
 
 function sidekiqLoadCharts(timeframe) {
     timeframe = timeframe || 'day';
@@ -3090,7 +3242,7 @@ function sidekiqLoadCharts(timeframe) {
 
         var srcBadge = document.getElementById('sidekiqChartSource');
         if (data.source && srcBadge) {
-            var srcLabels = {mastodon: 'mastodon (prometheus_exporter)', lambnet: 'Prometheus', none: 'None'};
+            var srcLabels = {mastodon_exporter: 'prometheus_exporter', lambnet: 'Prometheus', none: 'None'};
             srcBadge.textContent = srcLabels[data.source] || data.source;
             srcBadge.classList.remove('d-none');
         }
@@ -3100,10 +3252,6 @@ function sidekiqLoadCharts(timeframe) {
             const _ctz = window.USER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
             return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', timeZone: _ctz});
         });
-
-        const throughput = snaps.map(s => s.sidekiq_throughput != null ? +Number(s.sidekiq_throughput).toFixed(2) : null);
-        const latency = snaps.map(s => s.sidekiq_queue_latency != null ? +Number(s.sidekiq_queue_latency).toFixed(2) : null);
-        const qsize = snaps.map(s => s.sidekiq_queue_size ?? null);
 
         const chartOpts = {
             type: 'line',
@@ -3131,9 +3279,21 @@ function sidekiqLoadCharts(timeframe) {
             return new Chart(document.getElementById(canvasId), opts);
         }
 
-        _sqThroughputChart = makeOrUpdate(_sqThroughputChart, 'sidekiq-chart-throughput', 'Jobs/sec', throughput, '#3b82f6');
-        _sqLatencyChart = makeOrUpdate(_sqLatencyChart, 'sidekiq-chart-latency', 'Latency (s)', latency, '#f59e0b', v => v + 's');
-        _sqQsizeChart = makeOrUpdate(_sqQsizeChart, 'sidekiq-chart-qsize', 'Queue Size', qsize, '#ef4444');
+        const throughput = snaps.map(s => s.sidekiq_throughput != null ? +Number(s.sidekiq_throughput).toFixed(2) : null);
+        const failures = snaps.map(s => s.sidekiq_failure_rate != null ? +Number(s.sidekiq_failure_rate).toFixed(3) : null);
+        const avgDur = snaps.map(s => s.sidekiq_avg_duration != null ? +(s.sidekiq_avg_duration * 1000).toFixed(1) : null);
+        const enqueued = snaps.map(s => s.sidekiq_enqueued ?? null);
+        const retryQ = snaps.map(s => s.sidekiq_retry_queue ?? null);
+        const deadQ = snaps.map(s => s.sidekiq_dead_queue ?? null);
+
+        _sqCharts.throughput = makeOrUpdate(_sqCharts.throughput, 'sidekiq-chart-throughput', 'Jobs/sec', throughput, '#3b82f6');
+        _sqCharts.failures = makeOrUpdate(_sqCharts.failures, 'sidekiq-chart-failures', 'Failures/sec', failures, '#ef4444');
+        _sqCharts.duration = makeOrUpdate(_sqCharts.duration, 'sidekiq-chart-duration', 'Avg (ms)', avgDur, '#f59e0b', v => v + 'ms');
+        _sqCharts.enqueued = makeOrUpdate(_sqCharts.enqueued, 'sidekiq-chart-enqueued', 'Enqueued', enqueued, '#8b5cf6');
+        _sqCharts.retry = makeOrUpdate(_sqCharts.retry, 'sidekiq-chart-retry', 'Retry', retryQ, '#eab308');
+        _sqCharts.dead = makeOrUpdate(_sqCharts.dead, 'sidekiq-chart-dead', 'Dead', deadQ, '#991b1b');
+
+        _loadDbRuntimeCharts(snaps, labels);
     })
     .catch(err => {
         document.getElementById('sidekiqChartLoading').classList.add('d-none');

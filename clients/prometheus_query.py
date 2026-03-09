@@ -373,25 +373,54 @@ class PrometheusQueryClient:
         return self._run_snapshot_queries(queries, start, end, step, source="redis_exporter")
 
     def get_mastodon_metrics(self, target, timeframe="day"):
-        """Query Mastodon built-in Prometheus exporter metrics and return snapshots."""
+        """Query Mastodon built-in Prometheus exporter metrics and return snapshots.
+
+        Uses ruby_* prefixed metrics from the prometheus_exporter gem.
+        Duration metrics are summaries (not histograms) so we compute averages via sum/count.
+        """
         dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
         end = time.time()
         start = end - dur
         inst = f'instance="{target}"'
-        rate_interval = f"{max(step * 2, 120)}s"
+        ri = f"{max(step * 2, 120)}s"
+
+        # Helper for summary average: rate(sum) / rate(count)
+        def _summary_avg(metric):
+            return (
+                f'sum(rate({metric}_sum{{{inst}}}[{ri}])) / '
+                f'clamp_min(sum(rate({metric}_count{{{inst}}}[{ri}])), 1e-10)'
+            )
 
         queries = {
-            "request_rate": f'sum(rate(http_server_requests_total{{{inst}}}[{rate_interval}]))',
-            "request_duration_p95": (
-                f'histogram_quantile(0.95, sum(rate('
-                f'http_server_request_duration_seconds_bucket{{{inst}}}[{rate_interval}])) by (le))'
+            # -- Puma / Web --
+            "puma_request_rate": f'sum(rate(ruby_http_requests{{{inst}}}[{ri}]))',
+            "puma_avg_response_time": _summary_avg("ruby_http_request_duration_seconds"),
+            "puma_sql_duration": _summary_avg("ruby_http_duration_sql_seconds"),
+            "puma_redis_duration": _summary_avg("ruby_http_duration_redis_seconds"),
+            "puma_queue_wait": _summary_avg("ruby_http_duration_queue_seconds"),
+            "puma_thread_utilization": (
+                f'sum(ruby_puma_running_threads{{{inst}}}) / '
+                f'clamp_min(sum(ruby_puma_max_threads{{{inst}}}), 1) * 100'
             ),
-            "error_rate": f'sum(rate(http_server_exceptions_total{{{inst}}}[{rate_interval}]))',
-            "sidekiq_throughput": f'sum(rate(sidekiq_jobs_executed_total{{{inst}}}[{rate_interval}]))',
-            "sidekiq_failure_rate": f'sum(rate(sidekiq_jobs_failed_total{{{inst}}}[{rate_interval}]))',
-            "sidekiq_queue_latency": f'max(sidekiq_queue_latency_seconds{{{inst}}})',
-            "sidekiq_queue_size": f'sum(sidekiq_queue_size{{{inst}}})',
-            "sidekiq_active_workers": f'sum(sidekiq_active_workers{{{inst}}})',
+            "puma_backlog": f'sum(ruby_puma_backlog{{{inst}}})',
+            "puma_rss_memory": f'sum(ruby_rss{{{inst}}})',
+            # -- Sidekiq --
+            "sidekiq_throughput": f'sum(rate(ruby_sidekiq_jobs_total{{{inst}}}[{ri}]))',
+            "sidekiq_failure_rate": f'sum(rate(ruby_sidekiq_failed_jobs_total{{{inst}}}[{ri}]))',
+            "sidekiq_avg_duration": _summary_avg("ruby_sidekiq_job_duration_seconds"),
+            "sidekiq_enqueued": f'sum(ruby_sidekiq_jobs_enqueued{{{inst}}})',
+            "sidekiq_retry_queue": f'sum(ruby_sidekiq_restarted_jobs_total{{{inst}}})',
+            "sidekiq_dead_queue": f'sum(ruby_sidekiq_dead_jobs_total{{{inst}}})',
+            # -- ActiveRecord --
+            "db_pool_utilization": (
+                f'sum(ruby_active_record_connection_pool_busy{{{inst}}}) / '
+                f'clamp_min(sum(ruby_active_record_connection_pool_size{{{inst}}}), 1) * 100'
+            ),
+            "db_pool_waiting": f'sum(ruby_active_record_connection_pool_waiting{{{inst}}})',
+            # -- Ruby runtime --
+            "ruby_gc_rate": f'sum(rate(ruby_gc_count{{{inst}}}[{ri}]))',
+            "ruby_heap_live_slots": f'sum(ruby_heap_live_slots{{{inst}}})',
+            "ruby_allocations_rate": f'sum(rate(ruby_allocations{{{inst}}}[{ri}]))',
         }
 
         return self._run_snapshot_queries(queries, start, end, step, source="mastodon_exporter")
