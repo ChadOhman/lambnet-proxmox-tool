@@ -264,14 +264,14 @@ def run_unpoller_install(log_callback=None):
             # Download and extract unpoller
             dl_url = (
                 f"https://github.com/{GITHUB_REPO}/releases/download/v{latest}/"
-                f"unpoller.{up_arch}.linux.gz"
+                f"unpoller_{latest}_linux_{up_arch}.tar.gz"
             )
             _log(f"Downloading unpoller v{latest} ({up_arch})...")
             dl_cmd = (
-                f"cd /tmp && "
-                f"(curl -sSL -o unpoller.gz '{dl_url}' 2>/dev/null "
-                f"|| wget -q -O unpoller.gz '{dl_url}') && "
-                f"gunzip -f unpoller.gz && chmod +x unpoller"
+                f"cd /tmp && rm -rf unpoller_extract && mkdir unpoller_extract && "
+                f"(curl -sSL -o unpoller.tar.gz '{dl_url}' 2>/dev/null "
+                f"|| wget -q -O unpoller.tar.gz '{dl_url}') && "
+                f"tar xzf unpoller.tar.gz -C unpoller_extract"
             )
             stdout, stderr, code = ssh.execute_sudo(dl_cmd, timeout=120)
             _log_cmd_output(_log, stdout, stderr, code)
@@ -282,7 +282,8 @@ def run_unpoller_install(log_callback=None):
             # Install binary
             _log("Installing binary...")
             stdout, stderr, code = ssh.execute_sudo(
-                "cp /tmp/unpoller /usr/local/bin/unpoller && "
+                "cp /tmp/unpoller_extract/unpoller /usr/local/bin/unpoller && "
+                "chmod +x /usr/local/bin/unpoller && "
                 "chown root:root /usr/local/bin/unpoller",
                 timeout=30,
             )
@@ -338,7 +339,7 @@ def run_unpoller_install(log_callback=None):
                 _log("WARNING: Unpoller may not be running. Check logs with: journalctl -u unpoller")
 
             # Clean up
-            ssh.execute_sudo("rm -f /tmp/unpoller /tmp/unpoller.gz", timeout=15)
+            ssh.execute_sudo("rm -rf /tmp/unpoller_extract /tmp/unpoller.tar.gz", timeout=15)
 
             _log(f"Unpoller v{latest} installed successfully.")
 
@@ -435,14 +436,14 @@ def run_unpoller_upgrade(log_callback=None):
             # Download new version
             dl_url = (
                 f"https://github.com/{GITHUB_REPO}/releases/download/v{latest}/"
-                f"unpoller.{up_arch}.linux.gz"
+                f"unpoller_{latest}_linux_{up_arch}.tar.gz"
             )
             _log(f"Downloading unpoller v{latest}...")
             dl_cmd = (
-                f"cd /tmp && "
-                f"(curl -sSL -o unpoller.gz '{dl_url}' 2>/dev/null "
-                f"|| wget -q -O unpoller.gz '{dl_url}') && "
-                f"gunzip -f unpoller.gz && chmod +x unpoller"
+                f"cd /tmp && rm -rf unpoller_extract && mkdir unpoller_extract && "
+                f"(curl -sSL -o unpoller.tar.gz '{dl_url}' 2>/dev/null "
+                f"|| wget -q -O unpoller.tar.gz '{dl_url}') && "
+                f"tar xzf unpoller.tar.gz -C unpoller_extract"
             )
             stdout, stderr, code = ssh.execute_sudo(dl_cmd, timeout=120)
             _log_cmd_output(_log, stdout, stderr, code)
@@ -457,7 +458,8 @@ def run_unpoller_upgrade(log_callback=None):
             # Replace binary
             _log("Replacing binary...")
             stdout, stderr, code = ssh.execute_sudo(
-                "cp /tmp/unpoller /usr/local/bin/unpoller && "
+                "cp /tmp/unpoller_extract/unpoller /usr/local/bin/unpoller && "
+                "chmod +x /usr/local/bin/unpoller && "
                 "chown root:root /usr/local/bin/unpoller",
                 timeout=30,
             )
@@ -475,7 +477,7 @@ def run_unpoller_upgrade(log_callback=None):
                 return False, log_lines
 
             # Clean up
-            ssh.execute_sudo("rm -f /tmp/unpoller /tmp/unpoller.gz", timeout=15)
+            ssh.execute_sudo("rm -rf /tmp/unpoller_extract /tmp/unpoller.tar.gz", timeout=15)
 
             _log(f"Unpoller upgraded to v{latest} successfully.")
             Setting.set("unpoller_current_version", latest)
