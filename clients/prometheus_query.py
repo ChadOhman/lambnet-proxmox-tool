@@ -393,11 +393,11 @@ class PrometheusQueryClient:
 
         queries = {
             # -- Puma / Web --
-            "puma_request_rate": f'sum(rate(ruby_http_requests{{{inst}}}[{ri}]))',
+            "puma_request_rate": f'sum(rate(ruby_http_requests_total{{{inst}}}[{ri}]))',
             "puma_avg_response_time": _summary_avg("ruby_http_request_duration_seconds"),
-            "puma_sql_duration": _summary_avg("ruby_http_duration_sql_seconds"),
-            "puma_redis_duration": _summary_avg("ruby_http_duration_redis_seconds"),
-            "puma_queue_wait": _summary_avg("ruby_http_duration_queue_seconds"),
+            "puma_sql_duration": _summary_avg("ruby_http_request_sql_duration_seconds"),
+            "puma_redis_duration": _summary_avg("ruby_http_request_redis_duration_seconds"),
+            "puma_queue_wait": _summary_avg("ruby_http_request_queue_duration_seconds"),
             "puma_thread_utilization": (
                 f'sum(ruby_puma_running_threads{{{inst}}}) / '
                 f'clamp_min(sum(ruby_puma_max_threads{{{inst}}}), 1) * 100'
