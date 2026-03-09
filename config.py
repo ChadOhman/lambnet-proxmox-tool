@@ -1,8 +1,8 @@
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.environ.get("MSTDNCA_DATA_DIR", os.environ.get("LAMBNET_DATA_DIR", "/var/lib/mstdnca"))
-SECRET_KEY_PATH = os.environ.get("MSTDNCA_SECRET_KEY", os.environ.get("LAMBNET_SECRET_KEY", "/etc/mstdnca/secret.key"))
+DATA_DIR = os.environ.get("MSTDNCA_DATA_DIR", "/var/lib/mstdnca")
+SECRET_KEY_PATH = os.environ.get("MSTDNCA_SECRET_KEY", "/etc/mstdnca/secret.key")
 
 
 def _load_flask_secret():

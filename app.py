@@ -444,13 +444,6 @@ def _migrate_schema():
         ))
         db.session.commit()
 
-    # Rename lambnet setting keys to mstdnca
-    if "settings" in table_names:
-        db.session.execute(text(
-            "UPDATE settings SET key = 'prometheus_mstdnca_metrics_url' "
-            "WHERE key = 'prometheus_lambnet_metrics_url'"
-        ))
-        db.session.commit()
 
 
 def _migrate_roles():

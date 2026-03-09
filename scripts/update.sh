@@ -22,66 +22,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# ── Migration: rename old lambnet paths to mstdnca ──────────
-OLD_APP_NAME="lambnet-update-manager"
-OLD_APP_DIR="/opt/lambnet"
-OLD_DATA_DIR="/var/lib/lambnet"
-OLD_SECRET_DIR="/etc/lambnet"
-OLD_SERVICE_FILE="/etc/systemd/system/${OLD_APP_NAME}.service"
-SECRET_DIR="/etc/mstdnca"
-
-# Migrate app directory
-if [ -d "$OLD_APP_DIR" ] && [ ! -d "$APP_DIR" ]; then
-    echo "Migrating $OLD_APP_DIR -> $APP_DIR..."
-    mv "$OLD_APP_DIR" "$APP_DIR"
-fi
-
-# Migrate data directory
-if [ -d "$OLD_DATA_DIR" ] && [ ! -d "$DATA_DIR" ]; then
-    echo "Migrating $OLD_DATA_DIR -> $DATA_DIR..."
-    mv "$OLD_DATA_DIR" "$DATA_DIR"
-fi
-
-# Migrate DB file within data dir
-if [ -f "$DATA_DIR/lambnet.db" ] && [ ! -f "$DATA_DIR/mstdnca.db" ]; then
-    echo "Renaming database file..."
-    mv "$DATA_DIR/lambnet.db" "$DATA_DIR/mstdnca.db"
-fi
-
-# Migrate old backup file names
-for f in "$DATA_DIR/backups"/lambnet_*.db; do
-    [ -f "$f" ] || continue
-    newname="${f/lambnet_/mstdnca_}"
-    mv "$f" "$newname"
-done
-
-# Migrate secret directory
-if [ -d "$OLD_SECRET_DIR" ] && [ ! -d "$SECRET_DIR" ]; then
-    echo "Migrating $OLD_SECRET_DIR -> $SECRET_DIR..."
-    mv "$OLD_SECRET_DIR" "$SECRET_DIR"
-fi
-
-# Migrate systemd service
-if [ -f "$OLD_SERVICE_FILE" ]; then
-    echo "Migrating systemd service..."
-    systemctl stop "$OLD_APP_NAME" 2>/dev/null || true
-    systemctl disable "$OLD_APP_NAME" 2>/dev/null || true
-
-    # Copy old service file as base for new one, then update paths/names
-    cp "$OLD_SERVICE_FILE" "$SERVICE_FILE"
-    sed -i "s|$OLD_APP_NAME|$APP_NAME|g" "$SERVICE_FILE"
-    sed -i "s|LAMBNET_DATA_DIR|MSTDNCA_DATA_DIR|g" "$SERVICE_FILE"
-    sed -i "s|LAMBNET_SECRET_KEY|MSTDNCA_SECRET_KEY|g" "$SERVICE_FILE"
-    sed -i "s|/opt/lambnet|/opt/mstdnca|g" "$SERVICE_FILE"
-    sed -i "s|/var/lib/lambnet|/var/lib/mstdnca|g" "$SERVICE_FILE"
-    sed -i "s|/etc/lambnet|/etc/mstdnca|g" "$SERVICE_FILE"
-
-    rm -f "$OLD_SERVICE_FILE"
-    systemctl daemon-reload
-    echo "  Service migrated to $APP_NAME."
-fi
-# ── End migration ────────────────────────────────────────────
-
 # Log all output to file for web UI progress tracking
 LOG_FILE="$DATA_DIR/update.log"
 mkdir -p "$DATA_DIR"
