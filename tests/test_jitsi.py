@@ -1221,3 +1221,130 @@ class TestSecureDomainPatchJicofo:
         result = _sd_patch_jicofo_conf(ssh, "meet.example.com", False, logs.append)
         assert result == 0
         assert any("SKIP" in msg for msg in logs)
+
+
+# ---------------------------------------------------------------------------
+# Jitsi JVB Prometheus exporter integration
+# ---------------------------------------------------------------------------
+
+
+class TestJvbExporterRegistry:
+    """Verify jitsi_jvb is registered as a builtin exporter."""
+
+    def test_jitsi_jvb_in_known_exporters(self):
+        from apps.exporters import KNOWN_EXPORTERS
+        assert "jitsi_jvb" in KNOWN_EXPORTERS
+
+    def test_jitsi_jvb_is_builtin(self):
+        from apps.exporters import KNOWN_EXPORTERS
+        info = KNOWN_EXPORTERS["jitsi_jvb"]
+        assert info.get("builtin") is True
+        assert info["binary_name"] is None
+        assert info["default_port"] == 8080
+        assert info["job_name"] == "jitsi_jvb"
+
+
+class TestJvbPrometheusQueryClient:
+    """Test get_jvb_metrics_exporter method."""
+
+    def test_get_jvb_metrics_exporter_returns_snapshots(self, app):
+        from unittest.mock import patch
+        from clients.prometheus_query import PrometheusQueryClient
+
+        with app.app_context():
+            from models import Setting, db
+            Setting.set("prometheus_url", "http://localhost:9090")
+            db.session.commit()
+
+            with patch.object(PrometheusQueryClient, '_run_snapshot_queries') as mock_rsq:
+                mock_rsq.return_value = {"snapshots": [{"conferences": 5}], "source": "jitsi_jvb"}
+                prom = PrometheusQueryClient()
+                result = prom.get_jvb_metrics_exporter("10.0.0.5:8080", "day")
+                assert result["source"] == "jitsi_jvb"
+                assert len(result["snapshots"]) == 1
+                # Verify the right queries were passed
+                queries = mock_rsq.call_args[0][0]
+                assert "conferences" in queries
+                assert "stress_level" in queries
+                assert "ice_succeeded_total" in queries
+                assert "ice_failed_total" in queries
+                assert "bit_rate_download" in queries
+                assert "bit_rate_upload" in queries
+
+
+class TestJvbTargetHelper:
+    """Test _get_jvb_target helper."""
+
+    def test_returns_none_when_scrape_disabled(self, app):
+        from clients.prometheus_query import _get_jvb_target
+        with app.app_context():
+            from models import Setting, db
+            Setting.set("jitsi_prometheus_scrape", "false")
+            db.session.commit()
+            assert _get_jvb_target() is None
+
+    def test_returns_target_when_enabled(self, app):
+        from clients.prometheus_query import _get_jvb_target
+        with app.app_context():
+            from models import Setting, Guest, db
+            Setting.set("jitsi_prometheus_scrape", "true")
+            guest = Guest(name="jitsi-vm", vmid=200, ip_address="10.0.0.5",
+                          guest_type="qemu", enabled=True)
+            db.session.add(guest)
+            db.session.commit()
+            Setting.set("jitsi_guest_id", str(guest.id))
+            db.session.commit()
+            target = _get_jvb_target()
+            assert target == "10.0.0.5:8080"
+
+    def test_returns_none_when_no_guest(self, app):
+        from clients.prometheus_query import _get_jvb_target
+        with app.app_context():
+            from models import Setting, db
+            Setting.set("jitsi_prometheus_scrape", "true")
+            Setting.set("jitsi_guest_id", "")
+            db.session.commit()
+            assert _get_jvb_target() is None
+
+    def test_returns_none_when_guest_has_dhcp(self, app):
+        from clients.prometheus_query import _get_jvb_target
+        with app.app_context():
+            from models import Setting, Guest, db
+            Setting.set("jitsi_prometheus_scrape", "true")
+            guest = Guest(name="jitsi-vm", vmid=200, ip_address="dhcp",
+                          guest_type="qemu", enabled=True)
+            db.session.add(guest)
+            db.session.commit()
+            Setting.set("jitsi_guest_id", str(guest.id))
+            db.session.commit()
+            assert _get_jvb_target() is None
+
+
+class TestJitsiSavePrometheusScrape:
+    """Test that saving Jitsi settings persists prometheus_scrape."""
+
+    def test_save_persists_prometheus_scrape(self, app, auth_client):
+        from models import Setting
+
+        auth_client.post(
+            "/jitsi/save",
+            data={"jitsi_prometheus_scrape": "on"},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            assert Setting.get("jitsi_prometheus_scrape") == "true"
+
+    def test_save_disables_prometheus_scrape(self, app, auth_client):
+        from models import Setting
+
+        # Enable first
+        with app.app_context():
+            Setting.set("jitsi_prometheus_scrape", "true")
+        # Save without the checkbox
+        auth_client.post(
+            "/jitsi/save",
+            data={},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            assert Setting.get("jitsi_prometheus_scrape") == "false"

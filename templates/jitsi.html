@@ -190,6 +190,21 @@
                         </div>
                     </div>
 
+                    <div class="mb-3">
+                        <label class="form-label">Prometheus Scraping</label>
+                        <div class="form-check form-switch">
+                            <input type="checkbox" class="form-check-input" name="jitsi_prometheus_scrape"
+                                   id="promScrape"
+                                   {{ 'checked' if settings.prometheus_scrape == 'true' }}>
+                            <label class="form-check-label" for="promScrape">
+                                <strong>Enable Prometheus scraping of JVB metrics</strong>
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            When enabled, Prometheus will scrape JVB's native <code>/metrics</code> endpoint for historical charts.
+                        </div>
+                    </div>
+
                     <hr class="border-secondary">
 
                     <div class="mb-3">

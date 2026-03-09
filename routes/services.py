@@ -753,9 +753,21 @@ def jvb_metrics_history(service_id):
     if svc.service_name != "jitsi-videobridge2":
         return jsonify({"error": "Not a Jitsi Videobridge service"}), 400
 
-    # Try Prometheus first if enabled
+    # Try native JVB Prometheus metrics first (scraped directly from JVB /metrics)
     timeframe = request.args.get("timeframe", "day")
     if Setting.get("prometheus_enabled", "false") == "true" and Setting.get("prometheus_url", ""):
+        try:
+            from clients.prometheus_query import PrometheusQueryClient, _get_jvb_target
+            jvb_target = _get_jvb_target()
+            if jvb_target:
+                prom = PrometheusQueryClient()
+                data = prom.get_jvb_metrics_exporter(jvb_target, timeframe)
+                if data and data.get("snapshots"):
+                    return jsonify(data)
+        except Exception:
+            logger.debug("Native JVB Prometheus query failed, trying lambnet gauges")
+
+        # Fall back to lambnet gauges
         try:
             from clients.prometheus_query import PrometheusQueryClient
             prom = PrometheusQueryClient()

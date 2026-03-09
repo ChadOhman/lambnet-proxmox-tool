@@ -29,6 +29,24 @@ def _user_tz():
 logger = logging.getLogger(__name__)
 
 
+def _get_jvb_target():
+    """Return 'ip:port' for the JVB Prometheus target if scraping is enabled, else None."""
+    from apps.exporters import KNOWN_EXPORTERS
+    from models import Guest
+    if Setting.get("jitsi_prometheus_scrape", "false") != "true":
+        return None
+    guest_id = Setting.get("jitsi_guest_id", "")
+    if not guest_id:
+        return None
+    try:
+        guest = Guest.query.get(int(guest_id))
+    except (TypeError, ValueError):
+        return None
+    if not guest or not guest.ip_address or guest.ip_address.lower() in ("dhcp", "dhcp6", "auto"):
+        return None
+    return f"{guest.ip_address}:{KNOWN_EXPORTERS['jitsi_jvb']['default_port']}"
+
+
 def _get_exporter_target(guest_id, exporter_type):
     """Return 'ip:port' if the guest has an installed exporter of the given type, else None."""
     from models import ExporterInstance, Guest
@@ -353,6 +371,27 @@ class PrometheusQueryClient:
         }
 
         return self._run_snapshot_queries(queries, start, end, step, source="redis_exporter")
+
+    def get_jvb_metrics_exporter(self, target, timeframe="day"):
+        """Query native JVB Prometheus metrics and return snapshots."""
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        inst = f'instance="{target}"'
+
+        queries = {
+            "conferences": f"jitsi_jvb_conferences{{{inst}}}",
+            "participants": f"jitsi_jvb_participants{{{inst}}}",
+            "stress_level": f"jitsi_jvb_stress_level{{{inst}}}",
+            "bit_rate_download": f"jitsi_jvb_bit_rate_download{{{inst}}}",
+            "bit_rate_upload": f"jitsi_jvb_bit_rate_upload{{{inst}}}",
+            "conferences_created_total": f"jitsi_jvb_conferences_created_total{{{inst}}}",
+            "participants_total": f"jitsi_jvb_participants_total{{{inst}}}",
+            "ice_succeeded_total": f"jitsi_jvb_ice_succeeded_total{{{inst}}}",
+            "ice_failed_total": f"jitsi_jvb_ice_failed_total{{{inst}}}",
+        }
+
+        return self._run_snapshot_queries(queries, start, end, step, source="jitsi_jvb")
 
     def _run_snapshot_queries(self, queries, start, end, step, source="exporter"):
         """Run multiple range queries and build a snapshot list."""

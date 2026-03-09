@@ -1422,6 +1422,24 @@
         <div class="visually-hidden" id="jvb-chart-summary" aria-live="polite">Chart showing conferences and participants over time.</div>
     </div>
 </div>
+
+<!-- Stress & Bitrate (24h) -->
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-speedometer2"></i> Stress &amp; Bitrate (24h)</h5></div>
+    <div class="card-body">
+        <canvas id="jvb-chart-stress" height="120" role="img" aria-label="JVB stress level and bitrate over the last 24 hours"></canvas>
+        <div class="visually-hidden">Chart showing stress level and bitrate over time.</div>
+    </div>
+</div>
+
+<!-- ICE Statistics (24h) -->
+<div class="card bg-dark mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-diagram-3"></i> ICE Statistics (24h)</h5></div>
+    <div class="card-body">
+        <canvas id="jvb-chart-ice" height="120" role="img" aria-label="JVB ICE succeeded and failed counts over the last 24 hours"></canvas>
+        <div class="visually-hidden">Chart showing ICE succeeded and failed over time.</div>
+    </div>
+</div>
 {% endif %}{# rest_api_disabled #}
 
 {% elif stats.type == 'prometheus' %}
@@ -2896,6 +2914,8 @@ document.addEventListener('DOMContentLoaded', function() { redisLoadCharts('day'
 
 {% if stats.type == 'jitsi-videobridge2' and not stats.rest_api_disabled %}
 let _jvbActivityChart = null;
+let _jvbStressChart = null;
+let _jvbIceChart = null;
 
 function jvbLoadChart() {
     if (typeof Chart === 'undefined') return;
@@ -2936,6 +2956,67 @@ function jvbLoadChart() {
                 },
             },
         });
+
+        // Stress & Bitrate chart (only if native JVB data is present)
+        const hasStress = snaps.some(s => s.stress_level != null);
+        const stressCanvas = document.getElementById('jvb-chart-stress');
+        if (hasStress && stressCanvas) {
+            const stress = snaps.map(s => s.stress_level != null ? (s.stress_level * 100) : null);
+            const dlBits = snaps.map(s => s.bit_rate_download != null ? (s.bit_rate_download / 1000) : null);
+            const ulBits = snaps.map(s => s.bit_rate_upload != null ? (s.bit_rate_upload / 1000) : null);
+
+            if (_jvbStressChart) _jvbStressChart.destroy();
+            _jvbStressChart = new Chart(stressCanvas, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {label: 'Stress (%)', data: stress, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,0.1)', fill: true, tension: 0.3, pointRadius: 2, yAxisID: 'y'},
+                        {label: 'Download (Kbps)', data: dlBits, borderColor: '#20c997', tension: 0.3, pointRadius: 2, yAxisID: 'y1'},
+                        {label: 'Upload (Kbps)', data: ulBits, borderColor: '#6f42c1', tension: 0.3, pointRadius: 2, yAxisID: 'y1'},
+                    ],
+                },
+                options: {
+                    responsive: true, animation: false,
+                    interaction: {mode: 'index', intersect: false},
+                    plugins: {legend: {labels: {color: '#adb5bd'}}},
+                    scales: {
+                        x: {ticks: {color: '#6c757d', maxTicksLimit: 8}, grid: {color: '#2d2d2d'}},
+                        y: {type: 'linear', position: 'left', title: {display: true, text: 'Stress %', color: '#6c757d'}, ticks: {color: '#6c757d'}, grid: {color: '#2d2d2d'}, beginAtZero: true, max: 100},
+                        y1: {type: 'linear', position: 'right', title: {display: true, text: 'Bitrate (Kbps)', color: '#6c757d'}, ticks: {color: '#6c757d'}, grid: {drawOnChartArea: false}, beginAtZero: true},
+                    },
+                },
+            });
+        }
+
+        // ICE Statistics chart (only if native JVB data is present)
+        const hasIce = snaps.some(s => s.ice_succeeded_total != null);
+        const iceCanvas = document.getElementById('jvb-chart-ice');
+        if (hasIce && iceCanvas) {
+            const iceOk = snaps.map(s => s.ice_succeeded_total ?? null);
+            const iceFail = snaps.map(s => s.ice_failed_total ?? null);
+
+            if (_jvbIceChart) _jvbIceChart.destroy();
+            _jvbIceChart = new Chart(iceCanvas, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {label: 'ICE Succeeded', data: iceOk, borderColor: '#198754', backgroundColor: 'rgba(25,135,84,0.1)', fill: true, tension: 0.3, pointRadius: 2},
+                        {label: 'ICE Failed', data: iceFail, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,0.1)', fill: true, tension: 0.3, pointRadius: 2},
+                    ],
+                },
+                options: {
+                    responsive: true, animation: false,
+                    interaction: {mode: 'index', intersect: false},
+                    plugins: {legend: {labels: {color: '#adb5bd'}}},
+                    scales: {
+                        x: {ticks: {color: '#6c757d', maxTicksLimit: 8}, grid: {color: '#2d2d2d'}},
+                        y: {ticks: {color: '#6c757d'}, grid: {color: '#2d2d2d'}, beginAtZero: true},
+                    },
+                },
+            });
+        }
     })
     .catch(() => {/* charts are optional */});
 }

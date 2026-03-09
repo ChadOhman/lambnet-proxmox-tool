@@ -69,6 +69,7 @@ def _get_jitsi_settings():
         "secure_domain": Setting.get("jitsi_secure_domain", "false"),
         "last_sd_configure_at": _parse_iso(Setting.get("jitsi_last_sd_configure_at", "")),
         "last_sd_configure_status": Setting.get("jitsi_last_sd_configure_status", ""),
+        "prometheus_scrape": Setting.get("jitsi_prometheus_scrape", "false"),
     }
 
 
@@ -135,8 +136,20 @@ def save():
     Setting.set("jitsi_secure_domain",
                 "true" if "jitsi_secure_domain" in request.form else "false")
 
+    new_scrape = "true" if "jitsi_prometheus_scrape" in request.form else "false"
+    old_scrape = Setting.get("jitsi_prometheus_scrape", "false")
+    Setting.set("jitsi_prometheus_scrape", new_scrape)
+
     log_action("jitsi_config_save", "settings", resource_name="jitsi")
     db.session.commit()
+
+    # Regenerate Prometheus config when scrape toggle changes
+    if new_scrape != old_scrape:
+        try:
+            from apps.exporters import _regenerate_prometheus_config
+            _regenerate_prometheus_config()
+        except Exception:
+            logger.warning("Failed to regenerate Prometheus config after JVB scrape toggle", exc_info=True)
     flash("Jitsi settings saved.", "success")
     return redirect(url_for("jitsi.upgrade_page"))
 
