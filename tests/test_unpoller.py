@@ -88,7 +88,7 @@ class TestUnpollerGetConfig:
 
         with app.app_context():
             Setting.set("prometheus_guest_id", "42")
-            Setting.set("unifi_url", "https://udm.local")
+            Setting.set("unifi_base_url", "https://udm.local")
             Setting.set("unifi_username", "testuser")
             Setting.set("unifi_password", "testpass")
             Setting.set("unpoller_site_name", "mysite")
@@ -344,7 +344,7 @@ class TestUnpollerPreflight:
             db.session.add(guest)
             db.session.flush()
             Setting.set("prometheus_guest_id", str(guest.id))
-            Setting.set("unifi_url", "")
+            Setting.set("unifi_base_url", "")
             Setting.set("unifi_username", "")
             Setting.set("unifi_password", "")
             db.session.commit()

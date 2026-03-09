@@ -80,7 +80,7 @@ def manage():
 
     # Check if UniFi controller is configured
     unifi_configured = bool(
-        Setting.get("unifi_url", "")
+        Setting.get("unifi_base_url", "")
         and Setting.get("unifi_username", "")
         and Setting.get("unifi_password", "")
     )
