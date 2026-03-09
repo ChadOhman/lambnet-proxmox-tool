@@ -177,6 +177,7 @@ def index():
         accessible_networks=sorted(accessible_networks) if accessible_networks is not None else None,
         health=health,
         wan_health=wan_health,
+        unpoller_enabled=Setting.get("unpoller_enabled", "false") == "true",
     )
 
 
@@ -320,6 +321,7 @@ def device_detail(mac):
         "unifi_device.html",
         device=device,
         clients=device_clients,
+        unpoller_enabled=Setting.get("unpoller_enabled", "false") == "true",
     )
 
 
@@ -388,6 +390,7 @@ def health():
         wlan_conf=wlan_conf,
         port_fwd=port_fwd,
         firewall_rules=firewall_rules,
+        unpoller_enabled=Setting.get("unpoller_enabled", "false") == "true",
     )
 
 
@@ -426,6 +429,7 @@ def traffic():
         "unifi_traffic.html",
         dpi_categories=dpi_categories,
         daily_stats=daily_stats,
+        unpoller_enabled=Setting.get("unpoller_enabled", "false") == "true",
     )
 
 
@@ -480,16 +484,82 @@ def client_history():
     )
 
 
+@bp.route("/client/<mac>")
+def client_detail(mac):
+    """Per-client detail page with signal/satisfaction charts (requires unpoller)."""
+    if not _MAC_RE.match(mac):
+        flash("Invalid MAC address.", "error")
+        return redirect(url_for("unifi.index"))
+
+    unpoller_enabled = Setting.get("unpoller_enabled", "false") == "true"
+    if not unpoller_enabled:
+        flash("Per-client charts require Unpoller integration.", "warning")
+        return redirect(url_for("unifi.index"))
+
+    enabled = Setting.get("unifi_enabled", "false") == "true"
+    if not enabled:
+        flash("UniFi integration is not enabled.", "warning")
+        return redirect(url_for("unifi.index"))
+
+    client = _get_unifi_client()
+    if not client:
+        flash("UniFi controller not configured.", "error")
+        return redirect(url_for("unifi.index"))
+
+    # Find the client in the active client list
+    all_clients = client.get_clients() or []
+    target_client = None
+    for c in all_clients:
+        if (c.get("mac") or "").lower() == mac.lower():
+            target_client = c
+            break
+
+    if not target_client:
+        # Try historical clients
+        history = client.get_all_clients(within=720) or []
+        for c in history:
+            if (c.get("mac") or "").lower() == mac.lower():
+                target_client = c
+                break
+
+    if not target_client:
+        flash("Client not found.", "warning")
+        return redirect(url_for("unifi.index"))
+
+    # Network access control
+    accessible_networks = _get_accessible_networks(current_user)
+    if accessible_networks is not None and target_client.get("network", "") not in accessible_networks:
+        flash("You don't have access to this client's network.", "error")
+        return redirect(url_for("unifi.index"))
+
+    return render_template(
+        "unifi_client_detail.html",
+        client=target_client,
+    )
+
+
 @bp.route("/api/device/<mac>/chart")
 def device_chart_data(mac):
-    """Return Chart.js-ready JSON for device performance metrics from Prometheus."""
+    """Return Chart.js-ready JSON for device performance metrics from Prometheus.
+
+    When unpoller is enabled, queries unpoller metrics first (richer data),
+    falling back to mstdnca_unifi_* metrics.
+    """
     if not _MAC_RE.match(mac):
         return jsonify({"error": "Invalid MAC"}), 400
 
     timeframe = request.args.get("timeframe", "day")
+    device_name = request.args.get("name", "")
     try:
         from clients.prometheus_query import PrometheusQueryClient
         prom = PrometheusQueryClient()
+
+        # Try unpoller first if enabled and device name provided
+        if Setting.get("unpoller_enabled", "false") == "true" and device_name:
+            data = prom.get_unpoller_device_history(device_name, timeframe=timeframe)
+            if data.get("labels"):
+                return jsonify(data)
+
         data = prom.get_unifi_device_history(mac, timeframe=timeframe)
         return jsonify(data)
     except ValueError:
@@ -501,16 +571,109 @@ def device_chart_data(mac):
 
 @bp.route("/api/site/chart")
 def site_chart_data():
-    """Return Chart.js-ready JSON for site-level metrics from Prometheus."""
+    """Return Chart.js-ready JSON for site-level metrics from Prometheus.
+
+    When unpoller is enabled, queries unpoller metrics first (richer data).
+    """
     site = Setting.get("unifi_site", "default")
     timeframe = request.args.get("timeframe", "day")
     try:
         from clients.prometheus_query import PrometheusQueryClient
         prom = PrometheusQueryClient()
+
+        if Setting.get("unpoller_enabled", "false") == "true":
+            data = prom.get_unpoller_site_history(timeframe=timeframe)
+            if data.get("labels"):
+                return jsonify(data)
+
         data = prom.get_unifi_site_history(site, timeframe=timeframe)
         return jsonify(data)
     except ValueError:
         return jsonify({"error": "Prometheus not configured"}), 404
     except Exception as e:
         logger.debug("Site chart query failed: %s", e, exc_info=True)
+        return jsonify({"error": "Query failed"}), 500
+
+
+@bp.route("/api/client/<mac>/chart")
+def client_chart_data(mac):
+    """Return Chart.js-ready JSON for per-client metrics from unpoller."""
+    if not _MAC_RE.match(mac):
+        return jsonify({"error": "Invalid MAC"}), 400
+    if Setting.get("unpoller_enabled", "false") != "true":
+        return jsonify({"error": "Unpoller not configured"}), 404
+
+    timeframe = request.args.get("timeframe", "day")
+    try:
+        from clients.prometheus_query import PrometheusQueryClient
+        prom = PrometheusQueryClient()
+        data = prom.get_unpoller_client_history(mac, timeframe=timeframe)
+        return jsonify(data)
+    except ValueError:
+        return jsonify({"error": "Prometheus not configured"}), 404
+    except Exception as e:
+        logger.debug("Client chart query failed: %s", e, exc_info=True)
+        return jsonify({"error": "Query failed"}), 500
+
+
+@bp.route("/api/device/<mac>/radio/<radio_name>/chart")
+def radio_chart_data(mac, radio_name):
+    """Return Chart.js-ready JSON for per-radio metrics from unpoller."""
+    if not _MAC_RE.match(mac):
+        return jsonify({"error": "Invalid MAC"}), 400
+    if Setting.get("unpoller_enabled", "false") != "true":
+        return jsonify({"error": "Unpoller not configured"}), 404
+
+    device_name = request.args.get("name", "")
+    if not device_name:
+        return jsonify({"error": "Device name required"}), 400
+
+    timeframe = request.args.get("timeframe", "day")
+    try:
+        from clients.prometheus_query import PrometheusQueryClient
+        prom = PrometheusQueryClient()
+        data = prom.get_unpoller_radio_history(device_name, radio_name, timeframe=timeframe)
+        return jsonify(data)
+    except ValueError:
+        return jsonify({"error": "Prometheus not configured"}), 404
+    except Exception as e:
+        logger.debug("Radio chart query failed: %s", e, exc_info=True)
+        return jsonify({"error": "Query failed"}), 500
+
+
+@bp.route("/api/site/wan/chart")
+def wan_chart_data():
+    """Return Chart.js-ready JSON for WAN metrics from unpoller."""
+    if Setting.get("unpoller_enabled", "false") != "true":
+        return jsonify({"error": "Unpoller not configured"}), 404
+
+    timeframe = request.args.get("timeframe", "day")
+    try:
+        from clients.prometheus_query import PrometheusQueryClient
+        prom = PrometheusQueryClient()
+        data = prom.get_unpoller_wan_history(timeframe=timeframe)
+        return jsonify(data)
+    except ValueError:
+        return jsonify({"error": "Prometheus not configured"}), 404
+    except Exception as e:
+        logger.debug("WAN chart query failed: %s", e, exc_info=True)
+        return jsonify({"error": "Query failed"}), 500
+
+
+@bp.route("/api/site/dpi/chart")
+def dpi_chart_data():
+    """Return Chart.js-ready JSON for DPI category breakdown from unpoller."""
+    if Setting.get("unpoller_enabled", "false") != "true":
+        return jsonify({"error": "Unpoller not configured"}), 404
+
+    timeframe = request.args.get("timeframe", "day")
+    try:
+        from clients.prometheus_query import PrometheusQueryClient
+        prom = PrometheusQueryClient()
+        data = prom.get_unpoller_dpi_history(timeframe=timeframe)
+        return jsonify(data)
+    except ValueError:
+        return jsonify({"error": "Prometheus not configured"}), 404
+    except Exception as e:
+        logger.debug("DPI chart query failed: %s", e, exc_info=True)
         return jsonify({"error": "Query failed"}), 500

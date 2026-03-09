@@ -181,6 +181,24 @@
 </div>
 {% endif %}
 
+<!-- Per-radio charts (unpoller only) -->
+{% if unpoller_enabled and device.radio_table %}
+<div class="row g-3 mb-4">
+    {% for radio in device.radio_table %}
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-broadcast"></i> {{ radio.name or radio.radio }} — Channel Utilization</h6>
+            </div>
+            <div class="card-body" style="height:180px">
+                <canvas id="chartRadio{{ loop.index }}" role="img" aria-label="Radio {{ radio.name }} utilization over time"></canvas>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
 <!-- Port table (switches/gateways) -->
 {% if device.port_table %}
 <div class="card bg-dark mb-4">
@@ -292,7 +310,7 @@
         maintainAspectRatio: false,
     };
 
-    fetch('{{ url_for("unifi.device_chart_data", mac=device.mac) }}?timeframe=day')
+    fetch('{{ url_for("unifi.device_chart_data", mac=device.mac) }}?timeframe=day&name={{ device.name | urlencode }}')
         .then(r => r.json())
         .then(data => {
             if (data.error || !data.labels || data.labels.length === 0) return;
@@ -321,6 +339,43 @@
             });
         })
         .catch(() => {});
+
+    {% if unpoller_enabled and device.radio_table %}
+    // Per-radio charts from unpoller
+    const radioCharts = [
+        {% for radio in device.radio_table %}
+        { id: 'chartRadio{{ loop.index }}', name: '{{ (radio.name or radio.radio) | e }}' },
+        {% endfor %}
+    ];
+    radioCharts.forEach(rc => {
+        const url = '{{ url_for("unifi.radio_chart_data", mac=device.mac, radio_name="__RADIO__") }}'.replace('__RADIO__', rc.name)
+            + '?timeframe=day&name={{ device.name | urlencode }}';
+        fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error || !data.labels || data.labels.length === 0) return;
+                new Chart(document.getElementById(rc.id), {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            { label: 'Utilization %', data: (data.channel_utilization || []).map(v => v !== null ? v * 100 : null), borderColor: '#ffc107', tension: 0.3, pointRadius: 0, fill: true, backgroundColor: 'rgba(255,193,7,0.1)' },
+                            { label: 'Stations', data: data.stations || [], borderColor: '#198754', tension: 0.3, pointRadius: 0, yAxisID: 'y1' },
+                        ]
+                    },
+                    options: {
+                        ...chartDefaults,
+                        scales: {
+                            ...chartDefaults.scales,
+                            y: { ...chartDefaults.scales.y, min: 0, max: 100, title: { display: true, text: '%', color: '#adb5bd' } },
+                            y1: { position: 'right', ticks: { color: '#adb5bd' }, grid: { display: false }, beginAtZero: true, title: { display: true, text: 'Clients', color: '#adb5bd' } },
+                        },
+                    },
+                });
+            })
+            .catch(() => {});
+    });
+    {% endif %}
 })();
 </script>
 {% endblock %}

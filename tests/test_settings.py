@@ -320,6 +320,53 @@ class TestUnifiLoggingSettings:
             assert Setting.get("unifi_api_poll_enabled") == "false"
 
 
+class TestUnpollerSettings:
+    def test_save_unpoller_enabled(self, app, auth_client):
+        resp = auth_client.post(
+            "/settings/unpoller",
+            data={
+                "unpoller_enabled": "on",
+                "unpoller_metric_prefix": "myprefix",
+                "unpoller_site_name": "mysite",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        with app.app_context():
+            assert Setting.get("unpoller_enabled") == "true"
+            assert Setting.get("unpoller_metric_prefix") == "myprefix"
+            assert Setting.get("unpoller_site_name") == "mysite"
+
+    def test_save_unpoller_disabled(self, app, auth_client):
+        resp = auth_client.post(
+            "/settings/unpoller",
+            data={
+                "unpoller_metric_prefix": "",
+                "unpoller_site_name": "",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        with app.app_context():
+            assert Setting.get("unpoller_enabled") == "false"
+            assert Setting.get("unpoller_metric_prefix") == "unpoller"  # defaults
+            assert Setting.get("unpoller_site_name") == "default"
+
+    def test_test_unpoller_no_prometheus(self, auth_client):
+        resp = auth_client.post(
+            "/settings/unpoller/test",
+            data={
+                "unpoller_enabled": "on",
+                "unpoller_metric_prefix": "unpoller",
+                "unpoller_site_name": "default",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "Prometheus URL is not configured" in html or "not configured" in html.lower()
+
+
 class TestAppUpdateMode:
     def test_save_update_mode_with_branch_and_auto_update(self, app, auth_client):
         resp = auth_client.post(

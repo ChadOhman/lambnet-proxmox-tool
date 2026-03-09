@@ -205,6 +205,45 @@ class TestClientHistory:
         mock.get_all_clients.assert_called_once_with(within=168)
 
 
+class TestClientDetail:
+    @patch("routes.unifi._get_unifi_client")
+    def test_client_detail_requires_unpoller(self, mock_get_client, auth_client, app):
+        """Redirects if unpoller not enabled."""
+        with app.app_context():
+            Setting.set("unpoller_enabled", "false")
+            db.session.commit()
+        resp = auth_client.get("/unifi/client/11:22:33:44:55:66", follow_redirects=False)
+        assert resp.status_code == 302
+
+    @patch("routes.unifi._get_unifi_client")
+    def test_client_detail_found(self, mock_get_client, auth_client, app):
+        with app.app_context():
+            Setting.set("unpoller_enabled", "true")
+            db.session.commit()
+        mock_get_client.return_value = _mock_unifi_client()
+        resp = auth_client.get("/unifi/client/11:22:33:44:55:66")
+        assert resp.status_code == 200
+        assert "laptop" in resp.data.decode()
+
+    @patch("routes.unifi._get_unifi_client")
+    def test_client_detail_not_found(self, mock_get_client, auth_client, app):
+        with app.app_context():
+            Setting.set("unpoller_enabled", "true")
+            db.session.commit()
+        mock = _mock_unifi_client()
+        mock.get_all_clients.return_value = []
+        mock_get_client.return_value = mock
+        resp = auth_client.get("/unifi/client/00:00:00:00:00:00", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_client_detail_invalid_mac(self, auth_client, app):
+        with app.app_context():
+            Setting.set("unpoller_enabled", "true")
+            db.session.commit()
+        resp = auth_client.get("/unifi/client/invalid", follow_redirects=False)
+        assert resp.status_code == 302
+
+
 class TestChartApiEndpoints:
     @patch("routes.unifi.Setting")
     def test_site_chart_prometheus_not_configured(self, mock_setting, auth_client):
@@ -217,6 +256,41 @@ class TestChartApiEndpoints:
     def test_device_chart_invalid_mac(self, auth_client):
         resp = auth_client.get("/unifi/api/device/invalid/chart")
         assert resp.status_code == 400
+
+    def test_client_chart_requires_unpoller(self, auth_client, app):
+        with app.app_context():
+            Setting.set("unpoller_enabled", "false")
+            db.session.commit()
+        resp = auth_client.get("/unifi/api/client/11:22:33:44:55:66/chart")
+        assert resp.status_code == 404
+
+    def test_client_chart_invalid_mac(self, auth_client, app):
+        with app.app_context():
+            Setting.set("unpoller_enabled", "true")
+            db.session.commit()
+        resp = auth_client.get("/unifi/api/client/invalid/chart")
+        assert resp.status_code == 400
+
+    def test_radio_chart_requires_unpoller(self, auth_client, app):
+        with app.app_context():
+            Setting.set("unpoller_enabled", "false")
+            db.session.commit()
+        resp = auth_client.get("/unifi/api/device/aa:bb:cc:dd:ee:ff/radio/ra0/chart")
+        assert resp.status_code == 404
+
+    def test_wan_chart_requires_unpoller(self, auth_client, app):
+        with app.app_context():
+            Setting.set("unpoller_enabled", "false")
+            db.session.commit()
+        resp = auth_client.get("/unifi/api/site/wan/chart")
+        assert resp.status_code == 404
+
+    def test_dpi_chart_requires_unpoller(self, auth_client, app):
+        with app.app_context():
+            Setting.set("unpoller_enabled", "false")
+            db.session.commit()
+        resp = auth_client.get("/unifi/api/site/dpi/chart")
+        assert resp.status_code == 404
 
 
 class TestPermissions:

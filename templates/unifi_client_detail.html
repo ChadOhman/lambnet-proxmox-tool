@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}{{ client.hostname or 'Unknown' }} - Client Detail{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-person-badge"></i> {{ client.hostname or 'Unknown' }}</h2>
+    <a href="{{ url_for('unifi.index') }}" class="btn btn-outline-light btn-sm">
+        <i class="bi bi-arrow-left"></i> Back to Network
+    </a>
+</div>
+
+<!-- Client summary cards -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-3">
+                <small class="text-muted d-block">IP Address</small>
+                {% if safety_mode %}
+                <span class="text-muted"><i class="bi bi-eye-slash"></i></span>
+                {% else %}
+                <code class="fs-6">{{ client.ip or '-' }}</code>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-3">
+                <small class="text-muted d-block">MAC Address</small>
+                {% if safety_mode %}
+                <span class="text-muted"><i class="bi bi-eye-slash"></i></span>
+                {% else %}
+                <code class="fs-6">{{ client.mac }}</code>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-3">
+                <small class="text-muted d-block">Network</small>
+                <span class="fs-6">{{ client.network or '-' }}</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-3">
+                <small class="text-muted d-block">Connection</small>
+                <span class="fs-6">
+                    {% if client.is_wired %}
+                    <i class="bi bi-ethernet"></i> Wired
+                    {% else %}
+                    <i class="bi bi-wifi"></i> {{ client.essid or 'Wireless' }}
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Wireless details (if not wired) -->
+{% if not client.is_wired %}
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-3">
+                <small class="text-muted d-block">Signal</small>
+                <span class="fs-5 {% if client.signal and client.signal > -60 %}text-success{% elif client.signal and client.signal > -75 %}text-warning{% elif client.signal %}text-danger{% endif %}">
+                    {{ client.signal or '-' }}{% if client.signal %} dBm{% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-3">
+                <small class="text-muted d-block">Satisfaction</small>
+                <span class="fs-5 {% if client.satisfaction and client.satisfaction >= 80 %}text-success{% elif client.satisfaction and client.satisfaction >= 50 %}text-warning{% elif client.satisfaction %}text-danger{% endif %}">
+                    {{ client.satisfaction or '-' }}{% if client.satisfaction %}%{% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-3">
+                <small class="text-muted d-block">Channel</small>
+                <span class="fs-5">{{ client.channel or '-' }}</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-3">
+                <small class="text-muted d-block">Radio</small>
+                <span class="fs-6">{{ client.radio or '-' }}</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-3">
+                <small class="text-muted d-block">Manufacturer</small>
+                <span class="fs-6">{{ client.oui or '-' }}</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-3">
+                <small class="text-muted d-block">Uptime</small>
+                <span class="fs-6">
+                    {% if client.uptime %}
+                    {% set hours = client.uptime // 3600 %}
+                    {% set mins = (client.uptime % 3600) // 60 %}
+                    {{ hours }}h {{ mins }}m
+                    {% else %}-{% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Signal & Satisfaction charts -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 text-muted"><i class="bi bi-reception-4"></i> Signal Strength</h6>
+                <select id="tfSignal" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto">
+                    <option value="hour">1h</option>
+                    <option value="day" selected>24h</option>
+                    <option value="week">7d</option>
+                </select>
+            </div>
+            <div class="card-body" style="height:220px">
+                <canvas id="chartSignal" role="img" aria-label="Client signal strength over time"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 text-muted"><i class="bi bi-emoji-smile"></i> Satisfaction</h6>
+                <select id="tfSatisfaction" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto">
+                    <option value="hour">1h</option>
+                    <option value="day" selected>24h</option>
+                    <option value="week">7d</option>
+                </select>
+            </div>
+            <div class="card-body" style="height:220px">
+                <canvas id="chartSatisfaction" role="img" aria-label="Client satisfaction over time"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TX/RX bandwidth chart -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 text-muted"><i class="bi bi-arrow-down-up"></i> Bandwidth</h6>
+                <select id="tfBandwidth" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto">
+                    <option value="hour">1h</option>
+                    <option value="day" selected>24h</option>
+                    <option value="week">7d</option>
+                </select>
+            </div>
+            <div class="card-body" style="height:220px">
+                <canvas id="chartBandwidth" role="img" aria-label="Client bandwidth over time"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const mac = '{{ client.mac }}';
+    const chartUrl = '{{ url_for("unifi.client_chart_data", mac=client.mac) }}';
+    const chartDefaults = {
+        plugins: { legend: { labels: { color: '#adb5bd' } } },
+        scales: {
+            x: { ticks: { color: '#adb5bd', font: { size: 10 }, maxTicksLimit: 12 }, grid: { color: '#2d3035' } },
+            y: { ticks: { color: '#adb5bd', font: { size: 11 } }, grid: { color: '#2d3035' } },
+        },
+        responsive: true,
+        maintainAspectRatio: false,
+    };
+
+    let signalChart, satisfactionChart, bandwidthChart;
+
+    function loadCharts(timeframe) {
+        fetch(chartUrl + '?timeframe=' + timeframe)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error || !data.labels || data.labels.length === 0) return;
+
+                // Signal chart
+                const signalCtx = document.getElementById('chartSignal');
+                if (signalChart) signalChart.destroy();
+                signalChart = new Chart(signalCtx, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            { label: 'RSSI (dBm)', data: data.rssi || [], borderColor: '#0dcaf0', tension: 0.3, pointRadius: 0, fill: true, backgroundColor: 'rgba(13,202,240,0.1)' },
+                            { label: 'Signal (dBm)', data: data.signal || [], borderColor: '#ffc107', tension: 0.3, pointRadius: 0 },
+                        ]
+                    },
+                    options: chartDefaults,
+                });
+
+                // Satisfaction chart
+                const satCtx = document.getElementById('chartSatisfaction');
+                if (satisfactionChart) satisfactionChart.destroy();
+                satisfactionChart = new Chart(satCtx, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            { label: 'Satisfaction %', data: (data.satisfaction || []).map(v => v !== null ? v * 100 : null), borderColor: '#198754', tension: 0.3, pointRadius: 0, fill: true, backgroundColor: 'rgba(25,135,84,0.15)' },
+                        ]
+                    },
+                    options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: 0, max: 100, beginAtZero: true } } },
+                });
+
+                // Bandwidth chart
+                const bwCtx = document.getElementById('chartBandwidth');
+                if (bandwidthChart) bandwidthChart.destroy();
+                bandwidthChart = new Chart(bwCtx, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            { label: 'TX (B/s)', data: data.tx_rate || [], borderColor: '#dc3545', tension: 0.3, pointRadius: 0 },
+                            { label: 'RX (B/s)', data: data.rx_rate || [], borderColor: '#0d6efd', tension: 0.3, pointRadius: 0, fill: true, backgroundColor: 'rgba(13,110,253,0.1)' },
+                        ]
+                    },
+                    options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, beginAtZero: true } } },
+                });
+            })
+            .catch(() => {});
+    }
+
+    loadCharts('day');
+
+    // Timeframe selectors
+    ['tfSignal', 'tfSatisfaction', 'tfBandwidth'].forEach(id => {
+        document.getElementById(id).addEventListener('change', function () {
+            // Sync all selectors
+            const val = this.value;
+            ['tfSignal', 'tfSatisfaction', 'tfBandwidth'].forEach(i => document.getElementById(i).value = val);
+            loadCharts(val);
+        });
+    });
+})();
+</script>
+{% endblock %}

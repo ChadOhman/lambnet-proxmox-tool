@@ -87,6 +87,18 @@
 </div>
 {% endif %}
 
+{% if unpoller_enabled %}
+<!-- DPI time-series (unpoller enhanced) -->
+<div class="card bg-dark mb-4">
+    <div class="card-header py-2">
+        <h6 class="mb-0 text-muted"><i class="bi bi-graph-up-arrow"></i> DPI Category Traffic Over Time (Unpoller)</h6>
+    </div>
+    <div class="card-body" style="height:300px">
+        <canvas id="chartDpiTimeseries" role="img" aria-label="DPI category traffic over time"></canvas>
+    </div>
+</div>
+{% endif %}
+
 <script>
 (function () {
     const chartDefaults = {
@@ -147,6 +159,36 @@
         },
         options: chartDefaults,
     });
+    {% endif %}
+
+    {% if unpoller_enabled %}
+    // DPI time-series from unpoller
+    fetch('{{ url_for("unifi.dpi_chart_data") }}?timeframe=day')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error || !data.labels || data.labels.length === 0) return;
+            const cats = data.categories || {};
+            const catNames = Object.keys(cats);
+            const tsColors = ['#0dcaf0','#198754','#ffc107','#dc3545','#6c757d','#0d6efd','#6610f2','#d63384','#fd7e14','#20c997'];
+            const datasets = catNames.slice(0, 10).map((name, i) => ({
+                label: name,
+                data: (cats[name].rx || []).map((v, j) => (v || 0) + ((cats[name].tx || [])[j] || 0)),
+                borderColor: tsColors[i % tsColors.length],
+                backgroundColor: tsColors[i % tsColors.length] + '20',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 0,
+            }));
+            const el = document.getElementById('chartDpiTimeseries');
+            if (el && datasets.length > 0) {
+                new Chart(el, {
+                    type: 'line',
+                    data: { labels: data.labels, datasets: datasets },
+                    options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, legend: { labels: { color: '#adb5bd', boxWidth: 10, font: { size: 10 } } } }, scales: { ...chartDefaults.scales, x: { ...chartDefaults.scales.x, stacked: true }, y: { ...chartDefaults.scales.y, stacked: true } } },
+                });
+            }
+        })
+        .catch(() => {});
     {% endif %}
 })();
 </script>

@@ -116,6 +116,32 @@
     </div>
 </div>
 
+{% if unpoller_enabled %}
+<!-- WAN Bandwidth charts (unpoller enhanced) -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-arrow-down-up"></i> WAN Bandwidth</h6>
+            </div>
+            <div class="card-body" style="height:200px">
+                <canvas id="chartWanBandwidth" role="img" aria-label="WAN bandwidth over time"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-speedometer"></i> Speedtest History</h6>
+            </div>
+            <div class="card-body" style="height:200px">
+                <canvas id="chartSpeedtest" role="img" aria-label="Speedtest results over time"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- WLAN configurations -->
 {% if wlan_conf %}
 <div class="card bg-dark mb-4">
@@ -298,6 +324,46 @@
             });
         })
         .catch(() => {});
+
+    {% if unpoller_enabled %}
+    // WAN bandwidth and speedtest charts from unpoller
+    fetch('{{ url_for("unifi.wan_chart_data") }}?timeframe=day')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error || !data.labels || data.labels.length === 0) return;
+
+            const bwEl = document.getElementById('chartWanBandwidth');
+            if (bwEl) {
+                new Chart(bwEl, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            { label: 'TX (B/s)', data: data.wan_tx_rate || [], borderColor: '#dc3545', tension: 0.3, pointRadius: 0 },
+                            { label: 'RX (B/s)', data: data.wan_rx_rate || [], borderColor: '#0d6efd', tension: 0.3, pointRadius: 0, fill: true, backgroundColor: 'rgba(13,110,253,0.1)' },
+                        ]
+                    },
+                    options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, beginAtZero: true } } },
+                });
+            }
+
+            const stEl = document.getElementById('chartSpeedtest');
+            if (stEl) {
+                new Chart(stEl, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            { label: 'Download (Mbps)', data: data.speedtest_download || [], borderColor: '#0dcaf0', tension: 0.3, pointRadius: 1 },
+                            { label: 'Upload (Mbps)', data: data.speedtest_upload || [], borderColor: '#ffc107', tension: 0.3, pointRadius: 1 },
+                        ]
+                    },
+                    options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, beginAtZero: true } } },
+                });
+            }
+        })
+        .catch(() => {});
+    {% endif %}
 })();
 </script>
 {% endblock %}

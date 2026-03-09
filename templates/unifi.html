@@ -3,7 +3,9 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-router"></i> Network Devices</h2>
+    <h2><i class="bi bi-router"></i> Network Devices
+        {% if unpoller_enabled %}<span class="badge bg-info ms-2 fs-6">Enhanced Metrics</span>{% endif %}
+    </h2>
     <div class="d-flex gap-2">
         {% if enabled %}
         <a href="{{ url_for('unifi.health') }}" class="btn btn-outline-success btn-sm">
@@ -278,7 +280,7 @@
                         <tbody>
                             {% for client in clients %}
                             <tr>
-                                <td>{{ client.hostname }}</td>
+                                <td>{% if unpoller_enabled %}<a href="{{ url_for('unifi.client_detail', mac=client.mac) }}" class="text-light text-decoration-none">{{ client.hostname }}</a>{% else %}{{ client.hostname }}{% endif %}</td>
                                 <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<code>{{ client.ip }}</code>{% endif %}</td>
                                 <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<small class="text-muted">{{ client.mac }}</small>{% endif %}</td>
                                 <td>{{ client.network or '-' }}</td>

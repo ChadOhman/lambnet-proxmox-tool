@@ -487,6 +487,52 @@
                 </form>
             </div>
         </div>
+
+        <!-- Unpoller Enhanced Metrics -->
+        <div class="card bg-dark mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-graph-up-arrow"></i> Unpoller (Enhanced Metrics)
+                    {% if settings.unpoller_enabled == 'true' %}
+                    <span class="badge bg-success ms-2">Active</span>
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="form-text mt-0 mb-3">
+                    <a href="https://unpoller.com" target="_blank" rel="noopener">Unpoller</a> is a standalone service that polls
+                    UniFi controllers and exports rich Prometheus metrics. Deploy it alongside this app for enhanced per-client,
+                    per-radio, and multi-WAN charts.
+                </p>
+                <form method="post" action="/settings/unpoller">
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" name="unpoller_enabled" id="unpollerEnabled" {{ 'checked' if settings.unpoller_enabled == 'true' }}>
+                        <label class="form-check-label" for="unpollerEnabled"><strong>Enable Unpoller Integration</strong></label>
+                        <div class="form-text">Requires Prometheus to be configured and scraping unpoller.</div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Metric Prefix</label>
+                            <input type="text" class="form-control font-monospace" name="unpoller_metric_prefix"
+                                   value="{{ settings.unpoller_metric_prefix or 'unpoller' }}" placeholder="unpoller">
+                            <div class="form-text">Namespace prefix configured in unpoller (default: <code>unpoller</code>).</div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Site Name</label>
+                            <input type="text" class="form-control" name="unpoller_site_name"
+                                   value="{{ settings.unpoller_site_name or 'default' }}" placeholder="default">
+                            <div class="form-text">UniFi site name label used in metrics.</div>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">Save Unpoller Settings</button>
+                        <button type="submit" formaction="/settings/unpoller/test" class="btn btn-outline-secondary">
+                            <i class="bi bi-plug"></i> Test Connection
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 
     <div class="col-lg-6">
