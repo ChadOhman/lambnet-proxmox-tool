@@ -852,8 +852,23 @@ def run_jitsi_install(log_callback=None):
                 log("  Ensure ports 80/tcp, 443/tcp, 10000/udp, 5349/tcp are open")
             log("")
 
-            # Step 9: Verify services
-            log("=== Step 9: Verifying Jitsi services ===")
+            # Step 9: Configure coturn TLS for external TURN relay
+            log("")
+            _configure_coturn_tls(ssh, hostname, log)
+            log("")
+
+            # Step 10: Configure Prosody to advertise TURN to clients
+            _configure_prosody_turn(ssh, hostname, log)
+            log("")
+
+            # Step 11: Configure JVB NAT harvester (if public IP is set)
+            public_ip = config.get("public_ip", "")
+            if public_ip:
+                _configure_jvb_nat_harvester(ssh, app_guest.ip_address, public_ip, log)
+                log("")
+
+            # Step 12: Verify services
+            log("=== Step 12: Verifying Jitsi services ===")
             all_active = True
             for svc in _JITSI_SERVICES:
                 stdout, stderr, code = ssh.execute_sudo(
@@ -879,8 +894,8 @@ def run_jitsi_install(log_callback=None):
                 log("WARNING: Not all services are active — Jitsi may not be fully functional")
             log("")
 
-            # Step 10: Detect and persist version
-            log("=== Step 10: Detecting installed version ===")
+            # Step 13: Detect and persist version
+            log("=== Step 13: Detecting installed version ===")
             stdout, stderr, code = ssh.execute_sudo(
                 "dpkg -s jitsi-meet 2>/dev/null | grep '^Version:'", timeout=10
             )
@@ -900,7 +915,7 @@ def run_jitsi_install(log_callback=None):
             else:
                 log("WARNING: Could not detect installed version")
 
-            # Step 11: Enable JVB REST API for service monitoring
+            # Step 14: Enable JVB REST API for service monitoring
             log("")
             _enable_jvb_rest_api(ssh, log)
 
@@ -1147,10 +1162,15 @@ def run_cloudflare_configure(log_callback=None):
                 # --- Option B: Hybrid (NAT harvester) ---
                 warnings += _cf_patch_nat_harvester(ssh, guest_ip, public_ip, log)
 
-            # --- Common: verify Prosody external_services ---
-            _cf_verify_prosody_turns(ssh, hostname, log)
+            # --- Common: configure coturn TLS (not just verify) ---
+            log("")
+            warnings += _configure_coturn_tls(ssh, hostname, log)
 
-            # --- Common: verify coturn listening ---
+            # --- Common: configure Prosody TURN advertisement ---
+            log("")
+            warnings += _configure_prosody_turn(ssh, hostname, log)
+
+            # --- Verify coturn is listening after configuration ---
             _cf_verify_coturn(ssh, log)
 
             # --- Restart all services ---
@@ -1452,3 +1472,206 @@ def _cf_verify_coturn(ssh, log):
     else:
         log("  [WARN] coturn does not appear to be listening on 5349/tcp")
         log("  Verify /etc/turnserver.conf has tls-listening-port=5349")
+
+
+# ---------------------------------------------------------------------------
+# TURN / NAT configuration helpers (used by both install and CF configure)
+# ---------------------------------------------------------------------------
+
+def _configure_coturn_tls(ssh, hostname, log):
+    """Ensure coturn has proper TLS configuration for external TURN relay.
+
+    The jitsi-meet-turnserver package installs coturn but may not configure TLS
+    on port 5349.  External users behind Cloudflare need TURNS (TLS) to relay
+    media.  This function reads /etc/turnserver.conf, ensures key directives
+    are present, and restarts coturn if changes were made.
+
+    Returns warning count.
+    """
+    log("=== Configuring coturn TLS ===")
+    path = "/etc/turnserver.conf"
+
+    stdout, stderr, code = ssh.execute_sudo(f"cat {path} 2>/dev/null", timeout=10)
+    if code != 0 or not stdout:
+        log(f"  WARNING: Could not read {path} — coturn may not be installed")
+        log("  Install coturn: apt-get install -y coturn")
+        return 1
+
+    content = stdout
+    modified = False
+
+    # Determine TLS cert paths — Jitsi typically uses its own certs
+    cert_path = f"/etc/jitsi/meet/{hostname}.crt"
+    key_path = f"/etc/jitsi/meet/{hostname}.key"
+
+    # Check for Let's Encrypt certs (preferred if they exist)
+    le_check, _, le_code = ssh.execute_sudo(
+        f"test -f /etc/letsencrypt/live/{hostname}/fullchain.pem && echo yes",
+        timeout=5,
+    )
+    if le_code == 0 and "yes" in (le_check or ""):
+        cert_path = f"/etc/letsencrypt/live/{hostname}/fullchain.pem"
+        key_path = f"/etc/letsencrypt/live/{hostname}/privkey.pem"
+        log("  Using Let's Encrypt certs for TURN TLS")
+
+    # Required directives and their values
+    required = {
+        "tls-listening-port": "5349",
+        "cert": cert_path,
+        "pkey": key_path,
+        "no-multicast-peers": None,  # flag, no value
+        "no-cli": None,
+        "no-loopback-peers": None,
+    }
+
+    lines = content.split("\n")
+    existing_keys = set()
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("#") or not stripped:
+            continue
+        key = stripped.split("=")[0].strip()
+        existing_keys.add(key)
+
+    for key, value in required.items():
+        if key not in existing_keys:
+            if value is not None:
+                lines.append(f"{key}={value}")
+            else:
+                lines.append(key)
+            modified = True
+            log(f"  Added: {key}{'=' + value if value else ''}")
+        elif key in ("cert", "pkey") and value is not None:
+            # Update cert/key paths if they exist but point elsewhere
+            new_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith(f"{key}=") and not stripped.startswith("#"):
+                    old_val = stripped.split("=", 1)[1].strip()
+                    if old_val != value:
+                        new_lines.append(f"{key}={value}")
+                        modified = True
+                        log(f"  Updated: {key}={value} (was {old_val})")
+                    else:
+                        new_lines.append(line)
+                else:
+                    new_lines.append(line)
+            lines = new_lines
+
+    # Ensure coturn is enabled (TURNSERVER_ENABLED=1 in /etc/default/coturn)
+    ssh.execute_sudo(
+        "sed -i 's/^#*TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn 2>/dev/null || true",
+        timeout=5,
+    )
+
+    if modified:
+        new_content = "\n".join(lines)
+        if not new_content.endswith("\n"):
+            new_content += "\n"
+        if _ssh_write_file(ssh, path, new_content, log):
+            log("  coturn TLS configuration updated — restarting coturn")
+            ssh.execute_sudo("systemctl restart coturn 2>&1", timeout=30)
+        else:
+            return 1
+    else:
+        log("  [SKIP] coturn TLS already configured")
+
+    return 0
+
+
+def _configure_prosody_turn(ssh, hostname, log):
+    """Ensure Prosody advertises TURN/TURNS to Jitsi clients.
+
+    Clients need to know where the TURN server is so they can relay media when
+    direct UDP is blocked (e.g., behind Cloudflare Tunnel).  Prosody's
+    external_services module advertises this.  This function reads the Prosody
+    config, checks for the external_services block, and adds it if missing.
+
+    Returns warning count.
+    """
+    log("=== Configuring Prosody TURN advertisement ===")
+    path = f"/etc/prosody/conf.d/{hostname}.cfg.lua"
+
+    stdout, stderr, code = ssh.execute_sudo(f"cat {path} 2>/dev/null", timeout=10)
+    if code != 0 or not stdout:
+        log(f"  WARNING: Could not read {path}")
+        return 1
+
+    content = stdout
+
+    # Check if external_services is already present with turns
+    if 'type = "turns"' in content and "5349" in content:
+        log("  [SKIP] Prosody external_services already has turns entry")
+        return 0
+
+    # Read the TURN secret from the standard Jitsi location
+    secret_path = f"/etc/jitsi/meet/{hostname}-oauthl-oauthSecret.key"
+    secret_stdout, _, secret_code = ssh.execute_sudo(
+        f"cat {secret_path} 2>/dev/null", timeout=5
+    )
+    # Fall back to turnserver.conf static-auth-secret
+    if secret_code != 0 or not (secret_stdout or "").strip():
+        secret_stdout, _, secret_code = ssh.execute_sudo(
+            "grep '^static-auth-secret=' /etc/turnserver.conf 2>/dev/null | head -1 | cut -d= -f2",
+            timeout=5,
+        )
+    turn_secret = (secret_stdout or "").strip()
+    if not turn_secret:
+        log("  WARNING: Could not find TURN secret — external_services block may need manual configuration")
+        log(f"  Checked: {secret_path} and /etc/turnserver.conf static-auth-secret")
+        return 1
+
+    # Ensure mod_external_services is loaded
+    if "external_services" not in content:
+        # Add the modules and external_services block before the last VirtualHost closing
+        # Find a good insertion point — after the last modules_enabled block or before Component lines
+        ext_block = f'''
+-- TURN/TURNS advertisement for external clients (auto-configured)
+modules_enabled = {{
+    "external_services";
+}}
+external_services = {{
+    {{ type = "turns", transport = "tcp", host = "{hostname}", port = 5349, secret = true, ttl = 86400, algorithm = "turn" }},
+    {{ type = "turn", transport = "udp", host = "{hostname}", port = 3478, secret = true, ttl = 86400, algorithm = "turn" }},
+}}
+turn_external_secret = "{turn_secret}"
+turn_external_host = "{hostname}"
+turn_external_port = 3478
+'''
+        # Insert before the first Component line or at end of VirtualHost
+        component_idx = content.find('\nComponent "')
+        if component_idx >= 0:
+            content = content[:component_idx] + ext_block + content[component_idx:]
+        else:
+            content = content.rstrip() + "\n" + ext_block + "\n"
+
+        if _ssh_write_file(ssh, path, content, log):
+            log("  Prosody external_services block added with TURNS on 5349/tcp")
+            log("  Restarting prosody")
+            ssh.execute_sudo("systemctl restart prosody 2>&1", timeout=30)
+        else:
+            return 1
+    else:
+        log("  [SKIP] external_services block exists (may need manual review for turns entry)")
+
+    return 0
+
+
+def _configure_jvb_nat_harvester(ssh, guest_ip, public_ip, log):
+    """Configure JVB NAT harvester so it advertises the correct public IP.
+
+    Without this, JVB sends ICE candidates with the private IP, which external
+    users cannot reach for direct UDP media.
+
+    Returns warning count.
+    """
+    if not public_ip:
+        log("  [SKIP] No public IP configured — NAT harvester not set")
+        return 0
+
+    if not _IP_RE.match(public_ip):
+        log(f"  WARNING: Public IP '{public_ip}' is not a valid IPv4 address — skipping")
+        return 1
+
+    log("=== Configuring JVB NAT Harvester ===")
+    return _cf_patch_nat_harvester(ssh, guest_ip, public_ip, log)
