@@ -357,7 +357,7 @@
                                         <div class="mb-2">
                                             <label class="form-label" for="mastodonExporterHost">Host</label>
                                             <input type="text" class="form-control form-control-sm" name="host" id="mastodonExporterHost"
-                                                   value="{{ mec.get('host', 'localhost') if mec else 'localhost' }}" placeholder="localhost">
+                                                   value="{{ mec.get('host', '0.0.0.0') if mec else '0.0.0.0' }}" placeholder="0.0.0.0">
                                         </div>
                                         <div class="mb-2">
                                             <label class="form-label" for="mastodonExporterPort">Port</label>

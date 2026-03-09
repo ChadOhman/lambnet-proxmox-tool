@@ -774,7 +774,7 @@ class TestBuildMastodonEnvVars:
         assert env["MASTODON_PROMETHEUS_EXPORTER_WEB_DETAILED_METRICS"] == "true"
         assert env["MASTODON_PROMETHEUS_EXPORTER_SIDEKIQ_DETAILED_METRICS"] == "true"
         # External mode by default
-        assert env["PROMETHEUS_EXPORTER_HOST"] == "localhost"
+        assert env["PROMETHEUS_EXPORTER_HOST"] == "0.0.0.0"
         assert env["PROMETHEUS_EXPORTER_PORT"] == "9394"
         # Should NOT have local mode vars
         assert "MASTODON_PROMETHEUS_EXPORTER_LOCAL" not in env
@@ -808,7 +808,7 @@ class TestBuildMastodonEnvVars:
 
         env = _build_mastodon_env_vars({"mode": "local"})
         assert env["MASTODON_PROMETHEUS_EXPORTER_LOCAL"] == "true"
-        assert env["MASTODON_PROMETHEUS_EXPORTER_HOST"] == "localhost"
+        assert env["MASTODON_PROMETHEUS_EXPORTER_HOST"] == "0.0.0.0"
         assert env["MASTODON_PROMETHEUS_EXPORTER_PORT"] == "9394"
         # Should NOT have external mode vars
         assert "PROMETHEUS_EXPORTER_HOST" not in env
@@ -817,8 +817,8 @@ class TestBuildMastodonEnvVars:
     def test_local_mode_custom_host_port(self):
         from apps.exporters import _build_mastodon_env_vars
 
-        env = _build_mastodon_env_vars({"mode": "local", "host": "0.0.0.0", "port": 9500})
-        assert env["MASTODON_PROMETHEUS_EXPORTER_HOST"] == "0.0.0.0"
+        env = _build_mastodon_env_vars({"mode": "local", "host": "127.0.0.1", "port": 9500})
+        assert env["MASTODON_PROMETHEUS_EXPORTER_HOST"] == "127.0.0.1"
         assert env["MASTODON_PROMETHEUS_EXPORTER_PORT"] == "9500"
 
     def test_external_mode_custom_port(self):
@@ -826,7 +826,7 @@ class TestBuildMastodonEnvVars:
 
         env = _build_mastodon_env_vars({"mode": "external", "port": 9500})
         assert env["PROMETHEUS_EXPORTER_PORT"] == "9500"
-        assert env["PROMETHEUS_EXPORTER_HOST"] == "localhost"
+        assert env["PROMETHEUS_EXPORTER_HOST"] == "0.0.0.0"
 
     def test_external_mode_custom_host(self):
         from apps.exporters import _build_mastodon_env_vars

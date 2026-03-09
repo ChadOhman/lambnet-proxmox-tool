@@ -88,7 +88,7 @@ def _build_mastodon_env_vars(config=None):
         web_detailed_metrics (bool, default True)
         sidekiq_detailed_metrics (bool, default True)
         mode ("external" or "local", default "external")
-        host (str, default "localhost")
+        host (str, default "0.0.0.0")
         port (int, default 9394)
     """
     config = config or {}
@@ -100,7 +100,7 @@ def _build_mastodon_env_vars(config=None):
     env["MASTODON_PROMETHEUS_EXPORTER_SIDEKIQ_DETAILED_METRICS"] = "true" if sidekiq_detailed else "false"
 
     mode = config.get("mode", "external")
-    host = config.get("host", "localhost")
+    host = config.get("host", "0.0.0.0")
     port = str(config.get("port", 9394))
 
     if mode == "local":

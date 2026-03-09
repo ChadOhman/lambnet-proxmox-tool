@@ -633,7 +633,7 @@ def _parse_mastodon_exporter_config():
         "web_detailed_metrics": request.form.get("web_detailed_metrics") == "on",
         "sidekiq_detailed_metrics": request.form.get("sidekiq_detailed_metrics") == "on",
         "mode": request.form.get("mode", "external"),
-        "host": (request.form.get("host", "localhost").strip() or "localhost"),
+        "host": (request.form.get("host", "0.0.0.0").strip() or "0.0.0.0"),
         "port": int(request.form.get("port", 9394) or 9394),
     }
 
