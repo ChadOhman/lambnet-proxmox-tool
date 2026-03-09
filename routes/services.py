@@ -742,6 +742,42 @@ def stats(service_id):
             db.session.rollback()
             logger.exception("Failed to save JVB metric snapshot for service %s", svc.id)
 
+    # Persist a metric snapshot for Redis services
+    if svc.service_name == "redis" and data.get("type") == "redis":
+        try:
+            hit_ratio_raw = data.get("hit_ratio", "N/A")
+            if isinstance(hit_ratio_raw, str):
+                hit_ratio_raw = hit_ratio_raw.rstrip("%")
+            hit_ratio_val = _safe_float(str(hit_ratio_raw))
+            snapshot_data = {
+                "used_memory_bytes": _safe_int(data.get("used_memory_bytes")),
+                "connected_clients": _safe_int(data.get("connected_clients")),
+                "ops_per_sec": _safe_int(data.get("ops_per_sec")),
+                "hit_ratio": hit_ratio_val,
+                "evicted_keys": _safe_int(data.get("evicted_keys")),
+            }
+            snap = ServiceMetricSnapshot(
+                service_id=svc.id,
+                captured_at=datetime.now(timezone.utc),
+                data=json.dumps(snapshot_data),
+            )
+            db.session.add(snap)
+            old_ids = (
+                db.session.query(ServiceMetricSnapshot.id)
+                .filter_by(service_id=svc.id)
+                .order_by(ServiceMetricSnapshot.captured_at.desc())
+                .offset(288)
+                .all()
+            )
+            if old_ids:
+                ServiceMetricSnapshot.query.filter(
+                    ServiceMetricSnapshot.id.in_([r[0] for r in old_ids])
+                ).delete(synchronize_session=False)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception("Failed to save Redis metric snapshot for service %s", svc.id)
+
     # Feed Prometheus exporter with service-specific metrics
     _update_prometheus_service_stats(svc, guest, data)
 
