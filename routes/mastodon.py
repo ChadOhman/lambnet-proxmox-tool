@@ -1,10 +1,12 @@
 import logging
+import re
 import threading as _threading
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required
 from models import db, Setting, Guest
 from auth.audit import log_action
+from apps.utils import _SHELL_SAFE_RE
 
 # ---------------------------------------------------------------------------
 # In-memory upgrade job state — tracks the currently-running upgrade so the
@@ -127,10 +129,24 @@ def save():
     Setting.set("mastodon_app_dir", request.form.get("mastodon_app_dir", "/home/mastodon/live").strip())
     Setting.set("mastodon_repo", request.form.get("mastodon_repo", "mastodon/mastodon").strip())
     Setting.set("mastodon_branch", request.form.get("mastodon_branch", "").strip())
-    Setting.set("mastodon_pgbouncer_host", request.form.get("mastodon_pgbouncer_host", "").strip())
-    Setting.set("mastodon_pgbouncer_port", request.form.get("mastodon_pgbouncer_port", "").strip())
-    Setting.set("mastodon_direct_db_host", request.form.get("mastodon_direct_db_host", "").strip())
-    Setting.set("mastodon_direct_db_port", request.form.get("mastodon_direct_db_port", "5432").strip())
+    pgbouncer_host = request.form.get("mastodon_pgbouncer_host", "").strip()
+    pgbouncer_port = request.form.get("mastodon_pgbouncer_port", "").strip()
+    direct_db_host = request.form.get("mastodon_direct_db_host", "").strip()
+    direct_db_port = request.form.get("mastodon_direct_db_port", "5432").strip()
+
+    for label, val in [("PGBouncer host", pgbouncer_host), ("Direct DB host", direct_db_host)]:
+        if val and not _SHELL_SAFE_RE.match(val):
+            flash(f"Invalid {label}: only alphanumeric, dots, hyphens, colons, and slashes are allowed.", "error")
+            return redirect(url_for("mastodon.upgrade_page"))
+    for label, val in [("PGBouncer port", pgbouncer_port), ("Direct DB port", direct_db_port)]:
+        if val and not re.match(r'^\d+$', val):
+            flash(f"Invalid {label}: must be numeric.", "error")
+            return redirect(url_for("mastodon.upgrade_page"))
+
+    Setting.set("mastodon_pgbouncer_host", pgbouncer_host)
+    Setting.set("mastodon_pgbouncer_port", pgbouncer_port)
+    Setting.set("mastodon_direct_db_host", direct_db_host)
+    Setting.set("mastodon_direct_db_port", direct_db_port)
     Setting.set("mastodon_auto_upgrade", "true" if "mastodon_auto_upgrade" in request.form else "false")
     Setting.set("mastodon_current_version", request.form.get("mastodon_current_version", "").strip())
     protection_type = request.form.get("mastodon_protection_type", "snapshot")
