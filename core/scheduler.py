@@ -678,8 +678,37 @@ def _run_service_health_checks(app):
 
         logger.info(f"Service health checks complete: {checked}/{len(guests)} guests checked.")
 
+        # Collect detailed stats and save snapshots for services with historical charts
+        _collect_service_snapshots(guests)
+
         # Feed Prometheus exporter with service health data
         _update_prometheus_service_health(guests)
+
+
+_SNAPSHOT_SERVICE_TYPES = {"redis", "postgresql", "jitsi-videobridge2"}
+
+
+def _collect_service_snapshots(guests):
+    """Collect detailed stats and save metric snapshots for services with historical charts."""
+    from core.scanner import get_service_stats
+    from routes.services import save_service_snapshot
+
+    collected = 0
+    for guest in guests:
+        for svc in guest.services:
+            if svc.service_name not in _SNAPSHOT_SERVICE_TYPES:
+                continue
+            if svc.status != "running":
+                continue
+            try:
+                data = get_service_stats(guest, svc)
+                save_service_snapshot(svc, data)
+                collected += 1
+            except Exception:
+                logger.debug(f"Snapshot collection failed for {svc.service_name} on {guest.name}", exc_info=True)
+
+    if collected:
+        logger.info(f"Service snapshots collected: {collected}")
 
 
 def _update_prometheus_service_health(guests):
