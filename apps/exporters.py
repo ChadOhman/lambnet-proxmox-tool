@@ -75,6 +75,8 @@ def check_exporter_release(exporter_type):
     info = KNOWN_EXPORTERS.get(exporter_type)
     if not info:
         return None, f"Unknown exporter type: {exporter_type}"
+    if info.get("builtin"):
+        return None, f"{info['display_name']} is a builtin exporter (no separate install needed)"
 
     try:
         url = f"https://api.github.com/repos/{info['github_repo']}/releases/latest"
@@ -98,6 +100,8 @@ def detect_exporter_version(guest, exporter_type):
     info = KNOWN_EXPORTERS.get(exporter_type)
     if not info:
         return None, f"Unknown exporter type: {exporter_type}"
+    if info.get("builtin"):
+        return None, f"{info['display_name']} is a builtin exporter"
 
     credential = guest.credential
     if not credential:
