@@ -1268,12 +1268,15 @@ def _enable_jvb_rest_api(ssh, log):
 def configure_jvb_rest_binding(bind_all=True):
     """Configure JVB REST API to bind to 0.0.0.0 (for Prometheus) or 127.0.0.1 (localhost only).
 
-    Called when the Prometheus scrape toggle changes. When bind_all=True, sets
-    ``http-servers.public.host = 0.0.0.0`` so external Prometheus can reach /metrics.
-    When False, reverts to ``127.0.0.1``.
+    Called when the Prometheus scrape toggle changes.  JVB serves /metrics on
+    its **private** HTTP server (default 127.0.0.1:8080).  When bind_all=True
+    we set ``http-servers.private.host = 0.0.0.0`` so external Prometheus can
+    reach it.  When False, reverts to ``127.0.0.1``.
 
     Returns (success: bool, message: str).
     """
+    import re
+
     ssh, guest, err = _sd_get_ssh()
     if err:
         return False, err
@@ -1287,39 +1290,32 @@ def configure_jvb_rest_binding(bind_all=True):
         content = stdout
         target_host = "0.0.0.0" if bind_all else "127.0.0.1"
 
-        # Check if http-servers.public.host is already set correctly
-        if f'host = "{target_host}"' in content or f"host = {target_host}" in content:
+        # ---- Idempotency: check private block already has the right host ----
+        # Look specifically inside a private { ... } block for the host value
+        m = re.search(r'private\s*\{[^}]*host\s*=\s*["\']?([\d.]+)["\']?', content, re.DOTALL)
+        if m and m.group(1) == target_host:
             return True, f"JVB REST API already bound to {target_host}"
 
-        # Check if http-servers block already exists
-        if "http-servers" in content:
-            # Replace existing host value
-            import re
-            # Match host = "..." or host = ... inside http-servers.public block
-            new_content, count = re.subn(
-                r'(http-servers\s*\{[^}]*public\s*\{[^}]*?)host\s*=\s*["\']?[\d.]+["\']?',
-                rf'\1host = {target_host}',
+        # ---- Patch the config ----
+        if m:
+            # private block exists with a host line — replace the host value
+            new_content = content[:m.start(1)] + target_host + content[m.end(1):]
+        elif "private" in content and "http-servers" in content:
+            # private block exists but has no host line — add one
+            new_content = re.sub(
+                r'(private\s*\{)',
+                rf'\1\n      host = {target_host}',
                 content,
-                flags=re.DOTALL,
             )
-            if count == 0:
-                # host line doesn't exist in the block — add it
-                new_content = re.sub(
-                    r'(http-servers\s*\{\s*\n\s*public\s*\{)',
-                    rf'\1\n            host = {target_host}',
-                    content,
-                    flags=re.DOTALL,
-                )
-                if new_content == content:
-                    # public block doesn't exist — add it to http-servers
-                    new_content = re.sub(
-                        r'(http-servers\s*\{)',
-                        f'\\1\n        public {{\n            host = {target_host}\n        }}',
-                        content,
-                        flags=re.DOTALL,
-                    )
+        elif "http-servers" in content:
+            # http-servers block exists but no private sub-block — add one
+            new_content = re.sub(
+                r'(http-servers\s*\{)',
+                f'\\1\n    private {{\n      host = {target_host}\n    }}',
+                content,
+            )
         else:
-            # No http-servers block — insert before the last closing brace of videobridge {}
+            # No http-servers block at all — insert before last closing brace
             lines = content.split("\n")
             insert_idx = None
             for i in range(len(lines) - 1, -1, -1):
@@ -1330,11 +1326,11 @@ def configure_jvb_rest_binding(bind_all=True):
                 return False, "Could not find videobridge block boundary"
 
             http_block = (
-                f"  http-servers {{\n"
-                f"    public {{\n"
+                "  http-servers {\n"
+                "    private {\n"
                 f"      host = {target_host}\n"
-                f"    }}\n"
-                f"  }}"
+                "    }\n"
+                "  }"
             )
             lines.insert(insert_idx, http_block)
             new_content = "\n".join(lines)

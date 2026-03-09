@@ -1389,7 +1389,7 @@ class TestConfigureJvbRestBinding:
         jvb_conf = (
             "videobridge {\n"
             "  http-servers {\n"
-            "    public {\n"
+            "    private {\n"
             "      host = 0.0.0.0\n"
             "    }\n"
             "  }\n"
@@ -1414,7 +1414,7 @@ class TestConfigureJvbRestBinding:
         jvb_conf = (
             "videobridge {\n"
             "  http-servers {\n"
-            "    public {\n"
+            "    private {\n"
             "      host = 0.0.0.0\n"
             "    }\n"
             "  }\n"
