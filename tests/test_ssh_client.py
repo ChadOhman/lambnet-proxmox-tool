@@ -19,7 +19,6 @@ connections are attempted.  Tests cover:
 """
 from unittest.mock import MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

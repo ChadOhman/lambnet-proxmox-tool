@@ -10,6 +10,7 @@ or as a ``token`` query parameter.
 import logging
 
 from flask import Blueprint, Response, request
+
 from models import Setting
 
 logger = logging.getLogger(__name__)

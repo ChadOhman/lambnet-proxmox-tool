@@ -1,12 +1,13 @@
-import re
 import base64
 import json
 import logging
+import re
 import shlex
 from datetime import datetime, timezone
-from models import db, Guest, UpdatePackage, ScanResult, GuestService
-from clients.ssh_client import SSHClient
+
 from clients.proxmox_api import ProxmoxClient
+from clients.ssh_client import SSHClient
+from models import Guest, GuestService, ScanResult, UpdatePackage, db
 
 logger = logging.getLogger(__name__)
 

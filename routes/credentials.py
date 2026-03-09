@@ -1,8 +1,9 @@
-from flask import Blueprint, request, redirect, url_for, flash
-from flask_login import login_required, current_user
-from models import db, Credential
-from auth.credential_store import encrypt
+from flask import Blueprint, flash, redirect, request, url_for
+from flask_login import current_user, login_required
+
 from auth.audit import log_action
+from auth.credential_store import encrypt
+from models import Credential, db
 
 bp = Blueprint("credentials", __name__)
 

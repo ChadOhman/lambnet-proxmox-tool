@@ -2,7 +2,6 @@
 
 import re
 
-
 # Shell-safe value pattern: alphanumeric, hyphens, underscores, dots, forward slashes, colons
 _SHELL_SAFE_RE = re.compile(r'^[\w.\-/:~]+$')
 

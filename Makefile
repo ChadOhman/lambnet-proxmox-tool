@@ -7,7 +7,7 @@ test:
 	FLASK_SECRET_KEY=dev-secret \
 	DATABASE_URL="sqlite:////tmp/mstdnca-dev-test.db" \
 	MSTDNCA_DATA_DIR=/tmp/mstdnca-dev \
-	pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=18
+	pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=40
 
 lint:
 	ruff check .

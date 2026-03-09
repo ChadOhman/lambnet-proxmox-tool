@@ -1,11 +1,13 @@
 import json
 import logging
 from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
-from flask_login import login_required, current_user
-from models import db, Guest, GuestService, ProxmoxHost, Credential, Tag, Setting, UpdatePackage, AuditLog
-from clients.proxmox_api import ProxmoxClient
+
+from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask_login import current_user, login_required
+
 from auth.audit import log_action
+from clients.proxmox_api import ProxmoxClient
+from models import AuditLog, Credential, Guest, GuestService, ProxmoxHost, Setting, Tag, UpdatePackage, db
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +45,7 @@ def _get_unifi_mac_map():
         return {}
     try:
         from datetime import datetime, timezone
+
         from routes.unifi import _get_unifi_client
         client = _get_unifi_client()
         if not client:

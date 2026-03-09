@@ -5,7 +5,6 @@ import importlib
 import config as config_module
 from config import _load_flask_secret
 
-
 # ---------------------------------------------------------------------------
 # _load_flask_secret — direct unit tests
 # ---------------------------------------------------------------------------

@@ -5,8 +5,10 @@ Verifies that the database allowlist validation in pg_vacuum and pg_explain
 rejects shell metacharacters and injection payloads before they reach SSH commands.
 """
 import json
+
 import pytest
-from models import db, Guest, GuestService
+
+from models import Guest, GuestService, db
 
 
 @pytest.fixture()

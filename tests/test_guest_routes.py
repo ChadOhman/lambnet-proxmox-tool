@@ -1,7 +1,7 @@
 """Tests for guests blueprint CRUD operations (no Proxmox API calls required)."""
 import pytest
-from models import db, Guest, Tag, Credential
 
+from models import Credential, Guest, Tag, db
 
 # ---------------------------------------------------------------------------
 # Fixtures

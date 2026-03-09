@@ -11,9 +11,11 @@ Trusted subnets are configurable via the Settings UI.
 
 import ipaddress
 import logging
-from flask import request, g, session
-from flask_login import login_user, current_user
-from models import User, Role, Setting
+
+from flask import g, request, session
+from flask_login import current_user, login_user
+
+from models import Role, Setting, User
 
 logger = logging.getLogger(__name__)
 

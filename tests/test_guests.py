@@ -1,8 +1,10 @@
 """Tests for guest list route and status filters."""
 import json
-import pytest
 from datetime import datetime, timezone
-from models import db, Guest, Tag, Setting, UpdatePackage
+
+import pytest
+
+from models import Guest, Setting, Tag, UpdatePackage, db
 
 _NOW = datetime.now(timezone.utc)
 

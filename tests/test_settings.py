@@ -1,6 +1,6 @@
 """Tests for the settings blueprint routes."""
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from models import Setting
 

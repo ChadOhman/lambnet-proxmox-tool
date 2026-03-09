@@ -6,12 +6,13 @@ import threading
 import time as _time
 
 import paramiko
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
-from flask_login import login_required, current_user
+from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask_login import current_user, login_required
 from flask_sock import Sock
+
 from auth.audit import log_action
 from auth.credential_store import decrypt
-from models import db, Guest, Credential, Tag
+from models import Credential, Guest, Tag, db
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +138,7 @@ def connect(guest_id):
 
     # Snapshot gating for non-admin users
     if not current_user.is_admin:
-        from routes.guests import guest_requires_snapshot, auto_snapshot_if_needed
+        from routes.guests import auto_snapshot_if_needed, guest_requires_snapshot
         if guest_requires_snapshot(guest):
             ok, msg = auto_snapshot_if_needed(guest)
             if not ok:
@@ -204,7 +205,7 @@ def popout(guest_id):
 
     # Snapshot gating for non-admin users
     if not current_user.is_admin:
-        from routes.guests import guest_requires_snapshot, auto_snapshot_if_needed
+        from routes.guests import auto_snapshot_if_needed, guest_requires_snapshot
         if guest_requires_snapshot(guest):
             ok, msg = auto_snapshot_if_needed(guest)
             if not ok:
@@ -274,6 +275,7 @@ def terminal_ws(ws, guest_id):
 def _ws_primary(ws, guest_id):
     """Handle the primary (owner) WebSocket connection."""
     from flask_login import current_user as ws_user
+
     from core.collaboration import terminal_registry
 
     ssh_client = None
@@ -509,6 +511,7 @@ def _ws_primary(ws, guest_id):
 def _ws_follow(ws, guest_id, session_id):
     """Handle a read-only follower WebSocket connection."""
     from flask_login import current_user as ws_user
+
     from core.collaboration import terminal_registry
 
     term_session = None

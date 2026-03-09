@@ -12,12 +12,12 @@ import logging
 import re
 import time
 from datetime import datetime, timezone
-from urllib.request import urlopen, Request
+from urllib.request import Request, urlopen
 
-from models import Setting, Guest
-from clients.ssh_client import SSHClient
-from clients.proxmox_api import ProxmoxClient
 from apps.utils import _log_cmd_output, _validate_shell_param, _version_gt
+from clients.proxmox_api import ProxmoxClient
+from clients.ssh_client import SSHClient
+from models import Guest, Setting
 
 logger = logging.getLogger(__name__)
 
@@ -771,7 +771,7 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
 
     Returns (success, log_output).
     """
-    from models import db, Credential
+    from models import Credential, db
 
     config = _get_mastodon_config()
     log_lines = []

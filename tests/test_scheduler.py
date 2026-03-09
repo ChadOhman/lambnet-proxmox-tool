@@ -18,7 +18,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -792,8 +791,9 @@ class TestCheckAppUpdate:
             _check_app_update(app)  # must not raise
 
     def test_invalid_branch_name_rejects_popen(self):
-        from core.scheduler import _check_app_update
         import json
+
+        from core.scheduler import _check_app_update
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
 
@@ -822,8 +822,9 @@ class TestCheckAppUpdate:
         mock_popen.assert_not_called()
 
     def test_branch_starting_with_dash_is_rejected(self):
-        from core.scheduler import _check_app_update
         import json
+
+        from core.scheduler import _check_app_update
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
 
@@ -850,8 +851,9 @@ class TestCheckAppUpdate:
         mock_popen.assert_not_called()
 
     def test_valid_branch_triggers_popen_when_script_exists(self):
-        from core.scheduler import _check_app_update
         import json
+
+        from core.scheduler import _check_app_update
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
 
@@ -884,8 +886,9 @@ class TestCheckAppUpdate:
         assert "main" in call_args
 
     def test_no_auto_update_skips_popen(self):
-        from core.scheduler import _check_app_update
         import json
+
+        from core.scheduler import _check_app_update
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
 
@@ -915,8 +918,9 @@ class TestCheckAppUpdate:
 
     def test_notification_sent_even_without_auto_update(self):
         """Notification fires for new versions regardless of auto_update setting."""
-        from core.scheduler import _check_app_update
         import json
+
+        from core.scheduler import _check_app_update
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
 
@@ -942,8 +946,9 @@ class TestCheckAppUpdate:
         mock_notifier.send_app_update_notification.assert_called_once_with("1.0.0", "2.0.0")
 
     def test_app_notification_dedup_skips_already_notified(self):
-        from core.scheduler import _check_app_update
         import json
+
+        from core.scheduler import _check_app_update
 
         app = _make_app(config={"GITHUB_REPO": "org/repo", "APP_VERSION": "1.0.0"})
 

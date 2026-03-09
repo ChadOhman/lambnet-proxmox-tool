@@ -1,8 +1,9 @@
 import hashlib
 import json
 import logging
-import urllib.request
 import urllib.error
+import urllib.request
+
 from models import Setting
 
 logger = logging.getLogger(__name__)

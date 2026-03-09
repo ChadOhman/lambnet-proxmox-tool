@@ -6,17 +6,30 @@ import shlex
 import threading
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, stream_with_context
+from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, stream_with_context, url_for
+from flask_login import current_user, login_required
 from sqlalchemy import func
-from flask_login import login_required, current_user
+
 from auth.audit import log_action
-from models import db, AuditLog, Guest, Tag, GuestService, ServiceMetricSnapshot
-from core.scanner import (check_service_statuses, service_action, get_service_logs, get_service_stats,
-                     sidekiq_clear_dead, sidekiq_retry_dead,
-                     sidekiq_clear_retry, sidekiq_retry_retry,
-                     sidekiq_list_jobs, sidekiq_delete_job, sidekiq_retry_job,
-                     lt_list_installed, lt_list_available, lt_install_package, lt_update_all_packages,
-                     lt_update_packages_stream)
+from core.scanner import (
+    check_service_statuses,
+    get_service_logs,
+    get_service_stats,
+    lt_install_package,
+    lt_list_available,
+    lt_list_installed,
+    lt_update_all_packages,
+    lt_update_packages_stream,
+    service_action,
+    sidekiq_clear_dead,
+    sidekiq_clear_retry,
+    sidekiq_delete_job,
+    sidekiq_list_jobs,
+    sidekiq_retry_dead,
+    sidekiq_retry_job,
+    sidekiq_retry_retry,
+)
+from models import AuditLog, Guest, GuestService, ServiceMetricSnapshot, Tag, db
 
 logger = logging.getLogger(__name__)
 
@@ -414,8 +427,9 @@ def pg_explain(service_id):
         return jsonify({"ok": False, "message": "database and query are required"}), 400
     if not _PG_DB_NAME_RE.match(database):
         return jsonify({"ok": False, "message": "Invalid database name."}), 400
-    from core.scanner import _execute_command
     import uuid
+
+    from core.scanner import _execute_command
     tmpfile = f"/tmp/.pg_explain_{uuid.uuid4().hex[:12]}.sql"  # nosec B108 — remote SSH path, not a local temp file
     # Use shlex.quote() to safely shell-quote the SQL content; single quotes in the shell
     # prevent all metacharacter expansion (backticks, $(), semicolons, etc.).

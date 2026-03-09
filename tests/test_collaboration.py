@@ -7,17 +7,16 @@ depend on the standard library.
 """
 import json
 import queue
-import time
 import threading
+import time
 
 from core.collaboration import (
+    _PRESENCE_TIMEOUT,
     CollaborationHub,
     CursorHub,
     TerminalSession,
     TerminalSessionRegistry,
-    _PRESENCE_TIMEOUT,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

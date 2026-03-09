@@ -5,8 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from models import db, Guest, GuestService
-
+from models import Guest, GuestService, db
 
 # ---------------------------------------------------------------------------
 # Exporter tests
@@ -22,7 +21,7 @@ class TestPrometheusExporter:
             assert isinstance(output, bytes)
 
     def test_update_host_metrics(self, app):
-        from clients.prometheus_exporter import update_host_metrics, HOST_CPU
+        from clients.prometheus_exporter import HOST_CPU, update_host_metrics
         with app.app_context():
             update_host_metrics(1, "pve1", "pve", {
                 "cpu": 0.42,
@@ -35,7 +34,7 @@ class TestPrometheusExporter:
             assert val == 42.0
 
     def test_update_guest_metrics(self, app):
-        from clients.prometheus_exporter import update_guest_metrics, GUEST_CPU
+        from clients.prometheus_exporter import GUEST_CPU, update_guest_metrics
         with app.app_context():
             update_guest_metrics(10, "myvm", "vm", "pve1", 100, {
                 "cpu": 0.5,
@@ -48,14 +47,14 @@ class TestPrometheusExporter:
             assert val == 25.0  # 0.5 / 2 * 100
 
     def test_update_service_health(self, app):
-        from clients.prometheus_exporter import update_service_health, SVC_UP
+        from clients.prometheus_exporter import SVC_UP, update_service_health
         with app.app_context():
             update_service_health(1, "postgresql", "db-guest", "postgresql.service", "running")
             val = SVC_UP.labels("1", "postgresql", "db-guest", "postgresql.service")._value.get()
             assert val == 1.0
 
     def test_update_pg_metrics(self, app):
-        from clients.prometheus_exporter import update_pg_metrics, PG_CONNECTIONS
+        from clients.prometheus_exporter import PG_CONNECTIONS, update_pg_metrics
         with app.app_context():
             update_pg_metrics(1, "db-guest", {
                 "total_connections": 42,
@@ -69,7 +68,7 @@ class TestPrometheusExporter:
             assert val == 42.0
 
     def test_update_redis_metrics(self, app):
-        from clients.prometheus_exporter import update_redis_metrics, REDIS_MEM
+        from clients.prometheus_exporter import REDIS_MEM, update_redis_metrics
         with app.app_context():
             update_redis_metrics(2, "cache-guest", {
                 "used_memory": 50_000_000,
@@ -82,7 +81,7 @@ class TestPrometheusExporter:
             assert val == 50_000_000.0
 
     def test_update_jitsi_metrics(self, app):
-        from clients.prometheus_exporter import update_jitsi_metrics, JITSI_CONFERENCES
+        from clients.prometheus_exporter import JITSI_CONFERENCES, update_jitsi_metrics
         with app.app_context():
             update_jitsi_metrics(3, "jitsi-guest", {
                 "conferences": 5,
@@ -94,7 +93,7 @@ class TestPrometheusExporter:
             assert val == 5.0
 
     def test_update_prometheus_metrics(self, app):
-        from clients.prometheus_exporter import update_prometheus_metrics, PROM_TARGETS_UP, PROM_HEAD_SERIES
+        from clients.prometheus_exporter import PROM_HEAD_SERIES, PROM_TARGETS_UP, update_prometheus_metrics
         with app.app_context():
             update_prometheus_metrics(4, "prom-guest", {
                 "targets_up": 3,
@@ -108,14 +107,14 @@ class TestPrometheusExporter:
             assert val == 12345.0
 
     def test_update_apt_metrics(self, app):
-        from clients.prometheus_exporter import update_apt_metrics, APT_PENDING
+        from clients.prometheus_exporter import APT_PENDING, update_apt_metrics
         with app.app_context():
             update_apt_metrics(1, "web-server", 10, 2, True)
             val = APT_PENDING.labels("1", "web-server")._value.get()
             assert val == 10.0
 
     def test_update_app_version_info(self, app):
-        from clients.prometheus_exporter import update_app_version_info, APP_UPDATE
+        from clients.prometheus_exporter import APP_UPDATE, update_app_version_info
         with app.app_context():
             update_app_version_info("mastodon", "4.2.0", "4.3.0", True)
             val = APP_UPDATE.labels("mastodon")._value.get()

@@ -1,6 +1,5 @@
 """Tests for security helpers and the local-bypass migration notice."""
-from models import db, Setting
-
+from models import Setting, db
 
 # Import helpers directly from the routes module
 from routes.security import _safe_int, _safe_int_list

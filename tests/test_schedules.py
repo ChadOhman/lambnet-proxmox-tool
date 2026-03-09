@@ -1,7 +1,7 @@
 """Tests for maintenance schedule routes."""
 import pytest
-from models import db, MaintenanceWindow
 
+from models import MaintenanceWindow, db
 
 # ---------------------------------------------------------------------------
 # Fixtures

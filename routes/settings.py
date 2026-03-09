@@ -3,12 +3,14 @@ import logging
 import os
 import subprocess
 from datetime import datetime, timezone
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
-from flask_login import login_required, current_user
-from models import db, Setting
+
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+
+from auth.audit import log_action
 from auth.credential_store import encrypt
 from config import BASE_DIR, DATA_DIR
-from auth.audit import log_action
+from models import Setting, db
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +116,8 @@ def _get_backup_template_context():
 
 def _get_latest_release():
     """Fetch the latest release version from GitHub. Returns version string or None."""
-    import urllib.request
     import json
+    import urllib.request
     repo = current_app.config.get("GITHUB_REPO", "")
     if not repo:
         return None
@@ -257,8 +259,8 @@ def refresh_backup_storages():
     storages = []
     seen = set()
     try:
-        from models import ProxmoxHost
         from clients.proxmox_api import ProxmoxClient
+        from models import ProxmoxHost
         for host in ProxmoxHost.query.filter(ProxmoxHost.host_type != "pbs").all():
             try:
                 client = ProxmoxClient(host)
@@ -536,8 +538,8 @@ def save_app_update_mode():
 
 @bp.route("/check-update", methods=["POST"])
 def check_update():
-    import urllib.request
     import json
+    import urllib.request
 
     # Also save the settings from the same form
     auto_update = "app_auto_update" in request.form

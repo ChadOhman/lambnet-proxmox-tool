@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -29,9 +30,10 @@ def _run_scan(app):
 def _run_auto_updates(app):
     """Apply updates to guests with auto-update enabled during their maintenance window."""
     with app.app_context():
-        from models import Guest
-        from core.scanner import apply_updates
         import calendar
+
+        from core.scanner import apply_updates
+        from models import Guest
 
         now = datetime.now()
         current_day = calendar.day_name[now.weekday()].lower()
@@ -97,8 +99,8 @@ def _check_mastodon_release(app):
             logger.info("Auto-upgrade enabled, starting Mastodon upgrade...")
             from apps.mastodon import run_mastodon_upgrade
             from auth.audit import log_action
+            from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
             from models import db
-            from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
             send_upgrade_started_notification("mastodon", latest, "auto")
             ok, log_output = run_mastodon_upgrade()
             log_action("mastodon_upgrade", "settings", resource_name="mastodon",
@@ -142,8 +144,8 @@ def _check_ghost_release(app):
             logger.info("Auto-upgrade enabled, starting Ghost upgrade...")
             from apps.ghost import run_ghost_upgrade
             from auth.audit import log_action
+            from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
             from models import db
-            from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
             send_upgrade_started_notification("ghost", latest, "auto")
             ok, log_output = run_ghost_upgrade()
             log_action("ghost_upgrade", "settings", resource_name="ghost",
@@ -187,8 +189,8 @@ def _check_peertube_release(app):
             logger.info("Auto-upgrade enabled, starting PeerTube upgrade...")
             from apps.peertube import run_peertube_upgrade
             from auth.audit import log_action
+            from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
             from models import db
-            from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
             send_upgrade_started_notification("peertube", latest, "auto")
             ok, log_output = run_peertube_upgrade()
             log_action("peertube_upgrade", "settings", resource_name="peertube",
@@ -234,8 +236,8 @@ def _check_elk_release(app):
             logger.info("Auto-upgrade enabled, starting Elk upgrade...")
             from apps.elk import run_elk_upgrade
             from auth.audit import log_action
+            from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
             from models import db
-            from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
             send_upgrade_started_notification("elk", latest, "auto")
             ok, log_output = run_elk_upgrade()
             log_action("elk_upgrade", "settings", resource_name="elk",
@@ -281,8 +283,8 @@ def _check_jitsi_release(app):
             logger.info("Auto-upgrade enabled, starting Jitsi upgrade...")
             from apps.jitsi import run_jitsi_upgrade
             from auth.audit import log_action
+            from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
             from models import db
-            from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
             send_upgrade_started_notification("jitsi", latest, "auto")
             ok, log_output = run_jitsi_upgrade()
             log_action("jitsi_upgrade", "settings", resource_name="jitsi",
@@ -299,8 +301,9 @@ def _run_discovery(app):
     """Refresh guest discovery for all Proxmox hosts."""
     with app.app_context():
         import re
-        from models import db, Setting, ProxmoxHost, Guest, Tag
+
         from clients.proxmox_api import ProxmoxClient
+        from models import Guest, ProxmoxHost, Setting, Tag, db
 
         if Setting.get("discovery_enabled", "true") == "false":
             logger.info("Automatic discovery is disabled, skipping.")
@@ -428,7 +431,7 @@ def _run_discovery(app):
 def _check_host_updates(app):
     """Check all Proxmox hosts for pending APT updates and notify."""
     with app.app_context():
-        from models import Setting, ProxmoxHost
+        from models import ProxmoxHost, Setting
 
         if Setting.get("scan_enabled", "true") == "false":
             return
@@ -466,12 +469,13 @@ def _check_host_updates(app):
 def _check_app_update(app):
     """Check for new app releases, store result, and optionally auto-update."""
     with app.app_context():
-        from models import Setting
-        import urllib.request
         import json
-        import subprocess
         import os
+        import subprocess
+        import urllib.request
+
         from config import BASE_DIR
+        from models import Setting
 
         repo = app.config.get("GITHUB_REPO", "")
         current_version = app.config.get("APP_VERSION", "0.0.0")
@@ -539,7 +543,7 @@ def _check_app_update(app):
 def _purge_old_audit_logs(app):
     """Delete audit log entries older than 90 days."""
     with app.app_context():
-        from models import db, AuditLog
+        from models import AuditLog, db
         cutoff = datetime.now(timezone.utc) - timedelta(days=90)
         deleted = AuditLog.query.filter(AuditLog.timestamp < cutoff).delete()
         db.session.commit()
@@ -550,7 +554,7 @@ def _purge_old_audit_logs(app):
 def _poll_unifi_events(app):
     """Poll UniFi controller API for events and alarms and persist them."""
     with app.app_context():
-        from models import Setting, db, UnifiLogEntry
+        from models import Setting, UnifiLogEntry, db
 
         if Setting.get("unifi_api_poll_enabled", "true") == "false":
             return
@@ -642,7 +646,7 @@ def _poll_unifi_events(app):
 def _purge_old_unifi_logs(app):
     """Delete UniFi log entries older than the configured retention period."""
     with app.app_context():
-        from models import db, Setting, UnifiLogEntry
+        from models import Setting, UnifiLogEntry, db
         try:
             days = int(Setting.get("unifi_log_retention_days", "60") or 60)
         except ValueError:
@@ -657,8 +661,8 @@ def _purge_old_unifi_logs(app):
 def _run_service_health_checks(app):
     """Check status of all tracked services on all guests."""
     with app.app_context():
-        from models import Setting, Guest
         from core.scanner import check_service_statuses
+        from models import Guest, Setting
 
         if Setting.get("service_check_enabled", "true") == "false":
             logger.info("Service health checks disabled, skipping.")
@@ -732,12 +736,14 @@ def _collect_prometheus_metrics(app):
     Runs on a short interval (default 60s) to keep gauges fresh for scraping.
     """
     with app.app_context():
-        from models import Setting, ProxmoxHost, Guest
-        from clients.proxmox_api import ProxmoxClient
         from clients.prometheus_exporter import (
-            update_host_metrics, update_guest_metrics, update_apt_metrics,
             update_app_version_info,
+            update_apt_metrics,
+            update_guest_metrics,
+            update_host_metrics,
         )
+        from clients.proxmox_api import ProxmoxClient
+        from models import Guest, ProxmoxHost, Setting
 
         if Setting.get("prometheus_enabled", "false") != "true":
             return
@@ -801,9 +807,10 @@ def _collect_prometheus_metrics(app):
 def _check_prometheus_release(app):
     """Check for new Prometheus releases on GitHub."""
     with app.app_context():
-        from models import Setting
-        import urllib.request
         import json
+        import urllib.request
+
+        from models import Setting
 
         if not Setting.get("prometheus_guest_id"):
             return

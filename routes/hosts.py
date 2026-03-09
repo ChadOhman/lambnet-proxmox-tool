@@ -1,12 +1,14 @@
 import logging
 import re
 import threading as _threading
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
-from flask_login import login_required, current_user
-from models import db, ProxmoxHost, Guest, Tag, AuditLog, Credential
+
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+
+from auth.audit import log_action
 from auth.credential_store import encrypt
 from clients.proxmox_api import ProxmoxClient
-from auth.audit import log_action
+from models import AuditLog, Credential, Guest, ProxmoxHost, Tag, db
 
 # In-memory state for SSH-based apt apply jobs
 _apply_jobs = {}   # host_id -> {"log": [], "running": bool, "success": bool|None, "cancelled": bool}

@@ -2,8 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from models import db, Guest, Credential, ExporterInstance, GuestService, ProxmoxHost, Setting
-
+from models import Credential, ExporterInstance, Guest, GuestService, ProxmoxHost, Setting, db
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -272,7 +271,7 @@ class TestPrometheusConfigWithMastodon:
             db.session.commit()
 
             # We test the grouping logic directly rather than full SSH push
-            from apps.exporters import KNOWN_EXPORTERS, BUILTIN_EXPORTERS
+            from apps.exporters import BUILTIN_EXPORTERS, KNOWN_EXPORTERS
 
             installed = ExporterInstance.query.filter(
                 ExporterInstance.status == "installed"

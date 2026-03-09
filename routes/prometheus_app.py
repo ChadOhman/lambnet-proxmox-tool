@@ -9,10 +9,11 @@ import logging
 import threading as _threading
 from datetime import datetime, timezone
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
-from flask_login import login_required, current_user
-from models import db, Setting, Guest, ExporterInstance
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+
 from auth.audit import log_action
+from models import ExporterInstance, Guest, Setting, db
 
 
 def _parse_iso(value):
@@ -91,7 +92,7 @@ def manage():
         except Exception as e:
             logger.warning("Could not check snapshot/backup support: %s", e)
 
-    from apps.exporters import KNOWN_EXPORTERS, BUILTIN_EXPORTERS
+    from apps.exporters import BUILTIN_EXPORTERS, KNOWN_EXPORTERS
     exporter_instances = ExporterInstance.query.join(Guest).order_by(Guest.name).all()
 
     # Check Mastodon built-in exporter status and current config
@@ -258,8 +259,9 @@ def preflight_status():
 
 @bp.route("/preflight", methods=["POST"])
 def preflight():
-    from apps.prometheus_app import run_prometheus_preflight
     from flask import current_app
+
+    from apps.prometheus_app import run_prometheus_preflight
 
     if _install_job["running"] or _upgrade_job["running"]:
         return jsonify({"error": "An operation is already in progress"}), 409
@@ -295,8 +297,9 @@ def preflight():
 
 @bp.route("/install", methods=["POST"])
 def install():
-    from apps.prometheus_app import run_prometheus_install
     from flask import current_app
+
+    from apps.prometheus_app import run_prometheus_install
 
     if _install_job["running"] or _upgrade_job["running"] or _preflight_job["running"]:
         flash("An operation is already in progress.", "warning")
@@ -310,7 +313,7 @@ def install():
     _app = current_app._get_current_object()
 
     def _bg():
-        from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
+        from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
         ok = False
         try:
             with _app.app_context():
@@ -344,8 +347,9 @@ def install():
 
 @bp.route("/upgrade", methods=["POST"])
 def upgrade():
-    from apps.prometheus_app import run_prometheus_upgrade
     from flask import current_app
+
+    from apps.prometheus_app import run_prometheus_upgrade
 
     if _install_job["running"] or _upgrade_job["running"] or _preflight_job["running"]:
         flash("An operation is already in progress.", "warning")
@@ -359,7 +363,7 @@ def upgrade():
     _app = current_app._get_current_object()
 
     def _bg():
-        from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
+        from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
         ok = False
         try:
             with _app.app_context():

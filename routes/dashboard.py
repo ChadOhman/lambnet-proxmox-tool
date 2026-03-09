@@ -1,7 +1,9 @@
-from flask import Blueprint, render_template, request, session, current_app
-from flask_login import login_required, current_user
 from collections import Counter
-from models import db, ProxmoxHost, Guest, GuestService, UpdatePackage, Setting, Tag
+
+from flask import Blueprint, current_app, render_template, request, session
+from flask_login import current_user, login_required
+
+from models import Guest, GuestService, ProxmoxHost, Setting, Tag, UpdatePackage, db
 
 bp = Blueprint("dashboard", __name__)
 
