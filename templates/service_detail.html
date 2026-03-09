@@ -946,7 +946,11 @@
 
 {% elif stats.type == 'puma' %}
 <div class="card bg-dark mb-4">
-    <div class="card-header"><h5 class="mb-0"><i class="bi bi-globe"></i> Puma (Mastodon Web)</h5></div>
+    <div class="card-header" role="button" data-bs-toggle="collapse" data-bs-target="#pumaWebCollapse"
+         aria-expanded="false" aria-controls="pumaWebCollapse" style="cursor:pointer;">
+        <h5 class="mb-0"><i class="bi bi-globe"></i> Puma (Mastodon Web) <i class="bi bi-chevron-down float-end"></i></h5>
+    </div>
+    <div class="collapse" id="pumaWebCollapse">
     <div class="card-body">
         <div class="row g-3 mb-3">
             <div class="col-6 col-md-2">
@@ -1006,6 +1010,7 @@
             </table>
         </div>
         {% endif %}
+    </div>
     </div>
 </div>
 
