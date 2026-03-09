@@ -7,6 +7,16 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 
+def _safe_float(val):
+    """Convert a value to float, returning None on failure."""
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
 class UniFiClient:
     """Client for UniFi Controller / UniFi OS API."""
 
@@ -76,12 +86,64 @@ class UniFiClient:
         except requests.RequestException as e:
             return False, str(e)
 
+    def _api_post_data(self, path, payload):
+        """POST that returns the JSON ``data`` array (like ``_api_get``)."""
+        if not self._logged_in:
+            if not self.login():
+                return None
+        url = f"{self.base_url}{self._prefix}{path}"
+        try:
+            resp = self.session.post(url, json=payload, timeout=15)
+            if resp.status_code == 200:
+                return resp.json().get("data", [])
+            logger.warning("UniFi API POST %s: HTTP %s", path, resp.status_code)
+            return None
+        except requests.RequestException as e:
+            logger.error("UniFi API error: %s", e)
+            return None
+
     def get_devices(self):
         raw = self._api_get(f"/api/s/{self.site}/stat/device")
         if raw is None:
             return []
         devices = []
         for d in raw:
+            # System stats
+            sys_stats = d.get("system-stats", {})
+            # Uplink info
+            uplink_raw = d.get("uplink", {})
+            uplink = {
+                "type": uplink_raw.get("type", ""),
+                "speed": uplink_raw.get("speed", 0),
+                "full_duplex": uplink_raw.get("full_duplex", False),
+                "tx_bytes": uplink_raw.get("tx_bytes", 0),
+                "rx_bytes": uplink_raw.get("rx_bytes", 0),
+            }
+            # Port table (switches/gateways)
+            port_table = []
+            for p in d.get("port_table", []):
+                port_table.append({
+                    "name": p.get("name", ""),
+                    "speed": p.get("speed", 0),
+                    "enabled": p.get("enable", p.get("enabled", True)),
+                    "up": p.get("up", False),
+                    "poe_mode": p.get("poe_mode", ""),
+                    "tx_bytes": p.get("tx_bytes", 0),
+                    "rx_bytes": p.get("rx_bytes", 0),
+                })
+            # Radio table (APs)
+            radio_table = []
+            for r in d.get("radio_table_stats", d.get("radio_table", [])):
+                radio_table.append({
+                    "name": r.get("name", ""),
+                    "channel": r.get("channel", 0),
+                    "ht": r.get("ht", ""),
+                    "tx_power": r.get("tx_power", 0),
+                    "num_sta": r.get("num_sta", 0),
+                    "cu_total": r.get("cu_total", 0),
+                    "radio": r.get("radio", ""),
+                })
+
             devices.append({
                 "name": d.get("name", d.get("hostname", "Unknown")),
                 "mac": d.get("mac", ""),
@@ -92,6 +154,17 @@ class UniFiClient:
                 "uptime": d.get("uptime", 0),
                 "version": d.get("version", ""),
                 "adopted": d.get("adopted", False),
+                "cpu": _safe_float(sys_stats.get("cpu")),
+                "mem": _safe_float(sys_stats.get("mem")),
+                "temperature": _safe_float(d.get("general_temperature")),
+                "loadavg_1": _safe_float(d.get("loadavg_1", sys_stats.get("loadavg_1"))),
+                "loadavg_5": _safe_float(d.get("loadavg_5", sys_stats.get("loadavg_5"))),
+                "loadavg_15": _safe_float(d.get("loadavg_15", sys_stats.get("loadavg_15"))),
+                "num_sta": d.get("num_sta", 0),
+                "last_seen": d.get("last_seen"),
+                "uplink": uplink,
+                "port_table": port_table,
+                "radio_table": radio_table,
             })
         return devices
 
@@ -110,6 +183,19 @@ class UniFiClient:
             "tx_rate": c.get("tx_rate", None),
             "rx_rate": c.get("rx_rate", None),
             "blocked": c.get("blocked", False),
+            "signal": c.get("signal", c.get("rssi", None)),
+            "satisfaction": c.get("satisfaction", None),
+            "channel": c.get("channel", None),
+            "radio": c.get("radio", None),
+            "essid": c.get("essid", None),
+            "sw_port": c.get("sw_port", None),
+            "is_guest": c.get("is_guest", c.get("_is_guest_by_uap", False)),
+            "ap_mac": c.get("ap_mac", None),
+            "sw_mac": c.get("sw_mac", None),
+            "wifi_tx_attempts": c.get("wifi_tx_attempts", None),
+            "tx_retries": c.get("tx_retries", None),
+            "first_seen": c.get("first_seen", None),
+            "oui": c.get("oui", ""),
         }
 
     def get_clients(self):
@@ -169,6 +255,110 @@ class UniFiClient:
                 "vlan": n.get("vlan", None),
             })
         return sorted(networks, key=lambda x: x["name"].lower())
+
+    def get_site_health(self):
+        """Fetch site health info (WAN/LAN/WLAN subsystem status)."""
+        raw = self._api_get(f"/api/s/{self.site}/stat/health")
+        if raw is None:
+            return []
+        return raw
+
+    def get_wlan_conf(self):
+        """Fetch WLAN/SSID configurations."""
+        raw = self._api_get(f"/api/s/{self.site}/rest/wlanconf")
+        if raw is None:
+            return []
+        wlans = []
+        for w in raw:
+            wlans.append({
+                "id": w.get("_id", ""),
+                "name": w.get("name", ""),
+                "enabled": w.get("enabled", True),
+                "security": w.get("security", ""),
+                "is_guest": w.get("is_guest", False),
+                "wlan_band": w.get("wlan_band", ""),
+            })
+        return sorted(wlans, key=lambda x: x["name"].lower())
+
+    def get_all_clients(self, within=24):
+        """Fetch all known clients (historical), not just active.
+
+        *within* is the lookback period in hours.
+        """
+        raw = self._api_get(f"/api/s/{self.site}/stat/alluser?within={within}")
+        if raw is None:
+            return []
+        return [self._parse_client(c) for c in raw]
+
+    def get_dpi_stats(self):
+        """Fetch site-level DPI (Deep Packet Inspection) category breakdown."""
+        raw = self._api_get(f"/api/s/{self.site}/stat/sitedpi")
+        if raw is None:
+            return []
+        return raw
+
+    def get_port_forward_rules(self):
+        """Fetch port forwarding rules."""
+        raw = self._api_get(f"/api/s/{self.site}/rest/portforward")
+        if raw is None:
+            return []
+        rules = []
+        for r in raw:
+            rules.append({
+                "id": r.get("_id", ""),
+                "name": r.get("name", ""),
+                "enabled": r.get("enabled", True),
+                "src": r.get("src", "any"),
+                "dst_port": r.get("dst_port", ""),
+                "fwd": r.get("fwd", ""),
+                "fwd_port": r.get("fwd_port", ""),
+                "proto": r.get("proto", "tcp_udp"),
+            })
+        return rules
+
+    def get_firewall_rules(self):
+        """Fetch firewall rules."""
+        raw = self._api_get(f"/api/s/{self.site}/rest/firewallrule")
+        if raw is None:
+            return []
+        rules = []
+        for r in raw:
+            rules.append({
+                "id": r.get("_id", ""),
+                "name": r.get("name", ""),
+                "enabled": r.get("enabled", True),
+                "action": r.get("action", ""),
+                "ruleset": r.get("ruleset", ""),
+                "rule_index": r.get("rule_index", 0),
+                "protocol": r.get("protocol", "all"),
+                "src_firewallgroup_ids": r.get("src_firewallgroup_ids", []),
+                "dst_firewallgroup_ids": r.get("dst_firewallgroup_ids", []),
+            })
+        return sorted(rules, key=lambda x: x.get("rule_index", 0))
+
+    def get_daily_site_stats(self, days=7):
+        """Fetch daily site bandwidth/client stats via the report endpoint."""
+        import time
+        end = int(time.time()) * 1000  # UniFi uses milliseconds
+        start = end - (days * 86400 * 1000)
+        payload = {
+            "attrs": ["bytes", "wan-tx_bytes", "wan-rx_bytes", "num_sta", "time"],
+            "start": start,
+            "end": end,
+        }
+        raw = self._api_post_data(f"/api/s/{self.site}/stat/report/daily.site", payload)
+        if raw is None:
+            return []
+        stats = []
+        for s in raw:
+            stats.append({
+                "time": s.get("time", 0),
+                "bytes": s.get("bytes", 0),
+                "wan_tx_bytes": s.get("wan-tx_bytes", 0),
+                "wan_rx_bytes": s.get("wan-rx_bytes", 0),
+                "num_sta": s.get("num_sta", 0),
+            })
+        return stats
 
     def test_connection(self):
         if not self.login():

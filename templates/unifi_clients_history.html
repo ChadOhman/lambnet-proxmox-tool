@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Client History - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-clock-history"></i> Client History</h2>
+    <a href="{{ url_for('unifi.index') }}" class="btn btn-outline-light btn-sm">
+        <i class="bi bi-arrow-left"></i> Back to Network
+    </a>
+</div>
+
+<!-- Filters -->
+<div class="card bg-dark mb-4">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label for="hours" class="form-label small text-muted mb-0">Time Window</label>
+                <select name="hours" id="hours" class="form-select form-select-sm bg-dark text-light border-secondary">
+                    <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24h</option>
+                    <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
+                    <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
+                </select>
+            </div>
+            <div class="col">
+                <label for="q" class="form-label small text-muted mb-0">Search</label>
+                <input type="text" name="q" id="q" value="{{ search }}" class="form-control form-control-sm bg-dark text-light border-secondary"
+                       placeholder="Hostname, IP, MAC, or manufacturer...">
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-outline-info">
+                    <i class="bi bi-funnel"></i> Filter
+                </button>
+            </div>
+            {% if search or hours != 24 %}
+            <div class="col-auto">
+                <a href="{{ url_for('unifi.client_history') }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-x"></i> Clear
+                </a>
+            </div>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<!-- Results -->
+<div class="card bg-dark">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-people"></i> All Known Clients <span class="badge bg-secondary">{{ clients|length }}</span></h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0" aria-label="Historical network clients">
+                <thead>
+                    <tr>
+                        <th scope="col">Hostname</th>
+                        <th scope="col">IP</th>
+                        <th scope="col">MAC</th>
+                        <th scope="col">Manufacturer</th>
+                        <th scope="col">Network</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">First Seen</th>
+                        <th scope="col">Last Seen</th>
+                        <th scope="col" class="text-end">TX</th>
+                        <th scope="col" class="text-end">RX</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for client in clients %}
+                    <tr>
+                        <td>{{ client.hostname }}</td>
+                        <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<code>{{ client.ip or '-' }}</code>{% endif %}</td>
+                        <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<small class="text-muted">{{ client.mac }}</small>{% endif %}</td>
+                        <td><small>{{ client.oui or '-' }}</small></td>
+                        <td>{{ client.network or '-' }}</td>
+                        <td>
+                            {% if client.is_wired %}
+                            <i class="bi bi-ethernet" title="Wired"></i>
+                            {% else %}
+                            <i class="bi bi-wifi" title="Wireless"></i>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if client.first_seen %}
+                            <small>{{ client.first_seen | timestamp_to_datetime | local_dt("%Y-%m-%d %H:%M") }}</small>
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>
+                            {% if client.last_seen %}
+                            <small>{{ client.last_seen | timestamp_to_datetime | local_dt("%Y-%m-%d %H:%M") }}</small>
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if client.tx_bytes %}
+                            <small>{{ "%.1f"|format(client.tx_bytes / 1048576) }} MB</small>
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if client.rx_bytes %}
+                            <small>{{ "%.1f"|format(client.rx_bytes / 1048576) }} MB</small>
+                            {% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="10" class="text-center text-muted py-3">No clients found for the selected filters.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

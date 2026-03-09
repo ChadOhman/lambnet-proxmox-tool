@@ -5,6 +5,17 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-router"></i> Network Devices</h2>
     <div class="d-flex gap-2">
+        {% if enabled %}
+        <a href="{{ url_for('unifi.health') }}" class="btn btn-outline-success btn-sm">
+            <i class="bi bi-heart-pulse"></i> Health
+        </a>
+        <a href="{{ url_for('unifi.traffic') }}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-graph-up"></i> Traffic
+        </a>
+        <a href="{{ url_for('unifi.client_history') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-clock-history"></i> Client History
+        </a>
+        {% endif %}
         <a href="{{ url_for('unifi.logs') }}" class="btn btn-outline-info btn-sm">
             <i class="bi bi-journal-text"></i> Logs
         </a>
@@ -44,6 +55,48 @@
 
 {% if subnet_filter %}
 <p class="text-muted mb-3"><i class="bi bi-funnel"></i> Filtered to subnet: <code>{{ subnet_filter }}</code></p>
+{% endif %}
+
+<!-- Health status cards -->
+{% if wan_health %}
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2 text-center">
+                <small class="text-muted d-block">WAN Status</small>
+                {% if wan_health.status == 'ok' %}
+                <span class="badge bg-success fs-6"><i class="bi bi-check-circle"></i> Online</span>
+                {% else %}
+                <span class="badge bg-danger fs-6"><i class="bi bi-x-circle"></i> {{ wan_health.status|default('Unknown') }}</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2 text-center">
+                <small class="text-muted d-block">WAN Latency</small>
+                <span class="fs-5">{{ wan_health.latency|default('-') }} ms</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2 text-center">
+                <small class="text-muted d-block">Devices</small>
+                <span class="fs-5">{{ devices|length }}</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-2 text-center">
+                <small class="text-muted d-block">Active Clients</small>
+                <span class="fs-5">{{ clients|length }}</span>
+            </div>
+        </div>
+    </div>
+</div>
 {% endif %}
 
 <!-- Traffic overview charts (last 24h from log entries) -->
@@ -137,8 +190,10 @@
                                 <th scope="col">Name</th>
                                 <th scope="col">Model</th>
                                 <th scope="col">IP</th>
-                                <th scope="col">MAC</th>
                                 <th scope="col">Status</th>
+                                <th scope="col">CPU</th>
+                                <th scope="col">Mem</th>
+                                <th scope="col">Clients</th>
                                 <th scope="col">Uptime</th>
                                 <th scope="col">Firmware</th>
                                 {% if current_user.can_restart_unifi %}
@@ -149,10 +204,14 @@
                         <tbody>
                             {% for device in devices %}
                             <tr>
-                                <td><strong>{{ device.name }}</strong></td>
+                                <td>
+                                    <a href="{{ url_for('unifi.device_detail', mac=device.mac) }}" class="text-info text-decoration-none">
+                                        <strong>{{ device.name }}</strong>
+                                    </a>
+                                    {% if not safety_mode %}<br><small class="text-muted">{{ device.mac }}</small>{% endif %}
+                                </td>
                                 <td><code>{{ device.model }}</code></td>
                                 <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<code>{{ device.ip }}</code>{% endif %}</td>
-                                <td>{% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>{% else %}<small class="text-muted">{{ device.mac }}</small>{% endif %}</td>
                                 <td>
                                     {% if device.state == 1 %}
                                     <span class="badge bg-success">Online</span>
@@ -162,6 +221,9 @@
                                     <span class="badge bg-warning text-dark">{{ device.state }}</span>
                                     {% endif %}
                                 </td>
+                                <td>{{ "%.0f"|format(device.cpu) if device.cpu is not none else '-' }}%</td>
+                                <td>{{ "%.0f"|format(device.mem) if device.mem is not none else '-' }}%</td>
+                                <td>{{ device.num_sta or 0 }}</td>
                                 <td>
                                     {% if device.uptime %}
                                     {% set days = device.uptime // 86400 %}
@@ -184,7 +246,7 @@
                                 {% endif %}
                             </tr>
                             {% else %}
-                            <tr><td colspan="8" class="text-center text-muted py-3">No devices found.</td></tr>
+                            <tr><td colspan="10" class="text-center text-muted py-3">No devices found.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>

@@ -803,6 +803,37 @@ def _collect_prometheus_metrics(app):
             if current or latest:
                 update_app_version_info(app_name, current, latest, update_avail)
 
+        # UniFi device & health metrics
+        if Setting.get("unifi_enabled", "false") == "true":
+            try:
+                from auth.credential_store import decrypt
+                from clients.prometheus_exporter import (
+                    update_unifi_device_metrics,
+                    update_unifi_health_metrics,
+                    update_unifi_metrics,
+                )
+                from clients.unifi_client import UniFiClient
+
+                base_url = Setting.get("unifi_base_url", "")
+                username = Setting.get("unifi_username", "")
+                encrypted_pw = Setting.get("unifi_password", "")
+                site = Setting.get("unifi_site", "default")
+                is_udm = Setting.get("unifi_is_udm", "true") == "true"
+                if base_url and username and encrypted_pw:
+                    password = decrypt(encrypted_pw)
+                    if password:
+                        uc = UniFiClient(base_url, username, password, site=site, is_udm=is_udm)
+                        devices = uc.get_devices() or []
+                        clients_list = uc.get_clients() or []
+                        update_unifi_metrics(site, device_count=len(devices), client_count=len(clients_list))
+                        update_unifi_device_metrics(site, devices)
+
+                        health = uc.get_site_health()
+                        if health:
+                            update_unifi_health_metrics(site, health)
+            except Exception:
+                logger.debug("Failed to collect UniFi Prometheus metrics", exc_info=True)
+
 
 def _check_prometheus_release(app):
     """Check for new Prometheus releases on GitHub."""

@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}Network Health - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-heart-pulse"></i> Network Health</h2>
+    <a href="{{ url_for('unifi.index') }}" class="btn btn-outline-light btn-sm">
+        <i class="bi bi-arrow-left"></i> Back to Network
+    </a>
+</div>
+
+<!-- Subsystem status cards -->
+<div class="row g-3 mb-4">
+    {% for name in ['wan', 'lan', 'wlan', 'vpn'] %}
+    {% if name in subsystems %}
+    {% set sub = subsystems[name] %}
+    <div class="col-sm-6 col-lg-3">
+        <div class="card bg-dark h-100">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 text-uppercase">{{ name }}</h6>
+                    {% if sub.status == 'ok' %}
+                    <span class="badge bg-success"><i class="bi bi-check-circle"></i> OK</span>
+                    {% elif sub.status == 'warning' %}
+                    <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Warning</span>
+                    {% else %}
+                    <span class="badge bg-danger"><i class="bi bi-x-circle"></i> {{ sub.status|default('Unknown') }}</span>
+                    {% endif %}
+                </div>
+                <div class="mt-2 small text-muted">
+                    {% if sub.num_adopted is defined %}
+                    <span>{{ sub.num_adopted or 0 }} devices</span>
+                    {% endif %}
+                    {% if sub.num_sta is defined %}
+                    <span class="ms-2">{{ sub.num_sta or 0 }} clients</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+</div>
+
+<!-- WAN details -->
+{% if 'wan' in subsystems %}
+{% set wan = subsystems['wan'] %}
+<div class="card bg-dark mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-globe"></i> WAN Details</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-sm-6 col-lg-3">
+                <small class="text-muted d-block">Latency</small>
+                <span class="fs-5">{{ wan.latency|default('-') }} ms</span>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <small class="text-muted d-block">Uptime</small>
+                <span class="fs-5">
+                    {% if wan.uptime %}
+                    {% set days = wan.uptime // 86400 %}
+                    {% set hours = (wan.uptime % 86400) // 3600 %}
+                    {{ days }}d {{ hours }}h
+                    {% else %}-{% endif %}
+                </span>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <small class="text-muted d-block">WAN IP</small>
+                {% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>
+                {% else %}<code>{{ wan.wan_ip|default(wan.get('gw', '-')) }}</code>{% endif %}
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <small class="text-muted d-block">ISP</small>
+                {{ wan.isp_name|default(wan.get('isp_organization', '-')) }}
+            </div>
+        </div>
+        {% if wan.get('speedtest_lastrun_download') or wan.get('speedtest_lastrun_upload') %}
+        <hr class="border-secondary">
+        <div class="row g-3">
+            <div class="col-sm-6 col-lg-3">
+                <small class="text-muted d-block">Speedtest Download</small>
+                <span class="fs-5 text-info">{{ "%.1f"|format(wan.speedtest_lastrun_download) if wan.speedtest_lastrun_download else '-' }} Mbps</span>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <small class="text-muted d-block">Speedtest Upload</small>
+                <span class="fs-5 text-warning">{{ "%.1f"|format(wan.speedtest_lastrun_upload) if wan.speedtest_lastrun_upload else '-' }} Mbps</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- WAN charts from Prometheus -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-speedometer2"></i> WAN Latency</h6>
+            </div>
+            <div class="card-body" style="height:200px">
+                <canvas id="chartLatency" role="img" aria-label="WAN latency over time"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-dark h-100">
+            <div class="card-header py-2">
+                <h6 class="mb-0 text-muted"><i class="bi bi-people"></i> Client Count</h6>
+            </div>
+            <div class="card-body" style="height:200px">
+                <canvas id="chartSiteClients" role="img" aria-label="Total client count over time"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- WLAN configurations -->
+{% if wlan_conf %}
+<div class="card bg-dark mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-wifi"></i> Wireless Networks <span class="badge bg-secondary">{{ wlan_conf|length }}</span></h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0" aria-label="Wireless network configurations">
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Security</th>
+                        <th scope="col">Band</th>
+                        <th scope="col">Guest</th>
+                        <th scope="col">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for wlan in wlan_conf %}
+                    <tr>
+                        <td><strong>{{ wlan.name }}</strong></td>
+                        <td><code>{{ wlan.security or 'open' }}</code></td>
+                        <td>{{ wlan.wlan_band or 'both' }}</td>
+                        <td>
+                            {% if wlan.is_guest %}
+                            <span class="badge bg-info">Guest</span>
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>
+                            {% if wlan.enabled %}
+                            <span class="badge bg-success">Enabled</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Disabled</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Port forwarding rules -->
+{% if port_fwd %}
+<div class="card bg-dark mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-arrow-left-right"></i> Port Forwarding <span class="badge bg-secondary">{{ port_fwd|length }}</span></h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0" aria-label="Port forwarding rules">
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Protocol</th>
+                        <th scope="col">Port</th>
+                        <th scope="col">Forward To</th>
+                        <th scope="col">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rule in port_fwd %}
+                    <tr>
+                        <td>{{ rule.name or '-' }}</td>
+                        <td><code>{{ rule.proto }}</code></td>
+                        <td><code>{{ rule.dst_port }}</code></td>
+                        <td>
+                            {% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i></span>
+                            {% else %}<code>{{ rule.fwd }}:{{ rule.fwd_port }}</code>{% endif %}
+                        </td>
+                        <td>
+                            {% if rule.enabled %}
+                            <span class="badge bg-success">Enabled</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Disabled</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Firewall rules -->
+{% if firewall_rules %}
+<div class="card bg-dark mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-shield-check"></i> Firewall Rules <span class="badge bg-secondary">{{ firewall_rules|length }}</span></h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0" aria-label="Firewall rules">
+                <thead>
+                    <tr>
+                        <th scope="col">#</th>
+                        <th scope="col">Name</th>
+                        <th scope="col">Action</th>
+                        <th scope="col">Protocol</th>
+                        <th scope="col">Ruleset</th>
+                        <th scope="col">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rule in firewall_rules %}
+                    <tr>
+                        <td>{{ rule.rule_index }}</td>
+                        <td>{{ rule.name }}</td>
+                        <td>
+                            {% if rule.action == 'accept' %}
+                            <span class="badge bg-success">Accept</span>
+                            {% elif rule.action == 'drop' %}
+                            <span class="badge bg-danger">Drop</span>
+                            {% elif rule.action == 'reject' %}
+                            <span class="badge bg-warning text-dark">Reject</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ rule.action }}</span>
+                            {% endif %}
+                        </td>
+                        <td><code>{{ rule.protocol }}</code></td>
+                        <td><small>{{ rule.ruleset }}</small></td>
+                        <td>
+                            {% if rule.enabled %}
+                            <span class="badge bg-success">Enabled</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Disabled</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+    const chartDefaults = {
+        plugins: { legend: { labels: { color: '#adb5bd' } } },
+        scales: {
+            x: { ticks: { color: '#adb5bd', font: { size: 10 }, maxTicksLimit: 12 }, grid: { color: '#2d3035' } },
+            y: { ticks: { color: '#adb5bd', font: { size: 11 } }, grid: { color: '#2d3035' } },
+        },
+        responsive: true,
+        maintainAspectRatio: false,
+    };
+
+    fetch('{{ url_for("unifi.site_chart_data") }}?timeframe=day')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error || !data.labels || data.labels.length === 0) return;
+
+            new Chart(document.getElementById('chartLatency'), {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        { label: 'Latency (ms)', data: data.wan_latency, borderColor: '#0dcaf0', tension: 0.3, pointRadius: 0, fill: true, backgroundColor: 'rgba(13,202,240,0.1)' },
+                    ]
+                },
+                options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, beginAtZero: true } } },
+            });
+
+            new Chart(document.getElementById('chartSiteClients'), {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        { label: 'Clients', data: data.clients, borderColor: '#198754', tension: 0.3, pointRadius: 0, fill: true, backgroundColor: 'rgba(25,135,84,0.15)' },
+                    ]
+                },
+                options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, beginAtZero: true } } },
+            });
+        })
+        .catch(() => {});
+})();
+</script>
+{% endblock %}

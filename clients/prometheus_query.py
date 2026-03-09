@@ -465,6 +465,89 @@ class PrometheusQueryClient:
 
         return {"snapshots": snapshots, "source": source}
 
+    # ----- UniFi -----
+
+    def get_unifi_device_history(self, device_mac, timeframe="day"):
+        """Query Prometheus for UniFi device performance metrics over time.
+
+        Returns Chart.js-ready JSON with CPU, memory, client count, TX/RX.
+        """
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        mac = device_mac.lower()
+
+        queries = {
+            "cpu": f'mstdnca_unifi_device_cpu_percent{{device_mac="{mac}"}}',
+            "memory": f'mstdnca_unifi_device_memory_percent{{device_mac="{mac}"}}',
+            "clients": f'mstdnca_unifi_device_clients{{device_mac="{mac}"}}',
+            "tx_bytes": f'mstdnca_unifi_device_tx_bytes{{device_mac="{mac}"}}',
+            "rx_bytes": f'mstdnca_unifi_device_rx_bytes{{device_mac="{mac}"}}',
+            "temperature": f'mstdnca_unifi_device_temperature_celsius{{device_mac="{mac}"}}',
+        }
+
+        all_series = {}
+        timestamps = []
+        for name, promql in queries.items():
+            result = self._range_single(promql, start, end, step)
+            all_series[name] = result.get("values", [])
+            if not timestamps and result.get("timestamps"):
+                timestamps = result["timestamps"]
+
+        utz = _user_tz()
+        labels = [
+            datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M")
+            for ts in timestamps
+        ]
+
+        return {
+            "labels": labels,
+            "cpu": all_series.get("cpu", []),
+            "memory": all_series.get("memory", []),
+            "clients": all_series.get("clients", []),
+            "tx_bytes": all_series.get("tx_bytes", []),
+            "rx_bytes": all_series.get("rx_bytes", []),
+            "temperature": all_series.get("temperature", []),
+        }
+
+    def get_unifi_site_history(self, site_name, timeframe="day"):
+        """Query Prometheus for aggregate UniFi site metrics over time.
+
+        Returns Chart.js-ready JSON with total clients, WAN latency, bandwidth.
+        """
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+
+        queries = {
+            "clients": f'mstdnca_unifi_client_count{{site_name="{site_name}"}}',
+            "devices": f'mstdnca_unifi_device_count{{site_name="{site_name}"}}',
+            "wan_latency": f'mstdnca_unifi_wan_latency_ms{{site_name="{site_name}"}}',
+            "wan_tx": f'mstdnca_unifi_wan_tx_bytes_per_sec{{site_name="{site_name}"}}',
+            "wan_rx": f'mstdnca_unifi_wan_rx_bytes_per_sec{{site_name="{site_name}"}}',
+            "speedtest_dl": f'mstdnca_unifi_speedtest_download_mbps{{site_name="{site_name}"}}',
+            "speedtest_ul": f'mstdnca_unifi_speedtest_upload_mbps{{site_name="{site_name}"}}',
+        }
+
+        all_series = {}
+        timestamps = []
+        for name, promql in queries.items():
+            result = self._range_single(promql, start, end, step)
+            all_series[name] = result.get("values", [])
+            if not timestamps and result.get("timestamps"):
+                timestamps = result["timestamps"]
+
+        utz = _user_tz()
+        labels = [
+            datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(utz).strftime("%Y-%m-%d %H:%M")
+            for ts in timestamps
+        ]
+
+        return {
+            "labels": labels,
+            **all_series,
+        }
+
     # ----- internal -----
 
     def _range_single(self, promql, start, end, step):
