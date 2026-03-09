@@ -347,7 +347,7 @@ def send_upgrade_started_notification(service, version, trigger):
         return False, f"{service} upgrade-started notifications disabled"
 
     label = service.capitalize()
-    _icons = {"mastodon": "\U0001f43b", "ghost": "\U0001f47b", "peertube": "\U0001f3ac", "elk": "\U0001f98c", "jitsi": "\U0001f4f9"}
+    _icons = {"mastodon": "\U0001f43b", "ghost": "\U0001f47b", "peertube": "\U0001f3ac", "elk": "\U0001f98c", "jitsi": "\U0001f4f9", "prometheus": "\U0001f4ca"}
     icon = _icons.get(service, "\U0001f4e6")
     trigger_label = "Automatic" if trigger == "auto" else "Manual"
     version_str = f" to v{version}" if version else ""
@@ -387,7 +387,7 @@ def send_upgrade_result_notification(service, version, success, trigger):
         return False, f"{service} upgrade-result notifications disabled"
 
     label = service.capitalize()
-    _icons = {"mastodon": "\U0001f43b", "ghost": "\U0001f47b", "peertube": "\U0001f3ac", "elk": "\U0001f98c", "jitsi": "\U0001f4f9"}
+    _icons = {"mastodon": "\U0001f43b", "ghost": "\U0001f47b", "peertube": "\U0001f3ac", "elk": "\U0001f98c", "jitsi": "\U0001f4f9", "prometheus": "\U0001f4ca"}
     icon = _icons.get(service, "\U0001f4e6")
     trigger_label = "Automatic" if trigger == "auto" else "Manual"
     version_str = f" to v{version}" if version else ""
@@ -414,6 +414,43 @@ def send_upgrade_result_notification(service, version, success, trigger):
         logger.info(f"{label} upgrade-result notification sent (success={success})")
     else:
         logger.error(f"Failed to send {label} upgrade-result notification: {msg}")
+    return ok, msg
+
+
+def send_exporter_notification(action, exporter_type, guest_name, success):
+    """Send notification about a Prometheus exporter install/uninstall.
+
+    action: "install" or "uninstall"
+    exporter_type: e.g. "node_exporter", "postgres_exporter", "mastodon"
+    guest_name: name of the guest the exporter is on
+    success: True if operation succeeded
+    """
+    setting_key = "discord_notify_prometheus_upgrade_result"
+    if Setting.get(setting_key, "true") != "true":
+        return False, "Prometheus operation-result notifications disabled"
+
+    icon = "\U0001f4ca"
+    action_label = action.capitalize()
+    color = _COLOR_GREEN if success else _COLOR_RED
+    status_label = "succeeded" if success else "failed"
+
+    embeds = [{
+        "title": f"{icon} Exporter {action} {status_label}: {exporter_type}",
+        "color": color,
+        "fields": [
+            {"name": "Exporter", "value": exporter_type, "inline": True},
+            {"name": "Guest", "value": guest_name, "inline": True},
+            {"name": "Action", "value": action_label, "inline": True},
+            {"name": "Result", "value": "Success" if success else "Failed", "inline": True},
+        ],
+        "footer": {"text": "Sent by Mastodon Canada Administration Tool"},
+    }]
+
+    ok, msg = _send_discord(embeds)
+    if ok:
+        logger.info(f"Exporter {action} notification sent ({exporter_type} on {guest_name})")
+    else:
+        logger.error(f"Failed to send exporter {action} notification: {msg}")
     return ok, msg
 
 

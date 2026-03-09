@@ -8,6 +8,11 @@ network activity occurs.  The test suite exercises:
 - send_host_update_notification
 - send_mastodon_update_notification
 - send_ghost_update_notification
+- send_peertube_update_notification
+- send_elk_update_notification
+- send_jitsi_update_notification
+- send_upgrade_started_notification / send_upgrade_result_notification
+- send_exporter_notification
 - send_app_update_notification
 - Error handling: HTTP errors, network exceptions, disabled / unconfigured states
 """
@@ -25,6 +30,12 @@ from core.notifier import (
     send_host_update_notification,
     send_mastodon_update_notification,
     send_ghost_update_notification,
+    send_peertube_update_notification,
+    send_elk_update_notification,
+    send_jitsi_update_notification,
+    send_upgrade_started_notification,
+    send_upgrade_result_notification,
+    send_exporter_notification,
     send_app_update_notification,
 )
 
@@ -1047,6 +1058,649 @@ class TestSendGhostUpdateNotification:
         body = json.loads(captured[0].data.decode())
         desc = body["embeds"][0]["description"]
         assert "Log in" in desc
+
+
+# ---------------------------------------------------------------------------
+# send_peertube_update_notification
+# ---------------------------------------------------------------------------
+
+class TestSendPeertubeUpdateNotification:
+    def _enable(self, app):
+        Setting.set("discord_enabled", "true")
+        Setting.set("discord_webhook_url", "https://discord.com/api/webhooks/1/tok")
+        Setting.set("discord_notify_peertube", "true")
+
+    def test_happy_path_returns_ok_true(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                ok, msg = send_peertube_update_notification("5.0.0", "6.0.0", "https://github.com/r")
+
+        assert ok is True
+
+    def test_disabled_returns_false(self, app):
+        with app.app_context():
+            Setting.set("discord_notify_peertube", "false")
+            ok, msg = send_peertube_update_notification("5.0.0", "6.0.0", None)
+
+        assert ok is False
+        assert "disabled" in msg.lower()
+
+    def test_embed_title_contains_new_version(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_peertube_update_notification("5.0.0", "6.0.0", None)
+
+        body = json.loads(captured[0].data.decode())
+        assert "6.0.0" in body["embeds"][0]["title"]
+
+    def test_fields_contain_both_versions(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_peertube_update_notification("5.0.0", "6.0.0", None)
+
+        body = json.loads(captured[0].data.decode())
+        values = [f["value"] for f in body["embeds"][0]["fields"]]
+        assert any("5.0.0" in v for v in values)
+        assert any("6.0.0" in v for v in values)
+
+    def test_release_url_included_in_fields(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        url = "https://github.com/Chocobozzz/PeerTube/releases/v6.0.0"
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_peertube_update_notification("5.0.0", "6.0.0", url)
+
+        body = json.loads(captured[0].data.decode())
+        assert any(url in f["value"] for f in body["embeds"][0]["fields"])
+
+    def test_auto_upgrade_note_in_description(self, app):
+        with app.app_context():
+            self._enable(app)
+            Setting.set("peertube_auto_upgrade", "true")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_peertube_update_notification("5.0.0", "6.0.0", None)
+
+        body = json.loads(captured[0].data.decode())
+        desc = body["embeds"][0]["description"]
+        assert "auto" in desc.lower() or "Auto" in desc
+
+
+# ---------------------------------------------------------------------------
+# send_elk_update_notification
+# ---------------------------------------------------------------------------
+
+class TestSendElkUpdateNotification:
+    def _enable(self, app):
+        Setting.set("discord_enabled", "true")
+        Setting.set("discord_webhook_url", "https://discord.com/api/webhooks/1/tok")
+        Setting.set("discord_notify_elk", "true")
+
+    def test_happy_path_returns_ok_true(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                ok, msg = send_elk_update_notification("0.11.0", "0.12.0", "https://github.com/r")
+
+        assert ok is True
+
+    def test_disabled_returns_false(self, app):
+        with app.app_context():
+            Setting.set("discord_notify_elk", "false")
+            ok, msg = send_elk_update_notification("0.11.0", "0.12.0", None)
+
+        assert ok is False
+        assert "disabled" in msg.lower()
+
+    def test_embed_title_contains_new_version(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_elk_update_notification("0.11.0", "0.12.0", None)
+
+        body = json.loads(captured[0].data.decode())
+        assert "0.12.0" in body["embeds"][0]["title"]
+
+    def test_fields_contain_both_versions(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_elk_update_notification("0.11.0", "0.12.0", None)
+
+        body = json.loads(captured[0].data.decode())
+        values = [f["value"] for f in body["embeds"][0]["fields"]]
+        assert any("0.11.0" in v for v in values)
+        assert any("0.12.0" in v for v in values)
+
+    def test_release_url_included_in_fields(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        url = "https://github.com/elk-zone/elk/releases/v0.12.0"
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_elk_update_notification("0.11.0", "0.12.0", url)
+
+        body = json.loads(captured[0].data.decode())
+        assert any(url in f["value"] for f in body["embeds"][0]["fields"])
+
+    def test_auto_upgrade_note_in_description(self, app):
+        with app.app_context():
+            self._enable(app)
+            Setting.set("elk_auto_upgrade", "true")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_elk_update_notification("0.11.0", "0.12.0", None)
+
+        body = json.loads(captured[0].data.decode())
+        desc = body["embeds"][0]["description"]
+        assert "auto" in desc.lower() or "Auto" in desc
+
+
+# ---------------------------------------------------------------------------
+# send_jitsi_update_notification
+# ---------------------------------------------------------------------------
+
+class TestSendJitsiUpdateNotification:
+    def _enable(self, app):
+        Setting.set("discord_enabled", "true")
+        Setting.set("discord_webhook_url", "https://discord.com/api/webhooks/1/tok")
+        Setting.set("discord_notify_jitsi", "true")
+
+    def test_happy_path_returns_ok_true(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                ok, msg = send_jitsi_update_notification("2.0.9location", "2.0.10location", None)
+
+        assert ok is True
+
+    def test_disabled_returns_false(self, app):
+        with app.app_context():
+            Setting.set("discord_notify_jitsi", "false")
+            ok, msg = send_jitsi_update_notification("2.0.9", "2.0.10", None)
+
+        assert ok is False
+        assert "disabled" in msg.lower()
+
+    def test_embed_title_contains_new_version(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_jitsi_update_notification("2.0.9", "2.0.10", None)
+
+        body = json.loads(captured[0].data.decode())
+        assert "2.0.10" in body["embeds"][0]["title"]
+
+    def test_fields_contain_both_versions(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_jitsi_update_notification("2.0.9", "2.0.10", None)
+
+        body = json.loads(captured[0].data.decode())
+        values = [f["value"] for f in body["embeds"][0]["fields"]]
+        assert any("2.0.9" in v for v in values)
+        assert any("2.0.10" in v for v in values)
+
+    def test_auto_upgrade_note_in_description(self, app):
+        with app.app_context():
+            self._enable(app)
+            Setting.set("jitsi_auto_upgrade", "true")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_jitsi_update_notification("2.0.9", "2.0.10", None)
+
+        body = json.loads(captured[0].data.decode())
+        desc = body["embeds"][0]["description"]
+        assert "auto" in desc.lower() or "Auto" in desc
+
+
+# ---------------------------------------------------------------------------
+# send_upgrade_started_notification
+# ---------------------------------------------------------------------------
+
+class TestSendUpgradeStartedNotification:
+    def _enable(self, app, service="mastodon"):
+        Setting.set("discord_enabled", "true")
+        Setting.set("discord_webhook_url", "https://discord.com/api/webhooks/1/tok")
+        Setting.set(f"discord_notify_{service}_upgrade_started", "true")
+
+    def test_happy_path_returns_ok_true(self, app):
+        with app.app_context():
+            self._enable(app, "mastodon")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                ok, msg = send_upgrade_started_notification("mastodon", "4.3.0", "manual")
+
+        assert ok is True
+
+    def test_disabled_returns_false(self, app):
+        with app.app_context():
+            Setting.set("discord_notify_ghost_upgrade_started", "false")
+            ok, msg = send_upgrade_started_notification("ghost", "5.1.0", "manual")
+
+        assert ok is False
+        assert "disabled" in msg.lower()
+
+    def test_embed_title_contains_service_and_version(self, app):
+        with app.app_context():
+            self._enable(app, "peertube")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_upgrade_started_notification("peertube", "6.0.0", "manual")
+
+        body = json.loads(captured[0].data.decode())
+        title = body["embeds"][0]["title"]
+        assert "Peertube" in title
+        assert "6.0.0" in title
+
+    def test_auto_trigger_label(self, app):
+        with app.app_context():
+            self._enable(app, "elk")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_upgrade_started_notification("elk", "0.12.0", "auto")
+
+        body = json.loads(captured[0].data.decode())
+        values = [f["value"] for f in body["embeds"][0]["fields"]]
+        assert any("Automatic" in v for v in values)
+
+    def test_works_for_all_services(self, app):
+        for service in ["mastodon", "ghost", "peertube", "elk", "jitsi", "prometheus"]:
+            with app.app_context():
+                self._enable(app, service)
+
+            fake_resp = _make_urlopen_mock(status=204)
+            with patch("urllib.request.urlopen", return_value=fake_resp):
+                with app.app_context():
+                    ok, msg = send_upgrade_started_notification(service, "1.0.0", "manual")
+
+            assert ok is True, f"Failed for service: {service}"
+
+    def test_empty_version_omits_version_from_title(self, app):
+        with app.app_context():
+            self._enable(app, "prometheus")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_upgrade_started_notification("prometheus", "", "manual")
+
+        body = json.loads(captured[0].data.decode())
+        title = body["embeds"][0]["title"]
+        assert "to v" not in title
+
+
+# ---------------------------------------------------------------------------
+# send_upgrade_result_notification
+# ---------------------------------------------------------------------------
+
+class TestSendUpgradeResultNotification:
+    def _enable(self, app, service="mastodon"):
+        Setting.set("discord_enabled", "true")
+        Setting.set("discord_webhook_url", "https://discord.com/api/webhooks/1/tok")
+        Setting.set(f"discord_notify_{service}_upgrade_result", "true")
+
+    def test_success_returns_ok_true(self, app):
+        with app.app_context():
+            self._enable(app, "ghost")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                ok, msg = send_upgrade_result_notification("ghost", "5.1.0", True, "manual")
+
+        assert ok is True
+
+    def test_failure_returns_ok_true(self, app):
+        with app.app_context():
+            self._enable(app, "ghost")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                ok, msg = send_upgrade_result_notification("ghost", "5.1.0", False, "manual")
+
+        assert ok is True
+
+    def test_disabled_returns_false(self, app):
+        with app.app_context():
+            Setting.set("discord_notify_peertube_upgrade_result", "false")
+            ok, msg = send_upgrade_result_notification("peertube", "6.0.0", True, "manual")
+
+        assert ok is False
+        assert "disabled" in msg.lower()
+
+    def test_success_uses_green_color(self, app):
+        with app.app_context():
+            self._enable(app, "mastodon")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_upgrade_result_notification("mastodon", "4.3.0", True, "manual")
+
+        body = json.loads(captured[0].data.decode())
+        assert body["embeds"][0]["color"] == 8505220  # _COLOR_GREEN
+
+    def test_failure_uses_red_color(self, app):
+        with app.app_context():
+            self._enable(app, "mastodon")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_upgrade_result_notification("mastodon", "4.3.0", False, "manual")
+
+        body = json.loads(captured[0].data.decode())
+        assert body["embeds"][0]["color"] == 14431557  # _COLOR_RED
+
+    def test_title_contains_succeeded_on_success(self, app):
+        with app.app_context():
+            self._enable(app, "jitsi")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_upgrade_result_notification("jitsi", "2.0.10", True, "auto")
+
+        body = json.loads(captured[0].data.decode())
+        assert "succeeded" in body["embeds"][0]["title"]
+
+    def test_title_contains_failed_on_failure(self, app):
+        with app.app_context():
+            self._enable(app, "jitsi")
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_upgrade_result_notification("jitsi", "2.0.10", False, "auto")
+
+        body = json.loads(captured[0].data.decode())
+        assert "failed" in body["embeds"][0]["title"]
+
+    def test_works_for_all_services(self, app):
+        for service in ["mastodon", "ghost", "peertube", "elk", "jitsi", "prometheus"]:
+            with app.app_context():
+                self._enable(app, service)
+
+            fake_resp = _make_urlopen_mock(status=204)
+            with patch("urllib.request.urlopen", return_value=fake_resp):
+                with app.app_context():
+                    ok, msg = send_upgrade_result_notification(service, "1.0.0", True, "manual")
+
+            assert ok is True, f"Failed for service: {service}"
+
+
+# ---------------------------------------------------------------------------
+# send_exporter_notification
+# ---------------------------------------------------------------------------
+
+class TestSendExporterNotification:
+    def _enable(self, app):
+        Setting.set("discord_enabled", "true")
+        Setting.set("discord_webhook_url", "https://discord.com/api/webhooks/1/tok")
+        Setting.set("discord_notify_prometheus_upgrade_result", "true")
+
+    def test_install_success_returns_ok_true(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                ok, msg = send_exporter_notification("install", "node_exporter", "web-01", True)
+
+        assert ok is True
+
+    def test_uninstall_success_returns_ok_true(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            with app.app_context():
+                ok, msg = send_exporter_notification("uninstall", "postgres_exporter", "db-01", True)
+
+        assert ok is True
+
+    def test_disabled_returns_false(self, app):
+        with app.app_context():
+            Setting.set("discord_notify_prometheus_upgrade_result", "false")
+            ok, msg = send_exporter_notification("install", "node_exporter", "web-01", True)
+
+        assert ok is False
+        assert "disabled" in msg.lower()
+
+    def test_install_failure_uses_red_color(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_exporter_notification("install", "node_exporter", "web-01", False)
+
+        body = json.loads(captured[0].data.decode())
+        assert body["embeds"][0]["color"] == 14431557  # _COLOR_RED
+
+    def test_install_success_uses_green_color(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_exporter_notification("install", "node_exporter", "web-01", True)
+
+        body = json.loads(captured[0].data.decode())
+        assert body["embeds"][0]["color"] == 8505220  # _COLOR_GREEN
+
+    def test_title_contains_exporter_type_and_action(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_exporter_notification("install", "redis_exporter", "cache-01", True)
+
+        body = json.loads(captured[0].data.decode())
+        title = body["embeds"][0]["title"]
+        assert "redis_exporter" in title
+        assert "install" in title.lower()
+
+    def test_fields_contain_guest_name(self, app):
+        with app.app_context():
+            self._enable(app)
+
+        fake_resp = _make_urlopen_mock(status=204)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return fake_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with app.app_context():
+                send_exporter_notification("install", "node_exporter", "my-guest", True)
+
+        body = json.loads(captured[0].data.decode())
+        values = [f["value"] for f in body["embeds"][0]["fields"]]
+        assert any("my-guest" in v for v in values)
 
 
 # ---------------------------------------------------------------------------

@@ -72,6 +72,66 @@
                             <label class="form-check-label" for="discordNotifyGhostUpgradeResult">Ghost upgrade result (success/failure)</label>
                         </div>
                         <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_peertube" id="discordNotifyPeertube"
+                                {{ 'checked' if settings.discord_notify_peertube != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyPeertube">PeerTube version updates</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_peertube_upgrade_started" id="discordNotifyPeertubeUpgradeStarted"
+                                {{ 'checked' if settings.discord_notify_peertube_upgrade_started != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyPeertubeUpgradeStarted">PeerTube upgrade started</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_peertube_upgrade_result" id="discordNotifyPeertubeUpgradeResult"
+                                {{ 'checked' if settings.discord_notify_peertube_upgrade_result != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyPeertubeUpgradeResult">PeerTube upgrade result (success/failure)</label>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_elk" id="discordNotifyElk"
+                                {{ 'checked' if settings.discord_notify_elk != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyElk">Elk version updates</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_elk_upgrade_started" id="discordNotifyElkUpgradeStarted"
+                                {{ 'checked' if settings.discord_notify_elk_upgrade_started != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyElkUpgradeStarted">Elk upgrade started</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_elk_upgrade_result" id="discordNotifyElkUpgradeResult"
+                                {{ 'checked' if settings.discord_notify_elk_upgrade_result != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyElkUpgradeResult">Elk upgrade result (success/failure)</label>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_jitsi" id="discordNotifyJitsi"
+                                {{ 'checked' if settings.discord_notify_jitsi != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyJitsi">Jitsi Meet version updates</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_jitsi_upgrade_started" id="discordNotifyJitsiUpgradeStarted"
+                                {{ 'checked' if settings.discord_notify_jitsi_upgrade_started != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyJitsiUpgradeStarted">Jitsi Meet upgrade started</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_jitsi_upgrade_result" id="discordNotifyJitsiUpgradeResult"
+                                {{ 'checked' if settings.discord_notify_jitsi_upgrade_result != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyJitsiUpgradeResult">Jitsi Meet upgrade result (success/failure)</label>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_prometheus" id="discordNotifyPrometheus"
+                                {{ 'checked' if settings.discord_notify_prometheus != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyPrometheus">Prometheus install &amp; exporter changes</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_prometheus_upgrade_started" id="discordNotifyPrometheusUpgradeStarted"
+                                {{ 'checked' if settings.discord_notify_prometheus_upgrade_started != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyPrometheusUpgradeStarted">Prometheus operation started</label>
+                        </div>
+                        <div class="form-check ms-4 mb-1">
+                            <input type="checkbox" class="form-check-input" name="discord_notify_prometheus_upgrade_result" id="discordNotifyPrometheusUpgradeResult"
+                                {{ 'checked' if settings.discord_notify_prometheus_upgrade_result != 'false' }}>
+                            <label class="form-check-label" for="discordNotifyPrometheusUpgradeResult">Prometheus operation result (success/failure)</label>
+                        </div>
+                        <div class="form-check">
                             <input type="checkbox" class="form-check-input" name="discord_notify_app" id="discordNotifyApp"
                                 {{ 'checked' if settings.discord_notify_app != 'false' }}>
                             <label class="form-check-label" for="discordNotifyApp">MCAT application updates</label>

@@ -310,9 +310,11 @@ def install():
     _app = current_app._get_current_object()
 
     def _bg():
+        from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
         ok = False
         try:
             with _app.app_context():
+                send_upgrade_started_notification("prometheus", "", "manual")
                 ok, _ = run_prometheus_install(log_callback=_cb)
         except Exception as e:
             _cb(f"FATAL ERROR: {e}")
@@ -320,6 +322,7 @@ def install():
         _install_job["running"] = False
         _install_job["success"] = ok
         with _app.app_context():
+            send_upgrade_result_notification("prometheus", "", ok, "manual")
             now = datetime.now(timezone.utc).isoformat()
             Setting.set("prometheus_last_install_at", now)
             Setting.set("prometheus_last_install_status", "success" if ok else "error")
@@ -356,9 +359,11 @@ def upgrade():
     _app = current_app._get_current_object()
 
     def _bg():
+        from core.notifier import send_upgrade_started_notification, send_upgrade_result_notification
         ok = False
         try:
             with _app.app_context():
+                send_upgrade_started_notification("prometheus", "", "manual")
                 ok, _ = run_prometheus_upgrade(log_callback=_cb)
         except Exception as e:
             _cb(f"FATAL ERROR: {e}")
@@ -366,6 +371,7 @@ def upgrade():
         _upgrade_job["running"] = False
         _upgrade_job["success"] = ok
         with _app.app_context():
+            send_upgrade_result_notification("prometheus", "", ok, "manual")
             now = datetime.now(timezone.utc).isoformat()
             Setting.set("prometheus_last_upgrade_at", now)
             Setting.set("prometheus_last_upgrade_status", "success" if ok else "error")
@@ -492,6 +498,7 @@ def exporter_install(instance_id):
 
     def _bg():
         from apps.exporters import run_exporter_install
+        from core.notifier import send_exporter_notification
         def _cb(msg):
             _exporter_install_job["log"].append(msg)
         try:
@@ -503,6 +510,7 @@ def exporter_install(instance_id):
         _exporter_install_job["running"] = False
         _exporter_install_job["success"] = ok
         with _app.app_context():
+            send_exporter_notification("install", _etype, _guest_name, ok)
             log_action("exporter_install", "guest", resource_id=_guest_id,
                        resource_name=_guest_name,
                        details={"exporter_type": _etype, "status": "success" if ok else "error"})
@@ -542,6 +550,7 @@ def exporter_uninstall(instance_id):
 
     def _bg():
         from apps.exporters import run_exporter_uninstall
+        from core.notifier import send_exporter_notification
         def _cb(msg):
             _exporter_uninstall_job["log"].append(msg)
         try:
@@ -553,6 +562,7 @@ def exporter_uninstall(instance_id):
         _exporter_uninstall_job["running"] = False
         _exporter_uninstall_job["success"] = ok
         with _app.app_context():
+            send_exporter_notification("uninstall", _etype, _guest_name, ok)
             log_action("exporter_uninstall", "guest", resource_id=_guest_id,
                        resource_name=_guest_name,
                        details={"exporter_type": _etype, "status": "success" if ok else "error"})

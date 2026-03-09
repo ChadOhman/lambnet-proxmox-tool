@@ -43,6 +43,18 @@ def _get_settings_dict():
         "discord_notify_ghost": Setting.get("discord_notify_ghost", "true"),
         "discord_notify_ghost_upgrade_started": Setting.get("discord_notify_ghost_upgrade_started", "true"),
         "discord_notify_ghost_upgrade_result": Setting.get("discord_notify_ghost_upgrade_result", "true"),
+        "discord_notify_peertube": Setting.get("discord_notify_peertube", "true"),
+        "discord_notify_peertube_upgrade_started": Setting.get("discord_notify_peertube_upgrade_started", "true"),
+        "discord_notify_peertube_upgrade_result": Setting.get("discord_notify_peertube_upgrade_result", "true"),
+        "discord_notify_elk": Setting.get("discord_notify_elk", "true"),
+        "discord_notify_elk_upgrade_started": Setting.get("discord_notify_elk_upgrade_started", "true"),
+        "discord_notify_elk_upgrade_result": Setting.get("discord_notify_elk_upgrade_result", "true"),
+        "discord_notify_jitsi": Setting.get("discord_notify_jitsi", "true"),
+        "discord_notify_jitsi_upgrade_started": Setting.get("discord_notify_jitsi_upgrade_started", "true"),
+        "discord_notify_jitsi_upgrade_result": Setting.get("discord_notify_jitsi_upgrade_result", "true"),
+        "discord_notify_prometheus": Setting.get("discord_notify_prometheus", "true"),
+        "discord_notify_prometheus_upgrade_started": Setting.get("discord_notify_prometheus_upgrade_started", "true"),
+        "discord_notify_prometheus_upgrade_result": Setting.get("discord_notify_prometheus_upgrade_result", "true"),
         "discord_notify_app": Setting.get("discord_notify_app", "true"),
         "scan_interval": Setting.get("scan_interval", "6"),
         "scan_enabled": Setting.get("scan_enabled", "true"),
@@ -145,6 +157,18 @@ def save_discord():
     notify_ghost = "discord_notify_ghost" in request.form
     notify_ghost_upgrade_started = "discord_notify_ghost_upgrade_started" in request.form
     notify_ghost_upgrade_result = "discord_notify_ghost_upgrade_result" in request.form
+    notify_peertube = "discord_notify_peertube" in request.form
+    notify_peertube_upgrade_started = "discord_notify_peertube_upgrade_started" in request.form
+    notify_peertube_upgrade_result = "discord_notify_peertube_upgrade_result" in request.form
+    notify_elk = "discord_notify_elk" in request.form
+    notify_elk_upgrade_started = "discord_notify_elk_upgrade_started" in request.form
+    notify_elk_upgrade_result = "discord_notify_elk_upgrade_result" in request.form
+    notify_jitsi = "discord_notify_jitsi" in request.form
+    notify_jitsi_upgrade_started = "discord_notify_jitsi_upgrade_started" in request.form
+    notify_jitsi_upgrade_result = "discord_notify_jitsi_upgrade_result" in request.form
+    notify_prometheus = "discord_notify_prometheus" in request.form
+    notify_prometheus_upgrade_started = "discord_notify_prometheus_upgrade_started" in request.form
+    notify_prometheus_upgrade_result = "discord_notify_prometheus_upgrade_result" in request.form
     notify_app = "discord_notify_app" in request.form
 
     if webhook_url:
@@ -158,6 +182,18 @@ def save_discord():
     Setting.set("discord_notify_ghost", "true" if notify_ghost else "false")
     Setting.set("discord_notify_ghost_upgrade_started", "true" if notify_ghost_upgrade_started else "false")
     Setting.set("discord_notify_ghost_upgrade_result", "true" if notify_ghost_upgrade_result else "false")
+    Setting.set("discord_notify_peertube", "true" if notify_peertube else "false")
+    Setting.set("discord_notify_peertube_upgrade_started", "true" if notify_peertube_upgrade_started else "false")
+    Setting.set("discord_notify_peertube_upgrade_result", "true" if notify_peertube_upgrade_result else "false")
+    Setting.set("discord_notify_elk", "true" if notify_elk else "false")
+    Setting.set("discord_notify_elk_upgrade_started", "true" if notify_elk_upgrade_started else "false")
+    Setting.set("discord_notify_elk_upgrade_result", "true" if notify_elk_upgrade_result else "false")
+    Setting.set("discord_notify_jitsi", "true" if notify_jitsi else "false")
+    Setting.set("discord_notify_jitsi_upgrade_started", "true" if notify_jitsi_upgrade_started else "false")
+    Setting.set("discord_notify_jitsi_upgrade_result", "true" if notify_jitsi_upgrade_result else "false")
+    Setting.set("discord_notify_prometheus", "true" if notify_prometheus else "false")
+    Setting.set("discord_notify_prometheus_upgrade_started", "true" if notify_prometheus_upgrade_started else "false")
+    Setting.set("discord_notify_prometheus_upgrade_result", "true" if notify_prometheus_upgrade_result else "false")
     Setting.set("discord_notify_app", "true" if notify_app else "false")
 
     log_action("settings_discord_save", "settings", resource_name="discord")
