@@ -131,10 +131,10 @@
                                 {{ 'checked' if settings.discord_notify_prometheus_upgrade_result != 'false' }}>
                             <label class="form-check-label" for="discordNotifyPrometheusUpgradeResult">Prometheus operation result (success/failure)</label>
                         </div>
-                        <div class="form-check ms-4 mb-1">
+                        <div class="form-check">
                             <input type="checkbox" class="form-check-input" name="discord_notify_unpoller_upgrade_started" id="discordNotifyUnpollerUpgradeStarted"
                                 {{ 'checked' if settings.discord_notify_unpoller_upgrade_started != 'false' }}>
-                            <label class="form-check-label" for="discordNotifyUnpollerUpgradeStarted">Unpoller install/upgrade started</label>
+                            <label class="form-check-label" for="discordNotifyUnpollerUpgradeStarted">Unpoller (UniFi) install/upgrade started</label>
                         </div>
                         <div class="form-check ms-4 mb-1">
                             <input type="checkbox" class="form-check-input" name="discord_notify_unpoller_upgrade_result" id="discordNotifyUnpollerUpgradeResult"
