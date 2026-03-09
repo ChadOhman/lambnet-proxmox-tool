@@ -81,12 +81,12 @@
                         </td>
                         <td>
                             {% if client.first_seen %}
-                            <small>{{ client.first_seen | timestamp_to_datetime | local_dt("%Y-%m-%d %H:%M") }}</small>
+                            <small>{{ client.first_seen | timestamp_to_datetime }}</small>
                             {% else %}-{% endif %}
                         </td>
                         <td>
                             {% if client.last_seen %}
-                            <small>{{ client.last_seen | timestamp_to_datetime | local_dt("%Y-%m-%d %H:%M") }}</small>
+                            <small>{{ client.last_seen | timestamp_to_datetime }}</small>
                             {% else %}-{% endif %}
                         </td>
                         <td class="text-end">

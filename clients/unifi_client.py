@@ -291,8 +291,18 @@ class UniFiClient:
         return [self._parse_client(c) for c in raw]
 
     def get_dpi_stats(self):
-        """Fetch site-level DPI (Deep Packet Inspection) category breakdown."""
-        raw = self._api_get(f"/api/s/{self.site}/stat/sitedpi")
+        """Fetch site-level DPI (Deep Packet Inspection) category breakdown.
+
+        UDM controllers require a POST with type parameter; legacy may accept GET.
+        """
+        # UDM requires POST with type
+        raw = self._api_post_data(
+            f"/api/s/{self.site}/stat/sitedpi",
+            {"type": "by_cat"},
+        )
+        if raw is None:
+            # Fallback to GET for legacy controllers
+            raw = self._api_get(f"/api/s/{self.site}/stat/sitedpi")
         if raw is None:
             return []
         return raw

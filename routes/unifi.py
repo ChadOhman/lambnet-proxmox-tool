@@ -305,7 +305,8 @@ def device_detail(mac):
     all_clients = client.get_clients() or []
     device_clients = [
         c for c in all_clients
-        if c.get("ap_mac", "").lower() == mac.lower() or c.get("sw_mac", "").lower() == mac.lower()
+        if (c.get("ap_mac") or "").lower() == mac.lower()
+        or (c.get("sw_mac") or "").lower() == mac.lower()
     ]
 
     # Network access control
@@ -346,6 +347,28 @@ def health():
         name = sub.get("subsystem", "")
         if name:
             subsystems[name] = sub
+
+    # Normalize WAN fields — UDM uses different keys than legacy controllers
+    if "wan" in subsystems:
+        wan = subsystems["wan"]
+        # Latency: UDM may use "internet" or "latency" or "wan1_latency"
+        if "latency" not in wan:
+            wan["latency"] = wan.get("internet_latency") or wan.get("wan1_latency")
+        # Uptime: may be "uptime" or "wan_uptime"
+        if "uptime" not in wan:
+            wan["uptime"] = wan.get("wan_uptime")
+        # Speedtest: may use different naming
+        if "speedtest_lastrun_download" not in wan:
+            wan["speedtest_lastrun_download"] = wan.get("xput_down")
+        if "speedtest_lastrun_upload" not in wan:
+            wan["speedtest_lastrun_upload"] = wan.get("xput_up")
+        # WAN IP
+        if "wan_ip" not in wan:
+            wan["wan_ip"] = wan.get("gw") or wan.get("ip")
+        # ISP
+        if "isp_name" not in wan:
+            wan["isp_name"] = wan.get("isp_organization") or wan.get("ISP")
+        logger.debug("WAN health keys: %s", list(wan.keys()))
 
     return render_template(
         "unifi_health.html",
