@@ -418,7 +418,6 @@ class PrometheusQueryClient:
             ),
             "db_pool_waiting": f'sum(ruby_active_record_connection_pool_waiting{{{inst}}})',
             # -- Ruby runtime --
-            "ruby_gc_rate": f'sum(rate(ruby_gc_count{{{inst}}}[{ri}]))',
             "ruby_heap_live_slots": f'sum(ruby_heap_live_slots{{{inst}}})',
             "ruby_allocations_rate": f'sum(rate(ruby_allocations{{{inst}}}[{ri}]))',
         }

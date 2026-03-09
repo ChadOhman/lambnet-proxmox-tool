@@ -1074,19 +1074,15 @@
         </div>
         <div id="dbRuntimeCharts" class="d-none">
             <div class="row g-3">
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <div class="text-muted small mb-1">DB Pool Utilization (%)</div>
                     <canvas id="db-chart-pool" height="120" role="img" aria-label="Database connection pool utilization over time"></canvas>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <div class="text-muted small mb-1">DB Pool Waiting</div>
                     <canvas id="db-chart-waiting" height="120" role="img" aria-label="Database pool waiting connections over time"></canvas>
                 </div>
-                <div class="col-md-3">
-                    <div class="text-muted small mb-1">GC Rate (gc/sec)</div>
-                    <canvas id="ruby-chart-gc" height="120" role="img" aria-label="Ruby garbage collection rate over time"></canvas>
-                </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <div class="text-muted small mb-1">Heap Live Slots</div>
                     <canvas id="ruby-chart-heap" height="120" role="img" aria-label="Ruby heap live slots over time"></canvas>
                 </div>
@@ -1343,19 +1339,15 @@
         </div>
         <div id="dbRuntimeCharts" class="d-none">
             <div class="row g-3">
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <div class="text-muted small mb-1">DB Pool Utilization (%)</div>
                     <canvas id="db-chart-pool" height="120" role="img" aria-label="Database connection pool utilization over time"></canvas>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <div class="text-muted small mb-1">DB Pool Waiting</div>
                     <canvas id="db-chart-waiting" height="120" role="img" aria-label="Database pool waiting connections over time"></canvas>
                 </div>
-                <div class="col-md-3">
-                    <div class="text-muted small mb-1">GC Rate (gc/sec)</div>
-                    <canvas id="ruby-chart-gc" height="120" role="img" aria-label="Ruby garbage collection rate over time"></canvas>
-                </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <div class="text-muted small mb-1">Heap Live Slots</div>
                     <canvas id="ruby-chart-heap" height="120" role="img" aria-label="Ruby heap live slots over time"></canvas>
                 </div>
@@ -3117,12 +3109,10 @@ function _loadDbRuntimeCharts(snaps, labels) {
 
     const poolUtil = snaps.map(s => s.db_pool_utilization != null ? +Number(s.db_pool_utilization).toFixed(1) : null);
     const poolWait = snaps.map(s => s.db_pool_waiting ?? null);
-    const gcRate = snaps.map(s => s.ruby_gc_rate != null ? +Number(s.ruby_gc_rate).toFixed(2) : null);
     const heapSlots = snaps.map(s => s.ruby_heap_live_slots ?? null);
 
     _dbRtCharts.pool = makeOrUpdate(_dbRtCharts.pool, 'db-chart-pool', 'Utilization %', poolUtil, '#22c55e', v => v + '%');
     _dbRtCharts.waiting = makeOrUpdate(_dbRtCharts.waiting, 'db-chart-waiting', 'Waiting', poolWait, '#ef4444');
-    _dbRtCharts.gc = makeOrUpdate(_dbRtCharts.gc, 'ruby-chart-gc', 'GC/sec', gcRate, '#f59e0b');
     _dbRtCharts.heap = makeOrUpdate(_dbRtCharts.heap, 'ruby-chart-heap', 'Live Slots', heapSlots, '#8b5cf6');
 }
 {% endif %}
