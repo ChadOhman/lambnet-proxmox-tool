@@ -17,4 +17,4 @@ repos:
         env:
           FLASK_SECRET_KEY: dev-pre-commit-secret
           DATABASE_URL: "sqlite:////tmp/pre-commit-test.db"
-          LAMBNET_DATA_DIR: /tmp/lambnet-pre-commit
+          MSTDNCA_DATA_DIR: /tmp/mstdnca-pre-commit

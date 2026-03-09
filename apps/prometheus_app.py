@@ -3,7 +3,7 @@ Prometheus install and upgrade automation.
 
 Installs Prometheus from GitHub binary releases onto a target VM/CT via SSH.
 Creates a dedicated user, systemd service, and generates a prometheus.yml
-config that scrapes the lambnet app's /metrics endpoint.
+config that scrapes the mstdnca app's /metrics endpoint.
 """
 
 import json
@@ -32,7 +32,7 @@ def check_prometheus_release():
     """
     try:
         url = "https://api.github.com/repos/prometheus/prometheus/releases/latest"
-        req = urllib.request.Request(url, headers={"User-Agent": "lambnet-proxmox-tool"})
+        req = urllib.request.Request(url, headers={"User-Agent": "mstdnca-proxmox-tool"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
             latest = data.get("tag_name", "").lstrip("v")
@@ -293,12 +293,12 @@ def run_prometheus_install(log_callback=None):
             _log_cmd_output(_log, stdout, stderr, code)
 
             # Generate prometheus.yml
-            lambnet_url = config.get("lambnet_metrics_url", "")
+            mstdnca_url = config.get("mstdnca_metrics_url", "")
             auth_token = Setting.get("prometheus_auth_token", "")
             retention_days = config.get("retention_days", "365")
 
             _log("Generating prometheus.yml...")
-            yml = _generate_prometheus_yml(lambnet_url, auth_token)
+            yml = _generate_prometheus_yml(mstdnca_url, auth_token)
             # Write via heredoc to avoid shell escaping issues
             stdout, stderr, code = ssh.execute_sudo(
                 f"cat > /etc/prometheus/prometheus.yml << 'PROMEOF'\n{yml}\nPROMEOF",
@@ -713,18 +713,18 @@ def _get_config():
         "protection_type": Setting.get("prometheus_protection_type", "snapshot"),
         "backup_storage": Setting.get("prometheus_backup_storage", ""),
         "backup_mode": Setting.get("prometheus_backup_mode", "snapshot"),
-        "lambnet_metrics_url": Setting.get("prometheus_lambnet_metrics_url", ""),
+        "mstdnca_metrics_url": Setting.get("prometheus_mstdnca_metrics_url", ""),
         "latest_version": Setting.get("prometheus_latest_version", ""),
     }
 
 
-def _generate_prometheus_yml(lambnet_metrics_url, auth_token="", extra_scrape_configs=""):
+def _generate_prometheus_yml(mstdnca_metrics_url, auth_token="", extra_scrape_configs=""):
     """Generate a prometheus.yml config file."""
     scrape_configs = """  - job_name: "prometheus"
     static_configs:
       - targets: ["localhost:9090"]"""
 
-    if lambnet_metrics_url:
+    if mstdnca_metrics_url:
         auth_section = ""
         if auth_token:
             auth_section = f"""
@@ -734,10 +734,10 @@ def _generate_prometheus_yml(lambnet_metrics_url, auth_token="", extra_scrape_co
 
         scrape_configs += f"""
 
-  - job_name: "lambnet"
+  - job_name: "mstdnca"
     scrape_interval: 60s
     static_configs:
-      - targets: ["{lambnet_metrics_url}"]{auth_section}"""
+      - targets: ["{mstdnca_metrics_url}"]{auth_section}"""
 
     if extra_scrape_configs:
         scrape_configs += extra_scrape_configs

@@ -155,7 +155,7 @@ def check_exporter_release(exporter_type):
 
     try:
         url = f"https://api.github.com/repos/{info['github_repo']}/releases/latest"
-        req = urllib.request.Request(url, headers={"User-Agent": "lambnet-proxmox-tool"})
+        req = urllib.request.Request(url, headers={"User-Agent": "mstdnca-proxmox-tool"})
         with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
             data = json.loads(resp.read().decode())
             latest = data.get("tag_name", "").lstrip("v")
@@ -570,9 +570,9 @@ def _regenerate_prometheus_config(_log=None):
       - targets: [{targets_str}]"""
 
     # Generate full config
-    lambnet_url = Setting.get("prometheus_lambnet_metrics_url", "")
+    mstdnca_url = Setting.get("prometheus_mstdnca_metrics_url", "")
     auth_token = Setting.get("prometheus_auth_token", "")
-    yml = _generate_prometheus_yml(lambnet_url, auth_token, extra_configs)
+    yml = _generate_prometheus_yml(mstdnca_url, auth_token, extra_configs)
 
     # Push to Prometheus guest
     credential = prom_guest.credential

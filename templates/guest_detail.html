@@ -1083,7 +1083,7 @@
                 // Show data source badge
                 var srcBadge = document.getElementById('perfSource');
                 if (data.source) {
-                    var srcLabels = {node_exporter: 'node_exporter', lambnet: 'Prometheus', proxmox_rrd: 'Proxmox RRD'};
+                    var srcLabels = {node_exporter: 'node_exporter', mstdnca: 'Prometheus', proxmox_rrd: 'Proxmox RRD'};
                     srcBadge.textContent = srcLabels[data.source] || data.source;
                     srcBadge.classList.remove('d-none');
                 } else {

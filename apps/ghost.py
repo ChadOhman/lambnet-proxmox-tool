@@ -36,7 +36,7 @@ def check_ghost_release():
     Returns (update_available, latest_version, release_url).
     """
     try:
-        req = Request(_GHOST_NPM_URL, headers={"User-Agent": "lambnet-proxmox-tool"})
+        req = Request(_GHOST_NPM_URL, headers={"User-Agent": "mstdnca-proxmox-tool"})
         with urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
 
@@ -572,7 +572,7 @@ def run_ghost_upgrade(log_callback=None, skip_protection=False):
             )
             systemctl = (sc_out or "").strip() or "/usr/bin/systemctl"
             sudoers_lines = [
-                "# Managed by lambnet-proxmox-tool",
+                "# Managed by mstdnca-proxmox-tool",
             ] + [
                 f"{user} ALL=(root) NOPASSWD: {systemctl} {action} {service_name}"
                 for action in ("start", "stop", "restart", "reset-failed",

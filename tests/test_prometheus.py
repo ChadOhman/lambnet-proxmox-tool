@@ -126,8 +126,8 @@ class TestPrometheusExporter:
         with app.app_context():
             update_host_metrics(99, "testhost", "pve", {"cpu": 0.1, "uptime": 100})
             output = get_metrics().decode("utf-8")
-            assert "lambnet_host_cpu_usage_percent" in output
-            assert "lambnet_host_uptime_seconds" in output
+            assert "mstdnca_host_cpu_usage_percent" in output
+            assert "mstdnca_host_uptime_seconds" in output
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ class TestMetricsEndpoint:
             Setting.set("prometheus_auth_token", "")
         resp = client.get("/metrics")
         assert resp.status_code == 200
-        assert b"lambnet_" in resp.data or resp.status_code == 200
+        assert b"mstdnca_" in resp.data or resp.status_code == 200
 
     def test_metrics_endpoint_auth_required(self, app, client):
         """When auth token is set, requests without it should be rejected."""
@@ -256,7 +256,7 @@ class TestPrometheusAppRoutes:
             "prometheus_guest_id": "",
             "prometheus_url": "http://10.0.0.50:9090",
             "prometheus_auth_token": "",
-            "prometheus_lambnet_metrics_url": "10.0.0.10:5000",
+            "prometheus_mstdnca_metrics_url": "10.0.0.10:5000",
             "prometheus_retention_days": "90",
             "prometheus_protection_type": "snapshot",
             "prometheus_backup_storage": "",
@@ -267,7 +267,7 @@ class TestPrometheusAppRoutes:
         with app.app_context():
             from models import Setting
             assert Setting.get("prometheus_url") == "http://10.0.0.50:9090"
-            assert Setting.get("prometheus_lambnet_metrics_url") == "10.0.0.10:5000"
+            assert Setting.get("prometheus_mstdnca_metrics_url") == "10.0.0.10:5000"
 
     def test_install_status_returns_json(self, auth_client):
         resp = auth_client.get("/prometheus/install/status")

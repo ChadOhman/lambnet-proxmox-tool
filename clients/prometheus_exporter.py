@@ -1,5 +1,5 @@
 """
-Prometheus metrics exporter for lambnet-proxmox-tool.
+Prometheus metrics exporter for mstdnca-proxmox-tool.
 
 Maintains a thread-safe in-memory metrics registry using the prometheus_client
 library.  Scheduled jobs call update_*() functions after each collection cycle
@@ -25,139 +25,139 @@ _lock = threading.Lock()
 # ---------------------------------------------------------------------------
 # Host metrics (labels: host_id, host_name, host_type)
 # ---------------------------------------------------------------------------
-HOST_CPU = Gauge("lambnet_host_cpu_usage_percent", "Host CPU usage percentage",
+HOST_CPU = Gauge("mstdnca_host_cpu_usage_percent", "Host CPU usage percentage",
                  ["host_id", "host_name", "host_type"], registry=registry)
-HOST_MEM_USED = Gauge("lambnet_host_memory_used_bytes", "Host memory used in bytes",
+HOST_MEM_USED = Gauge("mstdnca_host_memory_used_bytes", "Host memory used in bytes",
                       ["host_id", "host_name", "host_type"], registry=registry)
-HOST_MEM_TOTAL = Gauge("lambnet_host_memory_total_bytes", "Host memory total in bytes",
+HOST_MEM_TOTAL = Gauge("mstdnca_host_memory_total_bytes", "Host memory total in bytes",
                        ["host_id", "host_name", "host_type"], registry=registry)
-HOST_NET_IN = Gauge("lambnet_host_network_in_bytes_per_sec", "Host network inbound bytes/sec",
+HOST_NET_IN = Gauge("mstdnca_host_network_in_bytes_per_sec", "Host network inbound bytes/sec",
                     ["host_id", "host_name", "host_type"], registry=registry)
-HOST_NET_OUT = Gauge("lambnet_host_network_out_bytes_per_sec", "Host network outbound bytes/sec",
+HOST_NET_OUT = Gauge("mstdnca_host_network_out_bytes_per_sec", "Host network outbound bytes/sec",
                      ["host_id", "host_name", "host_type"], registry=registry)
-HOST_ROOTFS = Gauge("lambnet_host_rootfs_used_percent", "Host rootfs usage percentage",
+HOST_ROOTFS = Gauge("mstdnca_host_rootfs_used_percent", "Host rootfs usage percentage",
                     ["host_id", "host_name", "host_type"], registry=registry)
-HOST_UPTIME = Gauge("lambnet_host_uptime_seconds", "Host uptime in seconds",
+HOST_UPTIME = Gauge("mstdnca_host_uptime_seconds", "Host uptime in seconds",
                     ["host_id", "host_name", "host_type"], registry=registry)
 
 # ---------------------------------------------------------------------------
 # Guest metrics (labels: guest_id, guest_name, guest_type, host_name, vmid)
 # ---------------------------------------------------------------------------
-GUEST_CPU = Gauge("lambnet_guest_cpu_usage_percent", "Guest CPU usage percentage",
+GUEST_CPU = Gauge("mstdnca_guest_cpu_usage_percent", "Guest CPU usage percentage",
                   ["guest_id", "guest_name", "guest_type", "host_name", "vmid"], registry=registry)
-GUEST_MEM_USED = Gauge("lambnet_guest_memory_used_bytes", "Guest memory used in bytes",
+GUEST_MEM_USED = Gauge("mstdnca_guest_memory_used_bytes", "Guest memory used in bytes",
                        ["guest_id", "guest_name", "guest_type", "host_name", "vmid"], registry=registry)
-GUEST_MEM_TOTAL = Gauge("lambnet_guest_memory_total_bytes", "Guest memory total in bytes",
+GUEST_MEM_TOTAL = Gauge("mstdnca_guest_memory_total_bytes", "Guest memory total in bytes",
                         ["guest_id", "guest_name", "guest_type", "host_name", "vmid"], registry=registry)
-GUEST_NET_IN = Gauge("lambnet_guest_network_in_bytes_per_sec", "Guest network inbound bytes/sec",
+GUEST_NET_IN = Gauge("mstdnca_guest_network_in_bytes_per_sec", "Guest network inbound bytes/sec",
                      ["guest_id", "guest_name", "guest_type", "host_name", "vmid"], registry=registry)
-GUEST_NET_OUT = Gauge("lambnet_guest_network_out_bytes_per_sec", "Guest network outbound bytes/sec",
+GUEST_NET_OUT = Gauge("mstdnca_guest_network_out_bytes_per_sec", "Guest network outbound bytes/sec",
                       ["guest_id", "guest_name", "guest_type", "host_name", "vmid"], registry=registry)
-GUEST_POWER = Gauge("lambnet_guest_power_state", "Guest power state (1=running, 0=stopped)",
+GUEST_POWER = Gauge("mstdnca_guest_power_state", "Guest power state (1=running, 0=stopped)",
                     ["guest_id", "guest_name", "guest_type", "host_name", "vmid"], registry=registry)
 
 # ---------------------------------------------------------------------------
 # Service health (labels: service_id, service_name, guest_name, unit_name)
 # ---------------------------------------------------------------------------
-SVC_UP = Gauge("lambnet_service_up", "Service status (1=running, 0=not running)",
+SVC_UP = Gauge("mstdnca_service_up", "Service status (1=running, 0=not running)",
                ["service_id", "service_name", "guest_name", "unit_name"], registry=registry)
-SVC_MEMORY = Gauge("lambnet_service_memory_bytes", "Service memory usage in bytes",
+SVC_MEMORY = Gauge("mstdnca_service_memory_bytes", "Service memory usage in bytes",
                    ["service_id", "service_name", "guest_name", "unit_name"], registry=registry)
 
 # ---------------------------------------------------------------------------
 # PostgreSQL (labels: service_id, guest_name)
 # ---------------------------------------------------------------------------
-PG_CONNECTIONS = Gauge("lambnet_pg_connections_total", "PostgreSQL total connections",
+PG_CONNECTIONS = Gauge("mstdnca_pg_connections_total", "PostgreSQL total connections",
                        ["service_id", "guest_name"], registry=registry)
-PG_CONNECTIONS_ACTIVE = Gauge("lambnet_pg_connections_active", "PostgreSQL active connections",
+PG_CONNECTIONS_ACTIVE = Gauge("mstdnca_pg_connections_active", "PostgreSQL active connections",
                               ["service_id", "guest_name"], registry=registry)
-PG_CACHE_HIT = Gauge("lambnet_pg_cache_hit_ratio", "PostgreSQL cache hit ratio",
+PG_CACHE_HIT = Gauge("mstdnca_pg_cache_hit_ratio", "PostgreSQL cache hit ratio",
                       ["service_id", "guest_name"], registry=registry)
-PG_COMMITS = Gauge("lambnet_pg_commits_total", "PostgreSQL total commits",
+PG_COMMITS = Gauge("mstdnca_pg_commits_total", "PostgreSQL total commits",
                    ["service_id", "guest_name"], registry=registry)
-PG_ROLLBACKS = Gauge("lambnet_pg_rollbacks_total", "PostgreSQL total rollbacks",
+PG_ROLLBACKS = Gauge("mstdnca_pg_rollbacks_total", "PostgreSQL total rollbacks",
                      ["service_id", "guest_name"], registry=registry)
-PG_LOCK_WAITS = Gauge("lambnet_pg_lock_waits", "PostgreSQL lock waits",
+PG_LOCK_WAITS = Gauge("mstdnca_pg_lock_waits", "PostgreSQL lock waits",
                       ["service_id", "guest_name"], registry=registry)
 
 # ---------------------------------------------------------------------------
 # Redis (labels: service_id, guest_name)
 # ---------------------------------------------------------------------------
-REDIS_MEM = Gauge("lambnet_redis_memory_used_bytes", "Redis memory used in bytes",
+REDIS_MEM = Gauge("mstdnca_redis_memory_used_bytes", "Redis memory used in bytes",
                   ["service_id", "guest_name"], registry=registry)
-REDIS_CLIENTS = Gauge("lambnet_redis_connected_clients", "Redis connected clients",
+REDIS_CLIENTS = Gauge("mstdnca_redis_connected_clients", "Redis connected clients",
                       ["service_id", "guest_name"], registry=registry)
-REDIS_OPS = Gauge("lambnet_redis_ops_per_sec", "Redis operations per second",
+REDIS_OPS = Gauge("mstdnca_redis_ops_per_sec", "Redis operations per second",
                   ["service_id", "guest_name"], registry=registry)
-REDIS_HIT_RATIO = Gauge("lambnet_redis_hit_ratio", "Redis cache hit ratio",
+REDIS_HIT_RATIO = Gauge("mstdnca_redis_hit_ratio", "Redis cache hit ratio",
                         ["service_id", "guest_name"], registry=registry)
-REDIS_EVICTED = Gauge("lambnet_redis_evicted_keys_total", "Redis evicted keys total",
+REDIS_EVICTED = Gauge("mstdnca_redis_evicted_keys_total", "Redis evicted keys total",
                       ["service_id", "guest_name"], registry=registry)
 
 # ---------------------------------------------------------------------------
 # Elasticsearch (labels: service_id, guest_name)
 # ---------------------------------------------------------------------------
-ES_HEALTH = Gauge("lambnet_es_cluster_health", "Elasticsearch cluster health (0=red, 1=yellow, 2=green)",
+ES_HEALTH = Gauge("mstdnca_es_cluster_health", "Elasticsearch cluster health (0=red, 1=yellow, 2=green)",
                   ["service_id", "guest_name"], registry=registry)
-ES_DOC_COUNT = Gauge("lambnet_es_doc_count", "Elasticsearch document count",
+ES_DOC_COUNT = Gauge("mstdnca_es_doc_count", "Elasticsearch document count",
                      ["service_id", "guest_name"], registry=registry)
-ES_STORE_SIZE = Gauge("lambnet_es_store_size_bytes", "Elasticsearch store size in bytes",
+ES_STORE_SIZE = Gauge("mstdnca_es_store_size_bytes", "Elasticsearch store size in bytes",
                       ["service_id", "guest_name"], registry=registry)
-ES_JVM_HEAP_USED = Gauge("lambnet_es_jvm_heap_used_bytes", "Elasticsearch JVM heap used",
+ES_JVM_HEAP_USED = Gauge("mstdnca_es_jvm_heap_used_bytes", "Elasticsearch JVM heap used",
                          ["service_id", "guest_name"], registry=registry)
-ES_JVM_HEAP_MAX = Gauge("lambnet_es_jvm_heap_max_bytes", "Elasticsearch JVM heap max",
+ES_JVM_HEAP_MAX = Gauge("mstdnca_es_jvm_heap_max_bytes", "Elasticsearch JVM heap max",
                         ["service_id", "guest_name"], registry=registry)
-ES_CPU = Gauge("lambnet_es_cpu_percent", "Elasticsearch CPU usage",
+ES_CPU = Gauge("mstdnca_es_cpu_percent", "Elasticsearch CPU usage",
                ["service_id", "guest_name"], registry=registry)
 
 # ---------------------------------------------------------------------------
 # Jitsi Videobridge (labels: service_id, guest_name)
 # ---------------------------------------------------------------------------
-JITSI_CONFERENCES = Gauge("lambnet_jitsi_conferences", "Active Jitsi conferences",
+JITSI_CONFERENCES = Gauge("mstdnca_jitsi_conferences", "Active Jitsi conferences",
                           ["service_id", "guest_name"], registry=registry)
-JITSI_PARTICIPANTS = Gauge("lambnet_jitsi_participants", "Total Jitsi participants",
+JITSI_PARTICIPANTS = Gauge("mstdnca_jitsi_participants", "Total Jitsi participants",
                            ["service_id", "guest_name"], registry=registry)
-JITSI_STRESS = Gauge("lambnet_jitsi_stress_level", "Jitsi Videobridge stress level",
+JITSI_STRESS = Gauge("mstdnca_jitsi_stress_level", "Jitsi Videobridge stress level",
                      ["service_id", "guest_name"], registry=registry)
-JITSI_BITRATE_DL = Gauge("lambnet_jitsi_bitrate_download_bps", "Jitsi download bitrate",
+JITSI_BITRATE_DL = Gauge("mstdnca_jitsi_bitrate_download_bps", "Jitsi download bitrate",
                          ["service_id", "guest_name"], registry=registry)
 
 # ---------------------------------------------------------------------------
 # Prometheus server (labels: service_id, guest_name)
 # ---------------------------------------------------------------------------
-PROM_TARGETS_UP = Gauge("lambnet_prometheus_targets_up", "Prometheus scrape targets that are up",
+PROM_TARGETS_UP = Gauge("mstdnca_prometheus_targets_up", "Prometheus scrape targets that are up",
                         ["service_id", "guest_name"], registry=registry)
-PROM_TARGETS_DOWN = Gauge("lambnet_prometheus_targets_down", "Prometheus scrape targets that are down",
+PROM_TARGETS_DOWN = Gauge("mstdnca_prometheus_targets_down", "Prometheus scrape targets that are down",
                           ["service_id", "guest_name"], registry=registry)
-PROM_STORAGE = Gauge("lambnet_prometheus_storage_bytes", "Prometheus TSDB storage size in bytes",
+PROM_STORAGE = Gauge("mstdnca_prometheus_storage_bytes", "Prometheus TSDB storage size in bytes",
                      ["service_id", "guest_name"], registry=registry)
-PROM_HEAD_SERIES = Gauge("lambnet_prometheus_head_series", "Prometheus TSDB head series count",
+PROM_HEAD_SERIES = Gauge("mstdnca_prometheus_head_series", "Prometheus TSDB head series count",
                          ["service_id", "guest_name"], registry=registry)
 
 # ---------------------------------------------------------------------------
 # UniFi (labels: site_name)
 # ---------------------------------------------------------------------------
-UNIFI_DEVICES = Gauge("lambnet_unifi_device_count", "UniFi managed device count",
+UNIFI_DEVICES = Gauge("mstdnca_unifi_device_count", "UniFi managed device count",
                       ["site_name"], registry=registry)
-UNIFI_CLIENTS = Gauge("lambnet_unifi_client_count", "UniFi connected client count",
+UNIFI_CLIENTS = Gauge("mstdnca_unifi_client_count", "UniFi connected client count",
                       ["site_name"], registry=registry)
 
 # ---------------------------------------------------------------------------
 # APT updates (labels: guest_id, guest_name)
 # ---------------------------------------------------------------------------
-APT_PENDING = Gauge("lambnet_guest_pending_updates", "Pending APT updates",
+APT_PENDING = Gauge("mstdnca_guest_pending_updates", "Pending APT updates",
                     ["guest_id", "guest_name"], registry=registry)
-APT_SECURITY = Gauge("lambnet_guest_security_updates", "Pending security updates",
+APT_SECURITY = Gauge("mstdnca_guest_security_updates", "Pending security updates",
                      ["guest_id", "guest_name"], registry=registry)
-APT_REBOOT = Gauge("lambnet_guest_reboot_required", "Reboot required (1=yes, 0=no)",
+APT_REBOOT = Gauge("mstdnca_guest_reboot_required", "Reboot required (1=yes, 0=no)",
                    ["guest_id", "guest_name"], registry=registry)
 
 # ---------------------------------------------------------------------------
 # Application version info (labels: app_name)
 # ---------------------------------------------------------------------------
-APP_UPDATE = Gauge("lambnet_app_update_available", "Application update available (1=yes, 0=no)",
+APP_UPDATE = Gauge("mstdnca_app_update_available", "Application update available (1=yes, 0=no)",
                    ["app_name"], registry=registry)
-APP_INFO = Info("lambnet_app", "Application version information",
+APP_INFO = Info("mstdnca_app", "Application version information",
                 ["app_name"], registry=registry)
 
 

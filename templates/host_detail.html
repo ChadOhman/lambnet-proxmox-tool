@@ -634,7 +634,7 @@
                 // Show data source badge
                 var srcBadge = document.getElementById('perfSource');
                 if (data.source) {
-                    var srcLabels = {lambnet: 'Prometheus', proxmox_rrd: 'Proxmox RRD'};
+                    var srcLabels = {mstdnca: 'Prometheus', proxmox_rrd: 'Proxmox RRD'};
                     srcBadge.textContent = srcLabels[data.source] || data.source;
                     srcBadge.classList.remove('d-none');
                 } else {

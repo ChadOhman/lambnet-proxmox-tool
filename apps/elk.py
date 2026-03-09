@@ -54,7 +54,7 @@ def check_elk_release():
     Returns (update_available, latest_version, release_url).
     """
     try:
-        req = Request(_ELK_GITHUB_API, headers={"User-Agent": "lambnet-proxmox-tool"})
+        req = Request(_ELK_GITHUB_API, headers={"User-Agent": "mstdnca-proxmox-tool"})
         with urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
 

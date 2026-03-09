@@ -9,10 +9,10 @@ set -e
 #   --cloudflared    Also install cloudflared for CF Zero Trust tunnel
 # ============================================================
 
-APP_NAME="lambnet-update-manager"
-APP_DIR="/opt/lambnet"
-DATA_DIR="/var/lib/lambnet"
-SECRET_DIR="/etc/lambnet"
+APP_NAME="mstdnca-proxmox-tool"
+APP_DIR="/opt/mstdnca"
+DATA_DIR="/var/lib/mstdnca"
+SECRET_DIR="/etc/mstdnca"
 SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
 REPO_URL="https://github.com/ChadOhman/mstdnca-proxmox-tool.git"
 INSTALL_CLOUDFLARED=false
@@ -159,8 +159,8 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=$APP_DIR
-Environment=LAMBNET_DATA_DIR=$DATA_DIR
-Environment=LAMBNET_SECRET_KEY=$SECRET_DIR/secret.key
+Environment=MSTDNCA_DATA_DIR=$DATA_DIR
+Environment=MSTDNCA_SECRET_KEY=$SECRET_DIR/secret.key
 Environment=FLASK_SECRET_KEY_FILE=$SECRET_DIR/flask_secret
 Environment=SESSION_COOKIE_SECURE=0
 ExecStart=$APP_DIR/venv/bin/gunicorn --worker-class gevent --bind 0.0.0.0:5000 --workers 1 --timeout 120 "app:create_app()"
@@ -226,17 +226,17 @@ echo ""
 if [ "$INSTALL_CLOUDFLARED" = true ]; then
     echo " Cloudflare Tunnel Setup:"
     echo "   1. cloudflared tunnel login"
-    echo "   2. cloudflared tunnel create lambnet"
+    echo "   2. cloudflared tunnel create mstdnca"
     echo "   3. Create config at /etc/cloudflared/config.yml:"
     echo ""
     echo "      tunnel: <TUNNEL-ID>"
     echo "      credentials-file: /root/.cloudflared/<TUNNEL-ID>.json"
     echo "      ingress:"
-    echo "        - hostname: lambnet.yourdomain.com"
+    echo "        - hostname: mstdnca.yourdomain.com"
     echo "          service: http://localhost:5000"
     echo "        - service: http_status:404"
     echo ""
-    echo "   4. cloudflared tunnel route dns lambnet lambnet.yourdomain.com"
+    echo "   4. cloudflared tunnel route dns mstdnca mstdnca.yourdomain.com"
     echo "   5. cloudflared service install"
     echo "   6. systemctl start cloudflared"
     echo ""
