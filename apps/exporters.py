@@ -114,6 +114,30 @@ def _build_mastodon_env_vars(config=None):
     return env
 
 
+# Systemd unit name for the external prometheus_exporter collector process.
+_MASTODON_COLLECTOR_UNIT = "mastodon-prometheus-collector.service"
+
+
+def _mastodon_collector_unit(app_dir, host, port):
+    """Generate a systemd service unit for the Mastodon prometheus_exporter collector."""
+    return f"""[Unit]
+Description=Mastodon Prometheus Exporter Collector
+After=network.target
+
+[Service]
+Type=simple
+User=mastodon
+WorkingDirectory={app_dir}
+Environment=RAILS_ENV=production
+ExecStart=/home/mastodon/.rbenv/shims/bundle exec prometheus_exporter -b {host} -p {port}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
 # ---------------------------------------------------------------------------
 # Version check
 # ---------------------------------------------------------------------------
@@ -629,6 +653,9 @@ def enable_mastodon_exporter(guest_id, config=None, log_callback=None):
         _log("ERROR: Guest has no usable IP address.")
         return False
 
+    mode = (config or {}).get("mode", "external")
+    host = (config or {}).get("host", "0.0.0.0")
+
     try:
         with SSHClient.from_credential(ip, credential) as ssh:
             # Step 1: Remove existing exporter env vars (idempotent)
@@ -647,7 +674,40 @@ def enable_mastodon_exporter(guest_id, config=None, log_callback=None):
                 return False
             _log("Environment variables added.")
 
-            # Step 3: Discover and restart Mastodon services
+            # Step 3: In external mode, create and start the collector service
+            if mode == "external":
+                _log("Creating prometheus_exporter collector service...")
+                unit_content = _mastodon_collector_unit(app_dir, host, port)
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"cat > /etc/systemd/system/{_MASTODON_COLLECTOR_UNIT} << 'SVCEOF'\n"
+                    f"{unit_content}\nSVCEOF",
+                    timeout=15,
+                )
+                _log_cmd_output(_log, stdout, stderr, code)
+                if code != 0:
+                    _log("ERROR: Failed to create collector service.")
+                    return False
+
+                _log("Starting collector service...")
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"systemctl daemon-reload && systemctl enable {_MASTODON_COLLECTOR_UNIT} && "
+                    f"systemctl restart {_MASTODON_COLLECTOR_UNIT}",
+                    timeout=30,
+                )
+                _log_cmd_output(_log, stdout, stderr, code)
+                if code != 0:
+                    _log(f"WARNING: Failed to start collector: {(stderr or '')[:200]}")
+                else:
+                    _log("Collector service started.")
+            else:
+                # Local mode: stop collector if it was previously running
+                ssh.execute_sudo(
+                    f"systemctl stop {_MASTODON_COLLECTOR_UNIT} 2>/dev/null; "
+                    f"systemctl disable {_MASTODON_COLLECTOR_UNIT} 2>/dev/null",
+                    timeout=15,
+                )
+
+            # Step 4: Discover and restart Mastodon services
             _log("Discovering Mastodon services...")
             stdout, stderr, code = ssh.execute(
                 "systemctl list-units 'mastodon*' --no-pager --plain --no-legend"
@@ -655,6 +715,8 @@ def enable_mastodon_exporter(guest_id, config=None, log_callback=None):
                 timeout=10,
             )
             units = [u.strip() for u in (stdout or "").splitlines() if u.strip() and ".service" in u]
+            # Exclude the collector unit from the restart list
+            units = [u for u in units if u != _MASTODON_COLLECTOR_UNIT]
             if not units:
                 units = ["mastodon-web.service", "mastodon-sidekiq.service"]
                 _log(f"No units discovered, using defaults: {', '.join(units)}")
@@ -671,14 +733,13 @@ def enable_mastodon_exporter(guest_id, config=None, log_callback=None):
                 else:
                     _log(f"  {unit} restarted.")
 
-            # Step 4: Wait briefly and verify port 9394
+            # Step 5: Wait briefly and verify port
             _log("Waiting for exporter to start...")
             time.sleep(5)
             stdout, stderr, code = ssh.execute(
                 f"curl -sf http://localhost:{port}/metrics | head -5", timeout=10
             )
             if code != 0:
-                # Try wget fallback
                 stdout, stderr, code = ssh.execute(
                     f"wget -qO- http://localhost:{port}/metrics 2>/dev/null | head -5",
                     timeout=10,
@@ -695,7 +756,7 @@ def enable_mastodon_exporter(guest_id, config=None, log_callback=None):
         _log(f"ERROR: SSH operation failed: {e}")
         return False
 
-    # Step 5: Create ExporterInstance record
+    # Step 6: Create ExporterInstance record
     # Remove any old pending/failed records first
     ExporterInstance.query.filter_by(
         guest_id=guest_id, exporter_type="mastodon"
@@ -757,7 +818,17 @@ def disable_mastodon_exporter(guest_id, log_callback=None):
             else:
                 _log("Environment variables removed.")
 
-            # Step 2: Discover and restart Mastodon services
+            # Step 2: Stop and remove the collector service (if present)
+            _log("Stopping collector service...")
+            ssh.execute_sudo(
+                f"systemctl stop {_MASTODON_COLLECTOR_UNIT} 2>/dev/null; "
+                f"systemctl disable {_MASTODON_COLLECTOR_UNIT} 2>/dev/null; "
+                f"rm -f /etc/systemd/system/{_MASTODON_COLLECTOR_UNIT}; "
+                f"systemctl daemon-reload",
+                timeout=15,
+            )
+
+            # Step 3: Discover and restart Mastodon services
             _log("Discovering Mastodon services...")
             stdout, stderr, code = ssh.execute(
                 "systemctl list-units 'mastodon*' --no-pager --plain --no-legend"
@@ -765,6 +836,7 @@ def disable_mastodon_exporter(guest_id, log_callback=None):
                 timeout=10,
             )
             units = [u.strip() for u in (stdout or "").splitlines() if u.strip() and ".service" in u]
+            units = [u for u in units if u != _MASTODON_COLLECTOR_UNIT]
             if not units:
                 units = ["mastodon-web.service", "mastodon-sidekiq.service"]
 
@@ -782,7 +854,7 @@ def disable_mastodon_exporter(guest_id, log_callback=None):
         _log(f"ERROR: SSH operation failed: {e}")
         return False
 
-    # Step 3: Remove ExporterInstance records
+    # Step 4: Remove ExporterInstance records
     deleted = ExporterInstance.query.filter_by(
         guest_id=guest_id, exporter_type="mastodon"
     ).delete()
@@ -822,6 +894,8 @@ def reconfigure_mastodon_exporter(guest_id, config, log_callback=None):
     env_file = f"{app_dir}/.env.production"
     env_vars = _build_mastodon_env_vars(config)
     new_port = int(config.get("port", BUILTIN_EXPORTERS["mastodon"]["default_port"]))
+    new_mode = config.get("mode", "external")
+    new_host = config.get("host", "0.0.0.0")
 
     credential = guest.credential
     if not credential:
@@ -853,7 +927,32 @@ def reconfigure_mastodon_exporter(guest_id, config, log_callback=None):
                 return False
             _log("Environment variables updated.")
 
-            # Step 3: Restart Mastodon services
+            # Step 3: Update collector service based on mode
+            if new_mode == "external":
+                _log("Updating collector service...")
+                unit_content = _mastodon_collector_unit(app_dir, new_host, new_port)
+                ssh.execute_sudo(
+                    f"cat > /etc/systemd/system/{_MASTODON_COLLECTOR_UNIT} << 'SVCEOF'\n"
+                    f"{unit_content}\nSVCEOF",
+                    timeout=15,
+                )
+                ssh.execute_sudo(
+                    f"systemctl daemon-reload && systemctl enable {_MASTODON_COLLECTOR_UNIT} && "
+                    f"systemctl restart {_MASTODON_COLLECTOR_UNIT}",
+                    timeout=30,
+                )
+                _log("Collector service updated.")
+            else:
+                _log("Stopping collector service (local mode)...")
+                ssh.execute_sudo(
+                    f"systemctl stop {_MASTODON_COLLECTOR_UNIT} 2>/dev/null; "
+                    f"systemctl disable {_MASTODON_COLLECTOR_UNIT} 2>/dev/null; "
+                    f"rm -f /etc/systemd/system/{_MASTODON_COLLECTOR_UNIT}; "
+                    f"systemctl daemon-reload",
+                    timeout=15,
+                )
+
+            # Step 4: Restart Mastodon services
             _log("Discovering Mastodon services...")
             stdout, stderr, code = ssh.execute(
                 "systemctl list-units 'mastodon*' --no-pager --plain --no-legend"
@@ -861,6 +960,7 @@ def reconfigure_mastodon_exporter(guest_id, config, log_callback=None):
                 timeout=10,
             )
             units = [u.strip() for u in (stdout or "").splitlines() if u.strip() and ".service" in u]
+            units = [u for u in units if u != _MASTODON_COLLECTOR_UNIT]
             if not units:
                 units = ["mastodon-web.service", "mastodon-sidekiq.service"]
 
@@ -874,7 +974,7 @@ def reconfigure_mastodon_exporter(guest_id, config, log_callback=None):
                 else:
                     _log(f"  {unit} restarted.")
 
-            # Step 4: Verify port
+            # Step 5: Verify port
             _log("Waiting for exporter to start...")
             time.sleep(5)
             stdout, stderr, code = ssh.execute(

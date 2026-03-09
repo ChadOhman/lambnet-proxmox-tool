@@ -148,14 +148,16 @@ class TestEnableMastodonExporter:
             mock_ssh_class.from_credential.return_value = mock_ssh
 
             # sed (remove old lines) -> success
-            # cat >> (append) -> success
-            # systemctl list-units -> two services
+            # cat >> (append env vars) -> success
+            # cat > (write collector unit) -> success
+            # daemon-reload + enable + restart collector -> success
             # restart web -> success
             # restart sidekiq -> success
-            # curl verify -> success
             mock_ssh.execute_sudo.side_effect = [
                 ("", "", 0),   # sed
-                ("", "", 0),   # cat >>
+                ("", "", 0),   # cat >> env vars
+                ("", "", 0),   # cat > collector unit
+                ("", "", 0),   # daemon-reload + enable + restart collector
                 ("", "", 0),   # restart web
                 ("", "", 0),   # restart sidekiq
             ]
@@ -180,7 +182,7 @@ class TestEnableMastodonExporter:
             mock_regen.assert_called_once()
 
             # Verify SSH commands were called
-            assert mock_ssh.execute_sudo.call_count == 4  # sed + cat + 2 restarts
+            assert mock_ssh.execute_sudo.call_count == 6  # sed + env + collector unit + start + 2 restarts
             # Check sed command removed old vars
             sed_call = mock_ssh.execute_sudo.call_args_list[0]
             assert "MASTODON_PROMETHEUS_EXPORTER_" in sed_call[0][0]
@@ -228,6 +230,7 @@ class TestDisableMastodonExporter:
 
             mock_ssh.execute_sudo.side_effect = [
                 ("", "", 0),   # sed remove vars
+                ("", "", 0),   # stop + disable + rm collector + daemon-reload
                 ("", "", 0),   # restart web
                 ("", "", 0),   # restart sidekiq
             ]
