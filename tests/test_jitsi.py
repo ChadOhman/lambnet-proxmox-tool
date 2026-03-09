@@ -870,3 +870,125 @@ class TestJitsiServiceMonitoring:
         assert any("REST API enabled" in msg for msg in logs)
         # Should have called write (tee) and restart
         assert ssh.execute_sudo.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Prometheus metrics parsing tests
+# ---------------------------------------------------------------------------
+
+
+class TestJvbPrometheusMetrics:
+    """Tests for _parse_jvb_prometheus_metrics (JVB 2.3+ /metrics support)."""
+
+    def test_parse_gauge_metrics(self):
+        """Prometheus gauge metrics should map to expected stat keys."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = (
+            "# HELP jitsi_jvb_conferences location\n"
+            "# TYPE jitsi_jvb_conferences gauge\n"
+            "jitsi_jvb_conferences 3.0\n"
+            "jitsi_jvb_participants 7.0\n"
+            "jitsi_jvb_largest_conference 4.0\n"
+            "jitsi_jvb_endpoints_sending_audio 5.0\n"
+            "jitsi_jvb_endpoints_sending_video 6.0\n"
+            "jitsi_jvb_stress_level 0.123\n"
+            "jitsi_jvb_threads 42.0\n"
+        )
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert stats["conferences"] == 3
+        assert stats["participants"] == 7
+        assert stats["largest_conference"] == 4
+        assert stats["endpoints_sending_audio"] == 5
+        assert stats["endpoints_sending_video"] == 6
+        assert stats["stress_level"] == 0.123
+        assert stats["threads"] == 42
+
+    def test_parse_counter_metrics(self):
+        """Prometheus counter (total) metrics should map to cumulative stat keys."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = (
+            "jitsi_jvb_conferences_created_total 100.0\n"
+            "jitsi_jvb_conferences_completed_total 95.0\n"
+            "jitsi_jvb_participants_total 500.0\n"
+            "jitsi_jvb_conference_seconds_total 36000.0\n"
+            "jitsi_jvb_bytes_received_total 1048576.0\n"
+            "jitsi_jvb_bytes_sent_total 2097152.0\n"
+            "jitsi_jvb_ice_succeeded_total 80.0\n"
+            "jitsi_jvb_ice_failed_total 5.0\n"
+            "jitsi_jvb_ice_succeeded_relayed_total 10.0\n"
+        )
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert stats["total_conferences_created"] == 100
+        assert stats["total_conferences_completed"] == 95
+        assert stats["total_participants"] == 500
+        assert stats["total_conference_seconds"] == 36000
+        assert stats["total_bytes_received"] == 1048576
+        assert stats["total_bytes_sent"] == 2097152
+        assert stats["total_ice_succeeded"] == 80
+        assert stats["total_ice_failed"] == 5
+        assert stats["total_ice_succeeded_relayed"] == 10
+
+    def test_parse_healthy_metric(self):
+        """jitsi_jvb_healthy 1.0 should set jvb_healthy=True."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, "jitsi_jvb_healthy 1.0\n")
+        assert stats["jvb_healthy"] is True
+
+    def test_parse_unhealthy_metric(self):
+        """jitsi_jvb_healthy 0.0 should set jvb_healthy=False."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, "jitsi_jvb_healthy 0.0\n")
+        assert stats["jvb_healthy"] is False
+
+    def test_parse_bitrate_metrics(self):
+        """Bitrate and RTT should be kept as floats."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = (
+            "jitsi_jvb_bit_rate_download 1234.5\n"
+            "jitsi_jvb_bit_rate_upload 567.8\n"
+            "jitsi_jvb_rtt_aggregate 12.3\n"
+        )
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert stats["bit_rate_download"] == 1234.5
+        assert stats["bit_rate_upload"] == 567.8
+        assert stats["rtt_aggregate"] == 12.3
+
+    def test_parse_skips_comments_and_empty_lines(self):
+        """Comments and empty lines should be ignored."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = (
+            "# HELP jitsi_jvb_conferences desc\n"
+            "# TYPE jitsi_jvb_conferences gauge\n"
+            "\n"
+            "jitsi_jvb_conferences 2.0\n"
+            "\n"
+        )
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert stats["conferences"] == 2
+        assert len(stats) == 1
+
+    def test_parse_skips_unknown_metrics(self):
+        """Unknown metric names should be silently ignored."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = (
+            "some_other_metric 42.0\n"
+            "jitsi_jvb_conferences 1.0\n"
+        )
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert "some_other_metric" not in stats
+        assert stats["conferences"] == 1
+
+    def test_parse_metrics_with_labels(self):
+        """Metrics with labels (e.g., {region=...}) should still parse."""
+        from core.scanner import _parse_jvb_prometheus_metrics
+        metrics = 'jitsi_jvb_conferences{region="us-east"} 5.0\n'
+        stats = {}
+        _parse_jvb_prometheus_metrics(stats, metrics)
+        assert stats["conferences"] == 5
