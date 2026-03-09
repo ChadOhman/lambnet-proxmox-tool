@@ -348,7 +348,7 @@ def send_upgrade_started_notification(service, version, trigger):
         return False, f"{service} upgrade-started notifications disabled"
 
     label = service.capitalize()
-    _icons = {"mastodon": "\U0001f43b", "ghost": "\U0001f47b", "peertube": "\U0001f3ac", "elk": "\U0001f98c", "jitsi": "\U0001f4f9", "prometheus": "\U0001f4ca"}
+    _icons = {"mastodon": "\U0001f43b", "ghost": "\U0001f47b", "peertube": "\U0001f3ac", "elk": "\U0001f98c", "jitsi": "\U0001f4f9", "prometheus": "\U0001f4ca", "unpoller": "\U0001f4e1"}
     icon = _icons.get(service, "\U0001f4e6")
     trigger_label = "Automatic" if trigger == "auto" else "Manual"
     version_str = f" to v{version}" if version else ""
@@ -388,7 +388,7 @@ def send_upgrade_result_notification(service, version, success, trigger):
         return False, f"{service} upgrade-result notifications disabled"
 
     label = service.capitalize()
-    _icons = {"mastodon": "\U0001f43b", "ghost": "\U0001f47b", "peertube": "\U0001f3ac", "elk": "\U0001f98c", "jitsi": "\U0001f4f9", "prometheus": "\U0001f4ca"}
+    _icons = {"mastodon": "\U0001f43b", "ghost": "\U0001f47b", "peertube": "\U0001f3ac", "elk": "\U0001f98c", "jitsi": "\U0001f4f9", "prometheus": "\U0001f4ca", "unpoller": "\U0001f4e1"}
     icon = _icons.get(service, "\U0001f4e6")
     trigger_label = "Automatic" if trigger == "auto" else "Manual"
     version_str = f" to v{version}" if version else ""
