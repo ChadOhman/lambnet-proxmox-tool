@@ -70,16 +70,20 @@ def _snapshot_ghost_guest(guest):
     if not guest.proxmox_host:
         return False, f"Guest '{guest.name}' has no Proxmox host configured"
 
-    client = ProxmoxClient(guest.proxmox_host)
-    node = client.find_guest_node(guest.vmid)
-    if not node:
-        return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
+    try:
+        client = ProxmoxClient(guest.proxmox_host)
+        node = client.find_guest_node(guest.vmid)
+        if not node:
+            return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    snapname = f"pre-ghost-{timestamp}"
-    description = f"Auto-snapshot before Ghost upgrade at {timestamp}"
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        snapname = f"pre-ghost-{timestamp}"
+        description = f"Auto-snapshot before Ghost upgrade at {timestamp}"
 
-    return client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+        return client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+    except Exception as e:
+        logger.error("Snapshot of %s failed: %s", guest.name, e)
+        return False, f"Snapshot failed: {e}"
 
 
 def _backup_ghost_guest(guest, storage, mode="snapshot"):
@@ -91,33 +95,37 @@ def _backup_ghost_guest(guest, storage, mode="snapshot"):
     if not guest.proxmox_host:
         return False, f"Guest '{guest.name}' has no Proxmox host configured"
 
-    client = ProxmoxClient(guest.proxmox_host)
-    node = client.find_guest_node(guest.vmid)
-    if not node:
-        return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
+    try:
+        client = ProxmoxClient(guest.proxmox_host)
+        node = client.find_guest_node(guest.vmid)
+        if not node:
+            return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    notes = f"pre-ghost-{timestamp}"
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        notes = f"pre-ghost-{timestamp}"
 
-    ok, upid = client.create_backup(node, guest.vmid, storage, mode=mode, notes=notes)
-    if not ok:
-        return False, f"Failed to start backup: {upid}"
+        ok, upid = client.create_backup(node, guest.vmid, storage, mode=mode, notes=notes)
+        if not ok:
+            return False, f"Failed to start backup: {upid}"
 
-    timeout = 1800  # 30 minutes
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        time.sleep(5)
-        try:
-            status = client.get_task_status(node, upid)
-            if status.get("status") == "stopped":
-                exit_status = status.get("exitstatus", "")
-                if exit_status == "OK":
-                    return True, f"Backup of '{guest.name}' to '{storage}' completed"
-                return False, f"Backup task failed: {exit_status}"
-        except Exception as e:
-            logger.debug("Error polling backup task for %s: %s", guest.name, e)
+        timeout = 1800  # 30 minutes
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            time.sleep(5)
+            try:
+                status = client.get_task_status(node, upid)
+                if status.get("status") == "stopped":
+                    exit_status = status.get("exitstatus", "")
+                    if exit_status == "OK":
+                        return True, f"Backup of '{guest.name}' to '{storage}' completed"
+                    return False, f"Backup task failed: {exit_status}"
+            except Exception as e:
+                logger.debug("Error polling backup task for %s: %s", guest.name, e)
 
-    return False, f"Backup of '{guest.name}' timed out after {timeout // 60} minutes"
+        return False, f"Backup of '{guest.name}' timed out after {timeout // 60} minutes"
+    except Exception as e:
+        logger.error("Backup of %s failed: %s", guest.name, e)
+        return False, f"Backup failed: {e}"
 
 
 # ---------------------------------------------------------------------------

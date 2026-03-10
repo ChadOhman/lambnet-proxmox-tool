@@ -102,10 +102,18 @@ def _check_mastodon_release(app):
             from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
             from models import db
             send_upgrade_started_notification("mastodon", latest, "auto")
-            ok, log_output = run_mastodon_upgrade()
+            try:
+                ok, log_output = run_mastodon_upgrade()
+            except Exception as exc:
+                logger.exception("Mastodon auto-upgrade crashed")
+                ok, log_output = False, f"Auto-upgrade crashed: {exc}"
             log_action("mastodon_upgrade", "settings", resource_name="mastodon",
                        details={"status": "success" if ok else "error", "trigger": "auto"})
             db.session.commit()
+            now = datetime.now(timezone.utc).isoformat()
+            Setting.set("mastodon_last_upgrade_at", now)
+            Setting.set("mastodon_last_upgrade_status", "success" if ok else "error")
+            Setting.set("mastodon_last_upgrade_log", log_output)
             send_upgrade_result_notification("mastodon", latest, ok, "auto")
             if ok:
                 logger.info("Mastodon auto-upgrade completed successfully")
@@ -147,10 +155,18 @@ def _check_ghost_release(app):
             from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
             from models import db
             send_upgrade_started_notification("ghost", latest, "auto")
-            ok, log_output = run_ghost_upgrade()
+            try:
+                ok, log_output = run_ghost_upgrade()
+            except Exception as exc:
+                logger.exception("Ghost auto-upgrade crashed")
+                ok, log_output = False, f"Auto-upgrade crashed: {exc}"
             log_action("ghost_upgrade", "settings", resource_name="ghost",
                        details={"status": "success" if ok else "error", "trigger": "auto"})
             db.session.commit()
+            now = datetime.now(timezone.utc).isoformat()
+            Setting.set("ghost_last_upgrade_at", now)
+            Setting.set("ghost_last_upgrade_status", "success" if ok else "error")
+            Setting.set("ghost_last_upgrade_log", log_output)
             send_upgrade_result_notification("ghost", latest, ok, "auto")
             if ok:
                 logger.info("Ghost auto-upgrade completed successfully")
@@ -192,10 +208,18 @@ def _check_peertube_release(app):
             from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
             from models import db
             send_upgrade_started_notification("peertube", latest, "auto")
-            ok, log_output = run_peertube_upgrade()
+            try:
+                ok, log_output = run_peertube_upgrade()
+            except Exception as exc:
+                logger.exception("PeerTube auto-upgrade crashed")
+                ok, log_output = False, f"Auto-upgrade crashed: {exc}"
             log_action("peertube_upgrade", "settings", resource_name="peertube",
                        details={"status": "success" if ok else "error", "trigger": "auto"})
             db.session.commit()
+            now = datetime.now(timezone.utc).isoformat()
+            Setting.set("peertube_last_upgrade_at", now)
+            Setting.set("peertube_last_upgrade_status", "success" if ok else "error")
+            Setting.set("peertube_last_upgrade_log", log_output)
             send_upgrade_result_notification("peertube", latest, ok, "auto")
             if ok:
                 logger.info("PeerTube auto-upgrade completed successfully")
@@ -239,10 +263,18 @@ def _check_elk_release(app):
             from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
             from models import db
             send_upgrade_started_notification("elk", latest, "auto")
-            ok, log_output = run_elk_upgrade()
+            try:
+                ok, log_output = run_elk_upgrade()
+            except Exception as exc:
+                logger.exception("Elk auto-upgrade crashed")
+                ok, log_output = False, f"Auto-upgrade crashed: {exc}"
             log_action("elk_upgrade", "settings", resource_name="elk",
                        details={"status": "success" if ok else "error", "trigger": "auto"})
             db.session.commit()
+            now = datetime.now(timezone.utc).isoformat()
+            Setting.set("elk_last_upgrade_at", now)
+            Setting.set("elk_last_upgrade_status", "success" if ok else "error")
+            Setting.set("elk_last_upgrade_log", log_output)
             send_upgrade_result_notification("elk", latest, ok, "auto")
             if ok:
                 logger.info("Elk auto-upgrade completed successfully")
@@ -286,10 +318,18 @@ def _check_jitsi_release(app):
             from core.notifier import send_upgrade_result_notification, send_upgrade_started_notification
             from models import db
             send_upgrade_started_notification("jitsi", latest, "auto")
-            ok, log_output = run_jitsi_upgrade()
+            try:
+                ok, log_output = run_jitsi_upgrade()
+            except Exception as exc:
+                logger.exception("Jitsi auto-upgrade crashed")
+                ok, log_output = False, f"Auto-upgrade crashed: {exc}"
             log_action("jitsi_upgrade", "settings", resource_name="jitsi",
                        details={"status": "success" if ok else "error", "trigger": "auto"})
             db.session.commit()
+            now = datetime.now(timezone.utc).isoformat()
+            Setting.set("jitsi_last_upgrade_at", now)
+            Setting.set("jitsi_last_upgrade_status", "success" if ok else "error")
+            Setting.set("jitsi_last_upgrade_log", log_output)
             send_upgrade_result_notification("jitsi", latest, ok, "auto")
             if ok:
                 logger.info("Jitsi auto-upgrade completed successfully")
