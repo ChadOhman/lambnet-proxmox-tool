@@ -526,13 +526,271 @@ def run_exporter_uninstall(instance_id, log_callback=None):
 
 
 # ---------------------------------------------------------------------------
+# Host-level exporter install / uninstall
+# ---------------------------------------------------------------------------
+
+
+def run_host_exporter_install(instance_id, log_callback=None):
+    """Install an exporter on a Proxmox host via SSH.
+
+    Returns (success, log_lines).
+    """
+    from models import Credential, HostExporterInstance, db
+
+    log = log_callback or (lambda msg: None)
+    log_lines = []
+
+    def _log(msg):
+        log_lines.append(msg)
+        log(msg)
+
+    instance = HostExporterInstance.query.get(instance_id)
+    if not instance:
+        _log("ERROR: Host exporter instance not found.")
+        return False, log_lines
+
+    info = KNOWN_EXPORTERS.get(instance.exporter_type)
+    if not info:
+        _log(f"ERROR: Unknown exporter type: {instance.exporter_type}")
+        return False, log_lines
+
+    host = instance.host
+    if not host:
+        _log("ERROR: Host not found.")
+        return False, log_lines
+
+    credential = host.ssh_credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        _log("ERROR: No SSH credential configured for this host.")
+        return False, log_lines
+
+    # Get latest version
+    _log(f"Checking latest {info['display_name']} version...")
+    latest, err = check_exporter_release(instance.exporter_type)
+    if not latest:
+        _log(f"ERROR: Could not determine latest version: {err}")
+        return False, log_lines
+
+    binary = info["binary_name"]
+    _log(f"Installing {info['display_name']} v{latest} on {host.name} ({host.hostname})...")
+
+    instance.status = "installing"
+    db.session.commit()
+
+    try:
+        with SSHClient.from_credential(host.hostname, credential) as ssh:
+            # Determine architecture
+            arch_out, _, _ = ssh.execute_sudo("dpkg --print-architecture", timeout=10)
+            arch = (arch_out or "amd64").strip()
+            dl_arch = "arm64" if arch == "arm64" else "amd64"
+
+            # Create user
+            _log(f"Creating {binary} user...")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"id {binary} >/dev/null 2>&1 || useradd --system --no-create-home --shell /bin/false {binary}",
+                timeout=15,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+
+            # Download and extract
+            vprefix = info.get("asset_version_prefix", "")
+            dl_url = (
+                f"https://github.com/{info['github_repo']}/releases/download/v{latest}/"
+                f"{binary}-{vprefix}{latest}.linux-{dl_arch}.tar.gz"
+            )
+            _log(f"Downloading {info['display_name']} v{latest} ({dl_arch})...")
+            dl_cmd = (
+                f"cd /tmp && "
+                f"(curl -sSL -o {binary}.tar.gz '{dl_url}' 2>/dev/null "
+                f"|| wget -q -O {binary}.tar.gz '{dl_url}') && "
+                f"tar xzf {binary}.tar.gz"
+            )
+            stdout, stderr, code = ssh.execute_sudo(dl_cmd, timeout=120)
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log(f"ERROR: Failed to download {info['display_name']}.")
+                instance.status = "failed"
+                db.session.commit()
+                return False, log_lines
+
+            # Install binary
+            extract_dir = f"{binary}-{vprefix}{latest}.linux-{dl_arch}"
+            _log("Installing binary...")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cp /tmp/{extract_dir}/{binary} /usr/local/bin/ && "
+                f"chown {binary}:{binary} /usr/local/bin/{binary}",
+                timeout=30,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to install binary.")
+                instance.status = "failed"
+                db.session.commit()
+                return False, log_lines
+
+            # Write env file if needed
+            env_file = None
+            if info.get("requires_config") and instance.config:
+                env_file = f"/etc/default/{binary}"
+                env_lines = "\n".join(f"{k}={v}" for k, v in instance.config.items())
+                _log("Writing environment configuration...")
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"cat > {env_file} << 'ENVEOF'\n{env_lines}\nENVEOF\n"
+                    f"chmod 600 {env_file}",
+                    timeout=15,
+                )
+                _log_cmd_output(_log, stdout, stderr, code)
+
+            # Create systemd service
+            _log("Creating systemd service...")
+            service_content = _generate_exporter_systemd_unit(
+                instance.exporter_type, instance.port, env_file
+            )
+            stdout, stderr, code = ssh.execute_sudo(
+                f"cat > /etc/systemd/system/{info['systemd_unit']} << 'SVCEOF'\n{service_content}\nSVCEOF",
+                timeout=15,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log("ERROR: Failed to create systemd service.")
+                instance.status = "failed"
+                db.session.commit()
+                return False, log_lines
+
+            # Enable and start
+            _log(f"Starting {info['display_name']}...")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"systemctl daemon-reload && systemctl enable {info['systemd_unit']} && "
+                f"systemctl start {info['systemd_unit']}",
+                timeout=30,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+            if code != 0:
+                _log(f"ERROR: Failed to start {info['display_name']}.")
+                instance.status = "failed"
+                db.session.commit()
+                return False, log_lines
+
+            # Verify
+            time.sleep(2)
+            stdout, stderr, code = ssh.execute_sudo(
+                f"systemctl is-active {info['systemd_unit']}", timeout=10
+            )
+            if code != 0 or (stdout or "").strip() != "active":
+                _log(f"WARNING: {info['display_name']} may not be running.")
+
+            # Clean up
+            ssh.execute_sudo(f"rm -rf /tmp/{binary}.tar.gz /tmp/{extract_dir}", timeout=15)
+
+            _log(f"{info['display_name']} v{latest} installed successfully.")
+
+            from datetime import datetime, timezone
+            instance.status = "installed"
+            instance.version = latest
+            instance.installed_at = datetime.now(timezone.utc)
+            db.session.commit()
+
+            # Regenerate prometheus.yml
+            _regenerate_prometheus_config(_log)
+
+            return True, log_lines
+
+    except Exception as e:
+        _log(f"FATAL ERROR: {e}")
+        logger.exception("Host exporter install failed for %s", instance.exporter_type)
+        instance.status = "failed"
+        db.session.commit()
+        return False, log_lines
+
+
+def run_host_exporter_uninstall(instance_id, log_callback=None):
+    """Uninstall an exporter from a Proxmox host via SSH.
+
+    Returns (success, log_lines).
+    """
+    from models import Credential, HostExporterInstance, db
+
+    log = log_callback or (lambda msg: None)
+    log_lines = []
+
+    def _log(msg):
+        log_lines.append(msg)
+        log(msg)
+
+    instance = HostExporterInstance.query.get(instance_id)
+    if not instance:
+        _log("ERROR: Host exporter instance not found.")
+        return False, log_lines
+
+    info = KNOWN_EXPORTERS.get(instance.exporter_type)
+    if not info:
+        _log(f"ERROR: Unknown exporter type: {instance.exporter_type}")
+        return False, log_lines
+
+    host = instance.host
+    credential = host.ssh_credential
+    if not credential:
+        credential = Credential.query.filter_by(is_default=True).first()
+    if not credential:
+        _log("ERROR: No SSH credential configured.")
+        return False, log_lines
+
+    binary = info["binary_name"]
+    _log(f"Uninstalling {info['display_name']} from {host.name}...")
+
+    instance.status = "uninstalling"
+    db.session.commit()
+
+    try:
+        with SSHClient.from_credential(host.hostname, credential) as ssh:
+            # Stop and disable
+            _log("Stopping service...")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"systemctl stop {info['systemd_unit']} 2>/dev/null; "
+                f"systemctl disable {info['systemd_unit']} 2>/dev/null",
+                timeout=30,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+
+            # Remove files
+            _log("Removing files...")
+            stdout, stderr, code = ssh.execute_sudo(
+                f"rm -f /usr/local/bin/{binary} "
+                f"/etc/systemd/system/{info['systemd_unit']} "
+                f"/etc/default/{binary} && "
+                f"systemctl daemon-reload",
+                timeout=15,
+            )
+            _log_cmd_output(_log, stdout, stderr, code)
+
+            _log(f"{info['display_name']} uninstalled successfully.")
+
+            instance.status = "removed"
+            db.session.commit()
+
+            # Regenerate prometheus.yml
+            _regenerate_prometheus_config(_log)
+
+            return True, log_lines
+
+    except Exception as e:
+        _log(f"FATAL ERROR: {e}")
+        logger.exception("Host exporter uninstall failed for %s", instance.exporter_type)
+        instance.status = "failed"
+        db.session.commit()
+        return False, log_lines
+
+
+# ---------------------------------------------------------------------------
 # Prometheus config regeneration
 # ---------------------------------------------------------------------------
 
 def _regenerate_prometheus_config(_log=None):
     """Regenerate prometheus.yml with all installed exporter targets and push to Prometheus guest."""
     from apps.prometheus_app import _generate_prometheus_yml
-    from models import Credential, ExporterInstance, Guest, Setting
+    from models import Credential, ExporterInstance, Guest, HostExporterInstance, ProxmoxHost, Setting
 
     _log = _log or (lambda msg: None)
 
@@ -566,6 +824,23 @@ def _regenerate_prometheus_config(_log=None):
         if not ip or ip.lower() in ("dhcp", "dhcp6", "auto"):
             continue
         by_type.setdefault(exp.exporter_type, []).append(f"{ip}:{exp.port}")
+
+    # Include host-level exporters (e.g. SMCIPMI)
+    host_installed = (
+        HostExporterInstance.query
+        .filter(HostExporterInstance.status == "installed")  # noqa: E712
+        .join(ProxmoxHost)
+        .all()
+    )
+    for exp in host_installed:
+        host = exp.host
+        exp_info = KNOWN_EXPORTERS.get(exp.exporter_type, {})
+        # For IPMI exporters, use the BMC address as the scrape target
+        if exp_info.get("host_level") and host.ipmi_address:
+            target_ip = host.ipmi_address
+        else:
+            target_ip = host.hostname
+        by_type.setdefault(exp.exporter_type, []).append(f"{target_ip}:{exp.port}")
 
     # Include builtin exporters (e.g. JVB) from settings
     if Setting.get("jitsi_prometheus_scrape", "false") == "true":

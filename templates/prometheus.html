@@ -421,7 +421,7 @@
                             <select class="form-select" name="exporter_type" id="exporterTypeSelect" required
                                     onchange="updateExporterForm()">
                                 <option value="">-- Select --</option>
-                                {% for key, info in known_exporters.items() if not info.get('builtin') %}
+                                {% for key, info in known_exporters.items() if not info.get('builtin') and not info.get('host_level') %}
                                 <option value="{{ key }}" data-port="{{ info.default_port }}"
                                         data-requires-config="{{ info.requires_config|lower }}"
                                         data-env-vars="{{ info.get('env_vars', [])|join(',') }}">{{ info.display_name }}</option>
@@ -562,6 +562,179 @@
                 <div id="exporterOpLog" class="mt-3 d-none">
                     <h6>Exporter Operation Log</h6>
                     <pre class="bg-black text-light p-3 rounded" style="max-height: 300px; overflow-y: auto; font-size: 0.85rem;" id="exporterLogOutput"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- Host-Level Exporters Section -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-hdd-rack"></i> Host-Level Exporters</h5>
+                <button class="btn btn-sm btn-outline-success" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#addHostExporterForm">
+                    <i class="bi bi-plus-lg"></i> Add Host Exporter
+                </button>
+            </div>
+            <div class="card-body">
+                <!-- Add Host Exporter Form -->
+                <div class="collapse mb-3" id="addHostExporterForm">
+                    <form method="post" action="/prometheus/host-exporters/add" class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">Host</label>
+                            <select class="form-select" name="host_id" required>
+                                <option value="">-- Select Host --</option>
+                                {% for h in hosts %}
+                                <option value="{{ h.id }}">{{ h.name }} ({{ h.hostname }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Exporter</label>
+                            <select class="form-select" name="exporter_type" id="hostExporterTypeSelect" required
+                                    onchange="updateHostExporterForm()">
+                                <option value="">-- Select --</option>
+                                {% for key, info in known_exporters.items() if info.get('host_level') %}
+                                <option value="{{ key }}" data-port="{{ info.default_port }}"
+                                        data-requires-config="{{ info.requires_config|lower }}"
+                                        data-env-vars="{{ info.get('env_vars', [])|join(',') }}">{{ info.display_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Port</label>
+                            <input type="number" class="form-control" name="port" id="hostExporterPortInput"
+                                   placeholder="9776" min="1" max="65535">
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-success"><i class="bi bi-plus-lg"></i> Add</button>
+                        </div>
+                        <div class="col-12 d-none" id="hostExporterConfigFields">
+                            <div class="card bg-dark border-secondary mt-2">
+                                <div class="card-body py-2">
+                                    <small class="text-muted d-block mb-2">Environment configuration (written to <code>/etc/default/</code> on the host)</small>
+                                    <div id="hostExporterEnvVarInputs"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                    <hr class="border-secondary mt-3">
+                </div>
+
+                <!-- Host Exporter Instances Table -->
+                {% if host_exporter_instances %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Host</th>
+                                <th>Exporter</th>
+                                <th>Port</th>
+                                <th>Config</th>
+                                <th>Version</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for exp in host_exporter_instances %}
+                            <tr>
+                                <td>{{ exp.host.name }}</td>
+                                <td>{{ known_exporters[exp.exporter_type].display_name if exp.exporter_type in known_exporters else exp.exporter_type }}</td>
+                                <td class="font-monospace">{{ exp.port }}</td>
+                                <td>
+                                    {% set exp_info = known_exporters.get(exp.exporter_type, {}) %}
+                                    {% if exp_info.get('requires_config') %}
+                                        {% if exp.config %}
+                                        <span class="badge bg-success" title="{% for k, v in exp.config.items() %}{{ k }}={{ v }}{% if not loop.last %}&#10;{% endif %}{% endfor %}">
+                                            <i class="bi bi-check-circle"></i> Set
+                                        </span>
+                                        {% else %}
+                                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Missing</span>
+                                        {% endif %}
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ exp.version or '—' }}</td>
+                                <td>
+                                    {% if exp.status == 'installed' %}
+                                    <span class="badge bg-success">installed</span>
+                                    {% elif exp.status == 'installing' %}
+                                    <span class="badge bg-info">installing</span>
+                                    {% elif exp.status == 'failed' %}
+                                    <span class="badge bg-danger">failed</span>
+                                    {% elif exp.status == 'removed' %}
+                                    <span class="badge bg-secondary">removed</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ exp.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if exp.status in ('pending', 'failed') %}
+                                    {% if exp_info.get('requires_config') %}
+                                    <button type="button" class="btn btn-sm btn-outline-info"
+                                            data-bs-toggle="collapse" data-bs-target="#hostConfigRow{{ exp.id }}">
+                                        <i class="bi bi-gear"></i> Configure
+                                    </button>
+                                    {% endif %}
+                                    <button type="button" class="btn btn-sm btn-outline-success"
+                                            onclick="hostExporterInstall({{ exp.id }})">
+                                        <i class="bi bi-download"></i> Install
+                                    </button>
+                                    <form method="post" action="/prometheus/host-exporters/{{ exp.id }}/delete" class="d-inline"
+                                          data-confirm="Remove this exporter entry?">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                    {% elif exp.status == 'installed' %}
+                                    <button type="button" class="btn btn-sm btn-outline-warning"
+                                            onclick="hostExporterUninstall({{ exp.id }})"
+                                            data-confirm="Uninstall this exporter from {{ exp.host.name }}?">
+                                        <i class="bi bi-x-circle"></i> Uninstall
+                                    </button>
+                                    {% elif exp.status == 'removed' %}
+                                    <form method="post" action="/prometheus/host-exporters/{{ exp.id }}/delete" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                            <i class="bi bi-trash"></i> Remove
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% if exp.status in ('pending', 'failed') and exp_info.get('requires_config') %}
+                            <tr class="collapse" id="hostConfigRow{{ exp.id }}">
+                                <td colspan="7" class="border-0 pt-0">
+                                    <form method="post" action="/prometheus/host-exporters/{{ exp.id }}/config" class="row g-2 align-items-end p-2 bg-dark rounded">
+                                        {% for var in exp_info.get('env_vars', []) %}
+                                        <div class="col-md-5">
+                                            <label class="form-label"><code>{{ var }}</code></label>
+                                            <input type="text" class="form-control form-control-sm font-monospace" name="config_{{ var }}"
+                                                   value="{{ exp.config[var] if exp.config and var in exp.config else '' }}">
+                                        </div>
+                                        {% endfor %}
+                                        <div class="col-md-2">
+                                            <button type="submit" class="btn btn-sm btn-info"><i class="bi bi-check-lg"></i> Save</button>
+                                        </div>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">No host-level exporters configured. These run on Proxmox hosts for hardware-level metrics (e.g. IPMI power/thermal monitoring).</p>
+                {% endif %}
+
+                <!-- Host exporter operation log -->
+                <div id="hostExporterOpLog" class="mt-3 d-none">
+                    <h6>Host Exporter Operation Log</h6>
+                    <pre class="bg-black text-light p-3 rounded" style="max-height: 300px; overflow-y: auto; font-size: 0.85rem;" id="hostExporterLogOutput"></pre>
                 </div>
             </div>
         </div>
@@ -880,5 +1053,99 @@ function _pollMastodonExporter() {
 fetch('/prometheus/mastodon-exporter/status').then(r => r.json()).then(data => {
     if (data.running) _pollMastodonExporter();
 });
+
+// --- Host-Level Exporter Management ---
+
+function updateHostExporterForm() {
+    const sel = document.getElementById('hostExporterTypeSelect');
+    const portInput = document.getElementById('hostExporterPortInput');
+    const configDiv = document.getElementById('hostExporterConfigFields');
+    const inputsDiv = document.getElementById('hostExporterEnvVarInputs');
+    const opt = sel.options[sel.selectedIndex];
+
+    if (opt && opt.dataset.port) {
+        portInput.value = opt.dataset.port;
+    }
+
+    inputsDiv.innerHTML = '';
+    if (opt && opt.dataset.requiresConfig === 'true' && opt.dataset.envVars) {
+        var vars = opt.dataset.envVars.split(',');
+        for (var i = 0; i < vars.length; i++) {
+            var v = vars[i].trim();
+            if (!v) continue;
+            var ph = _envVarPlaceholders[v] || '';
+            inputsDiv.innerHTML +=
+                '<div class="row g-2 mb-1 align-items-center">' +
+                '<div class="col-md-3"><code>' + v + '</code></div>' +
+                '<div class="col-md-9"><input type="text" class="form-control form-control-sm font-monospace" ' +
+                'name="config_' + v + '" placeholder="' + ph + '"></div></div>';
+        }
+        configDiv.classList.remove('d-none');
+    } else {
+        configDiv.classList.add('d-none');
+    }
+}
+
+let _hostExporterPoll = null;
+
+function _pollHostExporterStatus(endpoint) {
+    const logDiv = document.getElementById('hostExporterOpLog');
+    const logOutput = document.getElementById('hostExporterLogOutput');
+    logDiv.classList.remove('d-none');
+
+    if (_hostExporterPoll) clearInterval(_hostExporterPoll);
+    _hostExporterPoll = setInterval(function() {
+        fetch(endpoint)
+            .then(r => r.json())
+            .then(data => {
+                logOutput.textContent = (data.log || []).join('\n');
+                logOutput.scrollTop = logOutput.scrollHeight;
+                if (!data.running) {
+                    clearInterval(_hostExporterPoll);
+                    _hostExporterPoll = null;
+                    if (data.success === true) {
+                        logOutput.textContent += '\n\n--- COMPLETED SUCCESSFULLY ---';
+                    } else if (data.success === false) {
+                        logOutput.textContent += '\n\n--- FAILED ---';
+                    }
+                    setTimeout(function() { location.reload(); }, 2000);
+                }
+            });
+    }, 1500);
+}
+
+function hostExporterInstall(id) {
+    fetch('/prometheus/host-exporters/' + id + '/install', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.started) {
+                _pollHostExporterStatus('/prometheus/host-exporters/install/status');
+            } else if (data.error) {
+                alert(data.error);
+            }
+        })
+        .catch(() => alert('Request failed'));
+}
+
+function hostExporterUninstall(id) {
+    fetch('/prometheus/host-exporters/' + id + '/uninstall', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.started) {
+                _pollHostExporterStatus('/prometheus/host-exporters/uninstall/status');
+            } else if (data.error) {
+                alert(data.error);
+            }
+        })
+        .catch(() => alert('Request failed'));
+}
+
+// Check if host exporter operation is in progress on page load
+fetch('/prometheus/host-exporters/install/status').then(r => r.json()).then(data => {
+    if (data.running) _pollHostExporterStatus('/prometheus/host-exporters/install/status');
+}).catch(() => {});
+fetch('/prometheus/host-exporters/uninstall/status').then(r => r.json()).then(data => {
+    if (data.running) _pollHostExporterStatus('/prometheus/host-exporters/uninstall/status');
+}).catch(() => {});
 </script>
 {% endblock %}

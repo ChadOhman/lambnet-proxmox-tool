@@ -585,6 +585,26 @@ class ExporterInstance(db.Model):
         return f"<ExporterInstance {self.exporter_type} on guest={self.guest_id} status={self.status}>"
 
 
+class HostExporterInstance(db.Model):
+    """Tracks a Prometheus exporter installed on a Proxmox host (host-level exporters like SMCIPMI)."""
+    __tablename__ = "host_exporter_instances"
+
+    id = db.Column(db.Integer, primary_key=True)
+    host_id = db.Column(db.Integer, db.ForeignKey("proxmox_hosts.id", ondelete="CASCADE"), nullable=False, index=True)
+    exporter_type = db.Column(db.String(64), nullable=False)
+    port = db.Column(db.Integer, nullable=False)
+    version = db.Column(db.String(32), nullable=True)
+    status = db.Column(db.String(32), default="pending")
+    config = db.Column(db.JSON, nullable=True)
+    installed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    host = db.relationship("ProxmoxHost", backref="host_exporter_instances")
+
+    def __repr__(self):
+        return f"<HostExporterInstance {self.exporter_type} on host={self.host_id} status={self.status}>"
+
+
 class Setting(db.Model):
     __tablename__ = "settings"
 

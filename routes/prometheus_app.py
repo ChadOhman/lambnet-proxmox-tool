@@ -13,7 +13,7 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 from flask_login import current_user, login_required
 
 from auth.audit import log_action
-from models import ExporterInstance, Guest, Setting, db
+from models import ExporterInstance, Guest, HostExporterInstance, ProxmoxHost, Setting, db
 
 
 def _parse_iso(value):
@@ -30,6 +30,8 @@ _upgrade_job = {"running": False, "success": None, "log": []}
 _preflight_job = {"running": False, "success": None, "log": []}
 _exporter_install_job = {"running": False, "success": None, "log": [], "instance_id": None}
 _exporter_uninstall_job = {"running": False, "success": None, "log": [], "instance_id": None}
+_host_exporter_install_job = {"running": False, "success": None, "log": [], "instance_id": None}
+_host_exporter_uninstall_job = {"running": False, "success": None, "log": [], "instance_id": None}
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +96,8 @@ def manage():
 
     from apps.exporters import BUILTIN_EXPORTERS, KNOWN_EXPORTERS
     exporter_instances = ExporterInstance.query.join(Guest).order_by(Guest.name).all()
+    hosts = ProxmoxHost.query.order_by(ProxmoxHost.name).all()
+    host_exporter_instances = HostExporterInstance.query.join(ProxmoxHost).order_by(ProxmoxHost.name).all()
 
     # Check Mastodon built-in exporter status and current config
     mastodon_guest_id = Setting.get("mastodon_guest_id", "")
@@ -118,6 +122,8 @@ def manage():
         builtin_exporters=BUILTIN_EXPORTERS,
         mastodon_exporter_status=mastodon_exporter_status,
         mastodon_exporter_config=mastodon_exporter_config,
+        hosts=hosts,
+        host_exporter_instances=host_exporter_instances,
     )
 
 
@@ -628,6 +634,229 @@ def exporter_update_config(instance_id):
     instance.config = config if config else None
     log_action("exporter_config", "guest", resource_id=instance.guest_id,
                resource_name=instance.guest.name,
+               details={"exporter_type": instance.exporter_type, "config_set": bool(config)})
+    db.session.commit()
+    flash(f"Configuration updated for {info.get('display_name', instance.exporter_type)}.", "success")
+    return redirect(url_for("prometheus_app.manage"))
+
+
+# ---------------------------------------------------------------------------
+# Host-level exporter routes
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/host-exporters/add", methods=["POST"])
+def host_exporter_add():
+    from apps.exporters import KNOWN_EXPORTERS
+
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    host_id = data.get("host_id", "")
+    exporter_type = data.get("exporter_type", "")
+    port = data.get("port", "")
+
+    if exporter_type not in KNOWN_EXPORTERS or not KNOWN_EXPORTERS[exporter_type].get("host_level"):
+        flash("Invalid host-level exporter type.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    if not host_id:
+        flash("Please select a host.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    try:
+        host = ProxmoxHost.query.get(int(host_id))
+    except (TypeError, ValueError):
+        flash("Invalid host ID.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    if not host:
+        flash("Host not found.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    info = KNOWN_EXPORTERS[exporter_type]
+    try:
+        port_int = int(port) if port else info["default_port"]
+    except (TypeError, ValueError):
+        port_int = info["default_port"]
+
+    existing = HostExporterInstance.query.filter_by(
+        host_id=host.id, exporter_type=exporter_type
+    ).filter(HostExporterInstance.status != "removed").first()
+    if existing:
+        flash(f"{info['display_name']} already exists on {host.name}.", "warning")
+        return redirect(url_for("prometheus_app.manage"))
+
+    config = None
+    if info.get("requires_config") and info.get("env_vars"):
+        config = {}
+        for var in info["env_vars"]:
+            val = data.get(f"config_{var}", "").strip()
+            if val:
+                config[var] = val
+        if not config:
+            config = None
+
+    instance = HostExporterInstance(
+        host_id=host.id,
+        exporter_type=exporter_type,
+        port=port_int,
+        config=config,
+        status="pending",
+    )
+    db.session.add(instance)
+    log_action("host_exporter_add", "host", resource_id=host.id, resource_name=host.name,
+               details={"exporter_type": exporter_type, "port": port_int})
+    db.session.commit()
+
+    flash(f"{info['display_name']} added for {host.name}. Click Install to deploy.", "success")
+    return redirect(url_for("prometheus_app.manage"))
+
+
+@bp.route("/host-exporters/<int:instance_id>/install", methods=["POST"])
+def host_exporter_install(instance_id):
+    if _host_exporter_install_job["running"] or _host_exporter_uninstall_job["running"]:
+        return jsonify({"error": "Another host exporter operation is already running."}), 409
+
+    instance = HostExporterInstance.query.get_or_404(instance_id)
+
+    _host_exporter_install_job["running"] = True
+    _host_exporter_install_job["success"] = None
+    _host_exporter_install_job["log"] = []
+    _host_exporter_install_job["instance_id"] = instance_id
+
+    from flask import current_app
+    _app = current_app._get_current_object()
+    _host_id = instance.host_id
+    _host_name = instance.host.name
+    _etype = instance.exporter_type
+
+    def _bg():
+        from apps.exporters import run_host_exporter_install
+        from core.notifier import send_exporter_notification
+        def _cb(msg):
+            _host_exporter_install_job["log"].append(msg)
+        try:
+            with _app.app_context():
+                ok, _ = run_host_exporter_install(instance_id, log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _host_exporter_install_job["running"] = False
+        _host_exporter_install_job["success"] = ok
+        with _app.app_context():
+            send_exporter_notification("install", _etype, _host_name, ok)
+            log_action("host_exporter_install", "host", resource_id=_host_id,
+                       resource_name=_host_name,
+                       details={"exporter_type": _etype, "status": "success" if ok else "error"})
+            db.session.commit()
+
+    _threading.Thread(target=_bg, daemon=True).start()
+    return jsonify({"started": True})
+
+
+@bp.route("/host-exporters/install/status")
+def host_exporter_install_status():
+    return jsonify({
+        "running": _host_exporter_install_job["running"],
+        "success": _host_exporter_install_job["success"],
+        "log": _host_exporter_install_job["log"],
+        "instance_id": _host_exporter_install_job["instance_id"],
+    })
+
+
+@bp.route("/host-exporters/<int:instance_id>/uninstall", methods=["POST"])
+def host_exporter_uninstall(instance_id):
+    if _host_exporter_install_job["running"] or _host_exporter_uninstall_job["running"]:
+        return jsonify({"error": "Another host exporter operation is already running."}), 409
+
+    instance = HostExporterInstance.query.get_or_404(instance_id)
+
+    _host_exporter_uninstall_job["running"] = True
+    _host_exporter_uninstall_job["success"] = None
+    _host_exporter_uninstall_job["log"] = []
+    _host_exporter_uninstall_job["instance_id"] = instance_id
+
+    from flask import current_app
+    _app = current_app._get_current_object()
+    _host_id = instance.host_id
+    _host_name = instance.host.name
+    _etype = instance.exporter_type
+
+    def _bg():
+        from apps.exporters import run_host_exporter_uninstall
+        from core.notifier import send_exporter_notification
+        def _cb(msg):
+            _host_exporter_uninstall_job["log"].append(msg)
+        try:
+            with _app.app_context():
+                ok, _ = run_host_exporter_uninstall(instance_id, log_callback=_cb)
+        except Exception as e:
+            _cb(f"FATAL ERROR: {e}")
+            ok = False
+        _host_exporter_uninstall_job["running"] = False
+        _host_exporter_uninstall_job["success"] = ok
+        with _app.app_context():
+            send_exporter_notification("uninstall", _etype, _host_name, ok)
+            log_action("host_exporter_uninstall", "host", resource_id=_host_id,
+                       resource_name=_host_name,
+                       details={"exporter_type": _etype, "status": "success" if ok else "error"})
+            db.session.commit()
+
+    _threading.Thread(target=_bg, daemon=True).start()
+    return jsonify({"started": True})
+
+
+@bp.route("/host-exporters/uninstall/status")
+def host_exporter_uninstall_status():
+    return jsonify({
+        "running": _host_exporter_uninstall_job["running"],
+        "success": _host_exporter_uninstall_job["success"],
+        "log": _host_exporter_uninstall_job["log"],
+        "instance_id": _host_exporter_uninstall_job["instance_id"],
+    })
+
+
+@bp.route("/host-exporters/<int:instance_id>/delete", methods=["POST"])
+def host_exporter_delete(instance_id):
+    instance = HostExporterInstance.query.get_or_404(instance_id)
+    if instance.status == "installed":
+        flash("Uninstall the exporter before deleting.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    host_name = instance.host.name
+    etype = instance.exporter_type
+    log_action("host_exporter_delete", "host", resource_id=instance.host_id, resource_name=host_name,
+               details={"exporter_type": etype})
+    db.session.delete(instance)
+    db.session.commit()
+    flash(f"Exporter entry removed for {host_name}.", "success")
+    return redirect(url_for("prometheus_app.manage"))
+
+
+@bp.route("/host-exporters/<int:instance_id>/config", methods=["POST"])
+def host_exporter_update_config(instance_id):
+    from apps.exporters import KNOWN_EXPORTERS
+
+    instance = HostExporterInstance.query.get_or_404(instance_id)
+    if instance.status == "installed":
+        flash("Uninstall the exporter before changing its configuration.", "error")
+        return redirect(url_for("prometheus_app.manage"))
+
+    info = KNOWN_EXPORTERS.get(instance.exporter_type, {})
+    env_vars = info.get("env_vars", [])
+    if not env_vars:
+        flash("This exporter does not require configuration.", "warning")
+        return redirect(url_for("prometheus_app.manage"))
+
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    config = {}
+    for var in env_vars:
+        val = data.get(f"config_{var}", "").strip()
+        if val:
+            config[var] = val
+
+    instance.config = config if config else None
+    log_action("host_exporter_config", "host", resource_id=instance.host_id,
+               resource_name=instance.host.name,
                details={"exporter_type": instance.exporter_type, "config_set": bool(config)})
     db.session.commit()
     flash(f"Configuration updated for {info.get('display_name', instance.exporter_type)}.", "success")
