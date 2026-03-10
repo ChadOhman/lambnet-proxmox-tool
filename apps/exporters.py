@@ -71,6 +71,16 @@ KNOWN_EXPORTERS = {
         "job_name": "jitsi_jvb",
         "builtin": True,
     },
+    "smcipmi_exporter": {
+        "display_name": "Supermicro IPMI Exporter",
+        "github_repo": "GSI-HPC/prometheus-smcipmi-exporter",
+        "binary_name": "smcipmi_exporter",
+        "default_port": 9776,
+        "systemd_unit": "smcipmi_exporter.service",
+        "requires_config": True,
+        "job_name": "smcipmi",
+        "host_level": True,
+    },
 }
 
 # Built-in exporters — these are part of the application itself (no binary to install).

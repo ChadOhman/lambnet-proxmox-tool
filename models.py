@@ -54,6 +54,8 @@ class Role(db.Model):
         "can_view_services",
         "can_edit_services",
         "can_view_unifi",
+        "can_view_ipmi",
+        "can_manage_ipmi",
     ]
 
     PERMISSION_LABELS = {
@@ -70,6 +72,8 @@ class Role(db.Model):
         "can_view_services": "View Services",
         "can_edit_services": "Edit Services",
         "can_view_unifi": "View Network (UniFi)",
+        "can_view_ipmi": "View IPMI (Hardware Health)",
+        "can_manage_ipmi": "Manage IPMI (Power Control)",
     }
 
     BASE_TIER_LEVELS = {"viewer": 1, "operator": 2, "admin": 3}
@@ -95,6 +99,8 @@ class Role(db.Model):
     can_view_services = db.Column(db.Boolean, default=False)
     can_edit_services = db.Column(db.Boolean, default=False)
     can_view_unifi = db.Column(db.Boolean, default=False)
+    can_view_ipmi = db.Column(db.Boolean, default=False)
+    can_manage_ipmi = db.Column(db.Boolean, default=False)
 
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -115,25 +121,25 @@ DEFAULT_ROLES = [
      "can_manage_settings": True, "can_manage_credentials": True,
      "can_view_hosts": True, "can_manage_hosts": True, "can_manage_guests": True,
      "can_restart_unifi": True, "can_view_audit_log": True, "can_view_services": True, "can_edit_services": True,
-     "can_view_unifi": True},
+     "can_view_unifi": True, "can_view_ipmi": True, "can_manage_ipmi": True},
     {"name": "admin", "display_name": "Admin", "level": 3, "is_builtin": True,
      "can_ssh": True, "can_update": True, "can_manage_users": True,
      "can_manage_settings": False, "can_manage_credentials": False,
      "can_view_hosts": True, "can_manage_hosts": True, "can_manage_guests": True,
      "can_restart_unifi": True, "can_view_audit_log": True, "can_view_services": True, "can_edit_services": True,
-     "can_view_unifi": True},
+     "can_view_unifi": True, "can_view_ipmi": True, "can_manage_ipmi": True},
     {"name": "operator", "display_name": "Operator", "level": 2, "is_builtin": True,
      "can_ssh": True, "can_update": True, "can_manage_users": False,
      "can_manage_settings": False, "can_manage_credentials": False,
      "can_view_hosts": True, "can_manage_hosts": False, "can_manage_guests": False,
      "can_restart_unifi": False, "can_view_audit_log": False, "can_view_services": False, "can_edit_services": False,
-     "can_view_unifi": False},
+     "can_view_unifi": False, "can_view_ipmi": True, "can_manage_ipmi": False},
     {"name": "viewer", "display_name": "Viewer", "level": 1, "is_builtin": True,
      "can_ssh": False, "can_update": False, "can_manage_users": False,
      "can_manage_settings": False, "can_manage_credentials": False,
      "can_view_hosts": False, "can_manage_hosts": False, "can_manage_guests": False,
      "can_restart_unifi": False, "can_view_audit_log": False, "can_view_services": False, "can_edit_services": False,
-     "can_view_unifi": False},
+     "can_view_unifi": False, "can_view_ipmi": False, "can_manage_ipmi": False},
 ]
 
 
@@ -260,6 +266,18 @@ class User(UserMixin, db.Model):
         return self.role_obj.can_view_unifi if self.role_obj else False
 
     @property
+    def can_view_ipmi(self):
+        if self.is_super_admin:
+            return True
+        return self.role_obj.can_view_ipmi if self.role_obj else False
+
+    @property
+    def can_manage_ipmi(self):
+        if self.is_super_admin:
+            return True
+        return self.role_obj.can_manage_ipmi if self.role_obj else False
+
+    @property
     def role_display(self):
         return self.role_obj.display_name if self.role_obj else "Viewer"
 
@@ -337,6 +355,11 @@ class ProxmoxHost(db.Model):
     verify_ssl = db.Column(db.Boolean, default=False)
     host_type = db.Column(db.String(16), default="pve")  # "pve" or "pbs"
     ssh_credential_id = db.Column(db.Integer, db.ForeignKey("credentials.id"), nullable=True)
+    ipmi_enabled = db.Column(db.Boolean, default=False)
+    ipmi_address = db.Column(db.String(256), nullable=True)  # BMC IP/hostname
+    ipmi_username = db.Column(db.String(128), nullable=True)
+    ipmi_password = db.Column(db.Text, nullable=True)  # Fernet encrypted
+    ipmi_verify_ssl = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     guests = db.relationship("Guest", backref="proxmox_host", lazy=True, cascade="all, delete-orphan")
@@ -617,6 +640,27 @@ class AuditLog(db.Model):
 
     def __repr__(self):
         return f"<AuditLog {self.action} by user_id={self.user_id}>"
+
+
+class HostMetricSnapshot(db.Model):
+    """Time-series snapshots of IPMI sensor data for a host (temps, fans, power)."""
+    __tablename__ = "host_metric_snapshots"
+
+    id = db.Column(db.Integer, primary_key=True)
+    host_id = db.Column(db.Integer, db.ForeignKey("proxmox_hosts.id", ondelete="CASCADE"), nullable=False, index=True)
+    captured_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    # JSON blob: {"cpu_temp": 42, "system_temp": 35, "fans": [...], "power_watts": 180, ...}
+    data = db.Column(db.Text, nullable=True)
+
+    def __repr__(self):
+        return f"<HostMetricSnapshot host={self.host_id} at={self.captured_at}>"
+
+
+db.Index(
+    "ix_host_metric_host_captured",
+    HostMetricSnapshot.host_id,
+    HostMetricSnapshot.captured_at,
+)
 
 
 class UnifiLogEntry(db.Model):

@@ -40,6 +40,7 @@ def create_app(test_config=None):
 
     with app.app_context():
         db.create_all()
+        _migrate_ipmi_columns()
         _seed_roles()
         _ensure_default_admin()
 
@@ -95,6 +96,7 @@ def create_app(test_config=None):
     from routes.ghost import bp as ghost_bp
     from routes.guests import bp as guests_bp
     from routes.hosts import bp as hosts_bp
+    from routes.ipmi import bp as ipmi_bp
     from routes.jitsi import bp as jitsi_bp
     from routes.mastodon import bp as mastodon_bp
     from routes.peertube import bp as peertube_bp
@@ -128,6 +130,7 @@ def create_app(test_config=None):
     app.register_blueprint(applications_bp, url_prefix="/applications")
     app.register_blueprint(prometheus_metrics_bp)
     app.register_blueprint(prometheus_app_bp, url_prefix="/prometheus")
+    app.register_blueprint(ipmi_bp, url_prefix="/ipmi")
     app.register_blueprint(unpoller_bp, url_prefix="/unpoller")
 
     # Initialize WebSocket for terminal
@@ -284,6 +287,32 @@ def create_app(test_config=None):
             return jsonify({"status": "error", "detail": "database unreachable"}), 503
 
     return app
+
+
+def _add_column_if_missing(table, column, col_type="BOOLEAN DEFAULT 0"):
+    """Add a column to an existing SQLite table if it doesn't exist yet."""
+    try:
+        existing = {row[1] for row in db.session.execute(db.text(f"PRAGMA table_info({table})")).fetchall()}
+        if column not in existing:
+            db.session.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+            db.session.commit()
+            logger.info("Added column %s.%s", table, column)
+    except Exception as e:
+        db.session.rollback()
+        logger.debug("Migration check for %s.%s: %s", table, column, e)
+
+
+def _migrate_ipmi_columns():
+    """Add IPMI-related columns to existing tables that were created before this feature."""
+    # Role permissions
+    _add_column_if_missing("roles", "can_view_ipmi", "BOOLEAN DEFAULT 0")
+    _add_column_if_missing("roles", "can_manage_ipmi", "BOOLEAN DEFAULT 0")
+    # ProxmoxHost IPMI config
+    _add_column_if_missing("proxmox_hosts", "ipmi_enabled", "BOOLEAN DEFAULT 0")
+    _add_column_if_missing("proxmox_hosts", "ipmi_address", "VARCHAR(256)")
+    _add_column_if_missing("proxmox_hosts", "ipmi_username", "VARCHAR(128)")
+    _add_column_if_missing("proxmox_hosts", "ipmi_password", "TEXT")
+    _add_column_if_missing("proxmox_hosts", "ipmi_verify_ssl", "BOOLEAN DEFAULT 0")
 
 
 def _seed_roles():

@@ -86,6 +86,14 @@
                         </a>
                     </li>
                     {% endif %}
+                    {% if current_user.can_view_ipmi %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.blueprint == 'ipmi' %}active{% endif %}" href="/ipmi"
+                           {% if request.blueprint == 'ipmi' %}aria-current="page"{% endif %}>
+                            <i class="bi bi-thermometer-half"></i> IPMI
+                        </a>
+                    </li>
+                    {% endif %}
                     {% if current_user.is_admin %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.blueprint == 'schedules' %}active{% endif %}" href="/schedules"
