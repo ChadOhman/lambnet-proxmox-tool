@@ -51,6 +51,17 @@ KNOWN_EXPORTERS = {
         "job_name": "redis",
         "asset_version_prefix": "v",
     },
+    "elasticsearch_exporter": {
+        "display_name": "Elasticsearch Exporter",
+        "github_repo": "prometheus-community/elasticsearch_exporter",
+        "binary_name": "elasticsearch_exporter",
+        "default_port": 9114,
+        "systemd_unit": "elasticsearch_exporter.service",
+        "requires_config": True,
+        "env_vars": ["ES_URI"],
+        "job_name": "elasticsearch",
+        "exec_extra_args": ["--es.uri=${ES_URI}"],
+    },
     "jitsi_jvb": {
         "display_name": "Jitsi Videobridge",
         "binary_name": None,
@@ -218,6 +229,10 @@ def _generate_exporter_systemd_unit(exporter_type, port, env_file=None):
     if env_file:
         env_line = f"\nEnvironmentFile={env_file}"
 
+    extra_args = ""
+    for arg in info.get("exec_extra_args", []):
+        extra_args += f" \\\n  {arg}"
+
     return f"""[Unit]
 Description={info['display_name']}
 Documentation=https://prometheus.io/docs/instrumenting/exporters/
@@ -229,7 +244,7 @@ User={user}
 Group={user}
 Type=simple{env_line}
 ExecStart=/usr/local/bin/{binary} \\
-  --web.listen-address=:{port}
+  --web.listen-address=:{port}{extra_args}
 Restart=on-failure
 RestartSec=5
 
