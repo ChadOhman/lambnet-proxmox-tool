@@ -1346,7 +1346,7 @@ class TestHostExporterRoutes:
         resp = auth_client.post("/prometheus/host-exporters/add", data={
             "host_id": "",
             "exporter_type": "smcipmi_exporter",
-            "port": "9776",
+            "port": "9850",
         }, follow_redirects=False)
         assert resp.status_code in (302, 303)
 
@@ -1358,7 +1358,7 @@ class TestHostExporterRoutes:
         resp = auth_client.post("/prometheus/host-exporters/add", data={
             "host_id": str(host_id),
             "exporter_type": "smcipmi_exporter",
-            "port": "9776",
+            "port": "9850",
         }, follow_redirects=False)
         assert resp.status_code in (302, 303)
 
@@ -1366,7 +1366,7 @@ class TestHostExporterRoutes:
             exp = HostExporterInstance.query.filter_by(host_id=host_id).first()
             assert exp is not None
             assert exp.exporter_type == "smcipmi_exporter"
-            assert exp.port == 9776
+            assert exp.port == 9850
             assert exp.status == "pending"
 
             db.session.delete(exp)
@@ -1379,7 +1379,7 @@ class TestHostExporterRoutes:
             exp = HostExporterInstance(
                 host_id=host.id,
                 exporter_type="smcipmi_exporter",
-                port=9776,
+                port=9850,
                 status="pending",
             )
             db.session.add(exp)
@@ -1389,7 +1389,7 @@ class TestHostExporterRoutes:
         resp = auth_client.post("/prometheus/host-exporters/add", data={
             "host_id": str(host_id),
             "exporter_type": "smcipmi_exporter",
-            "port": "9776",
+            "port": "9850",
         }, follow_redirects=False)
         assert resp.status_code in (302, 303)
 
@@ -1409,7 +1409,7 @@ class TestHostExporterRoutes:
             exp = HostExporterInstance(
                 host_id=host.id,
                 exporter_type="smcipmi_exporter",
-                port=9776,
+                port=9850,
                 status="pending",
             )
             db.session.add(exp)
@@ -1432,7 +1432,7 @@ class TestHostExporterRoutes:
             exp = HostExporterInstance(
                 host_id=host.id,
                 exporter_type="smcipmi_exporter",
-                port=9776,
+                port=9850,
                 status="installed",
             )
             db.session.add(exp)
@@ -1472,7 +1472,7 @@ class TestHostExporterModel:
             exp = HostExporterInstance(
                 host_id=host.id,
                 exporter_type="smcipmi_exporter",
-                port=9776,
+                port=9850,
                 status="pending",
             )
             db.session.add(exp)
@@ -1490,7 +1490,7 @@ class TestHostExporterModel:
             exp = HostExporterInstance(
                 host_id=host.id,
                 exporter_type="smcipmi_exporter",
-                port=9776,
+                port=9850,
                 status="installed",
             )
             db.session.add(exp)

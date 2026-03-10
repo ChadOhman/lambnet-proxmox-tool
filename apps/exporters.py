@@ -74,15 +74,16 @@ KNOWN_EXPORTERS = {
     "smcipmi_exporter": {
         "display_name": "Supermicro IPMI Exporter",
         "github_repo": "GSI-HPC/prometheus-smcipmi-exporter",
-        "binary_name": "smcipmi_exporter",
-        "default_port": 9776,
+        "binary_name": "prometheus-smcipmi-exporter",
+        "default_port": 9850,
         "systemd_unit": "smcipmi_exporter.service",
-        "requires_config": True,
+        "requires_config": False,  # Config auto-generated from host IPMI settings
         "job_name": "smcipmi",
         "host_level": True,
         "install_method": "go_build",  # No pre-built releases; requires `go build` from source
         "go_module": "github.com/GSI-HPC/prometheus-smcipmi-exporter",
-        "env_vars": ["SMCIPMI_TOOL_PATH"],
+        "custom_systemd": True,  # Uses -port/-configFile instead of --web.listen-address
+        "config_file_path": "/etc/smcipmi_exporter/config.yml",
     },
 }
 
@@ -242,9 +243,22 @@ def _generate_exporter_systemd_unit(exporter_type, port, env_file=None):
     if env_file:
         env_line = f"\nEnvironmentFile={env_file}"
 
-    extra_args = ""
-    for arg in info.get("exec_extra_args", []):
-        extra_args += f" \\\n  {arg}"
+    # SMCIPMI exporter uses -port/-configFile instead of --web.listen-address
+    if info.get("custom_systemd"):
+        config_path = info.get("config_file_path", "/etc/smcipmi_exporter/config.yml")
+        exec_start = (
+            f"ExecStart=/usr/local/bin/{binary} \\\n"
+            f"  -port {port} \\\n"
+            f"  -configFile {config_path}"
+        )
+    else:
+        extra_args = ""
+        for arg in info.get("exec_extra_args", []):
+            extra_args += f" \\\n  {arg}"
+        exec_start = (
+            f"ExecStart=/usr/local/bin/{binary} \\\n"
+            f"  --web.listen-address=:{port}{extra_args}"
+        )
 
     return f"""[Unit]
 Description={info['display_name']}
@@ -256,8 +270,7 @@ After=network-online.target
 User={user}
 Group={user}
 Type=simple{env_line}
-ExecStart=/usr/local/bin/{binary} \\
-  --web.listen-address=:{port}{extra_args}
+{exec_start}
 Restart=on-failure
 RestartSec=5
 
@@ -715,9 +728,45 @@ def run_host_exporter_install(instance_id, log_callback=None):
                 db.session.commit()
                 return False, log_lines
 
-            # Write env file if needed
+            # Write SMCIPMI config.yml if applicable
+            if info.get("config_file_path"):
+                config_path = info["config_file_path"]
+                config_dir = config_path.rsplit("/", 1)[0]
+
+                # Build config from host's IPMI credentials
+                ipmi_user = host.ipmi_username or "ADMIN"
+                ipmi_pass = ""
+                if host.ipmi_password:
+                    from auth.credential_store import decrypt
+                    ipmi_pass = decrypt(host.ipmi_password) or ""
+                ipmi_target = host.ipmi_address or host.hostname
+
+                config_yml = (
+                    f"login:\n"
+                    f"  user:     {ipmi_user}\n"
+                    f"  password: {ipmi_pass}\n"
+                    f"\n"
+                    f"collectors:\n"
+                    f"  pminfo: True\n"
+                    f"\n"
+                    f"targets:\n"
+                    f"  - {ipmi_target}\n"
+                )
+
+                _log(f"Writing exporter config to {config_path}...")
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"mkdir -p {config_dir} && "
+                    f"cat > {config_path} << 'CFGEOF'\n{config_yml}CFGEOF\n"
+                    f"chmod 600 {config_path} && chown {binary}:{binary} {config_path}",
+                    timeout=15,
+                )
+                _log_cmd_output(_log, stdout, stderr, code)
+                if code != 0:
+                    _log("WARNING: Failed to write exporter config file.")
+
+            # Write env file if needed (not used by SMCIPMI but kept for other host exporters)
             env_file = None
-            if info.get("requires_config") and instance.config:
+            if info.get("requires_config") and instance.config and not info.get("config_file_path"):
                 env_file = f"/etc/default/{binary}"
                 env_lines = "\n".join(f"{k}={v}" for k, v in instance.config.items())
                 _log("Writing environment configuration...")

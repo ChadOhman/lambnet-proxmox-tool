@@ -361,7 +361,7 @@ class TestIpmiPrometheusQuery:
             client = PrometheusQueryClient()
             with patch.object(client, "_run_snapshot_queries") as mock_run:
                 mock_run.return_value = {"snapshots": [{"power_consumption_watts": 200}], "source": "smcipmi_exporter"}
-                result = client.get_ipmi_metrics_exporter("10.0.0.50:9776", "day")
+                result = client.get_ipmi_metrics_exporter("10.0.0.50:9850", "day")
                 assert result["source"] == "smcipmi_exporter"
                 mock_run.assert_called_once()
                 # Verify queries contain expected metric names
@@ -379,7 +379,7 @@ class TestSmcipmiExporter:
         from apps.exporters import KNOWN_EXPORTERS
         assert "smcipmi_exporter" in KNOWN_EXPORTERS
         info = KNOWN_EXPORTERS["smcipmi_exporter"]
-        assert info["default_port"] == 9776
+        assert info["default_port"] == 9850
         assert info["github_repo"] == "GSI-HPC/prometheus-smcipmi-exporter"
         assert info["job_name"] == "smcipmi"
         assert info.get("host_level") is True
