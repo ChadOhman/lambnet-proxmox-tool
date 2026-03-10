@@ -916,13 +916,9 @@ def _regenerate_prometheus_config(_log=None):
     )
     for exp in host_installed:
         host = exp.host
-        exp_info = KNOWN_EXPORTERS.get(exp.exporter_type, {})
-        # For IPMI exporters, use the BMC address as the scrape target
-        if exp_info.get("host_level") and host.ipmi_address:
-            target_ip = host.ipmi_address
-        else:
-            target_ip = host.hostname
-        by_type.setdefault(exp.exporter_type, []).append(f"{target_ip}:{exp.port}")
+        # Host-level exporters run on the Proxmox host itself, so always
+        # use the host's management IP as the Prometheus scrape target.
+        by_type.setdefault(exp.exporter_type, []).append(f"{host.hostname}:{exp.port}")
 
     # Include builtin exporters (e.g. JVB) from settings
     if Setting.get("jitsi_prometheus_scrape", "false") == "true":
