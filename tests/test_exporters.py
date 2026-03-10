@@ -137,6 +137,7 @@ class TestExporterLogic:
         assert "node_exporter" in KNOWN_EXPORTERS
         assert "postgres_exporter" in KNOWN_EXPORTERS
         assert "redis_exporter" in KNOWN_EXPORTERS
+        assert "elasticsearch_exporter" in KNOWN_EXPORTERS
         assert KNOWN_EXPORTERS["node_exporter"]["default_port"] == 9100
 
     def test_systemd_unit_generation(self):
@@ -152,6 +153,36 @@ class TestExporterLogic:
         unit = _generate_exporter_systemd_unit("postgres_exporter", 9187, env_file="/etc/default/postgres_exporter")
         assert "EnvironmentFile=/etc/default/postgres_exporter" in unit
         assert ":9187" in unit
+
+    def test_elasticsearch_exporter_registry(self):
+        from apps.exporters import KNOWN_EXPORTERS
+        info = KNOWN_EXPORTERS["elasticsearch_exporter"]
+        assert info["display_name"] == "Elasticsearch Exporter"
+        assert info["github_repo"] == "prometheus-community/elasticsearch_exporter"
+        assert info["binary_name"] == "elasticsearch_exporter"
+        assert info["default_port"] == 9114
+        assert info["systemd_unit"] == "elasticsearch_exporter.service"
+        assert info["requires_config"] is True
+        assert "ES_URI" in info["env_vars"]
+        assert info["job_name"] == "elasticsearch"
+
+    def test_elasticsearch_systemd_unit_includes_es_uri_flag(self):
+        from apps.exporters import _generate_exporter_systemd_unit
+        unit = _generate_exporter_systemd_unit(
+            "elasticsearch_exporter", 9114, env_file="/etc/default/elasticsearch_exporter"
+        )
+        assert "ExecStart=/usr/local/bin/elasticsearch_exporter" in unit
+        assert ":9114" in unit
+        assert "--es.uri=${ES_URI}" in unit
+        assert "EnvironmentFile=/etc/default/elasticsearch_exporter" in unit
+        assert "User=elasticsearch_exporter" in unit
+
+    def test_systemd_unit_without_extra_args(self):
+        """Verify that exporters without exec_extra_args still work normally."""
+        from apps.exporters import _generate_exporter_systemd_unit
+        unit = _generate_exporter_systemd_unit("node_exporter", 9100)
+        assert "--es.uri" not in unit
+        assert "ExecStart=/usr/local/bin/node_exporter" in unit
 
     def test_check_exporter_release_unknown_type(self):
         from apps.exporters import check_exporter_release
