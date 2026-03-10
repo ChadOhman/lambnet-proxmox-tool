@@ -80,6 +80,9 @@ KNOWN_EXPORTERS = {
         "requires_config": True,
         "job_name": "smcipmi",
         "host_level": True,
+        "install_method": "go_build",  # No pre-built releases; requires `go build` from source
+        "go_module": "github.com/GSI-HPC/prometheus-smcipmi-exporter",
+        "env_vars": ["SMCIPMI_TOOL_PATH"],
     },
 }
 
@@ -530,6 +533,125 @@ def run_exporter_uninstall(instance_id, log_callback=None):
 # ---------------------------------------------------------------------------
 
 
+def _install_host_exporter_go_build(ssh, info, binary, _log):
+    """Install a host exporter by building from Go source.
+
+    Returns (success, version_string).
+    """
+    go_module = info["go_module"]
+
+    # Check Go is available
+    _log("Checking for Go toolchain...")
+    stdout, stderr, code = ssh.execute_sudo("go version", timeout=15)
+    if code != 0:
+        _log("Go not found. Installing Go toolchain...")
+        install_cmd = (
+            "apt-get update -qq && apt-get install -y -qq golang-go git >/dev/null 2>&1"
+        )
+        stdout, stderr, code = ssh.execute_sudo(install_cmd, timeout=180)
+        _log_cmd_output(_log, stdout, stderr, code)
+        if code != 0:
+            _log("ERROR: Failed to install Go toolchain.")
+            return False, None
+    else:
+        _log(f"  {(stdout or '').strip()}")
+
+    # Clone and build
+    _log(f"Cloning {go_module}...")
+    clone_dir = f"/tmp/{binary}-src"
+    clone_cmd = (
+        f"rm -rf {clone_dir} && "
+        f"git clone --depth 1 https://{go_module}.git {clone_dir}"
+    )
+    stdout, stderr, code = ssh.execute_sudo(clone_cmd, timeout=120)
+    _log_cmd_output(_log, stdout, stderr, code)
+    if code != 0:
+        _log("ERROR: Failed to clone repository.")
+        return False, None
+
+    _log("Building from source (this may take a minute)...")
+    build_cmd = f"cd {clone_dir} && go build -o {binary} ."
+    stdout, stderr, code = ssh.execute_sudo(build_cmd, timeout=300)
+    _log_cmd_output(_log, stdout, stderr, code)
+    if code != 0:
+        _log("ERROR: Go build failed.")
+        return False, None
+
+    # Install binary
+    _log("Installing binary...")
+    stdout, stderr, code = ssh.execute_sudo(
+        f"cp {clone_dir}/{binary} /usr/local/bin/ && "
+        f"chown {binary}:{binary} /usr/local/bin/{binary}",
+        timeout=30,
+    )
+    _log_cmd_output(_log, stdout, stderr, code)
+    if code != 0:
+        _log("ERROR: Failed to install binary.")
+        return False, None
+
+    # Get commit hash as version
+    stdout, _, _ = ssh.execute_sudo(f"cd {clone_dir} && git rev-parse --short HEAD", timeout=10)
+    version = (stdout or "").strip() or "source"
+
+    # Clean up
+    ssh.execute_sudo(f"rm -rf {clone_dir}", timeout=15)
+
+    return True, version
+
+
+def _install_host_exporter_release(ssh, info, binary, _log):
+    """Install a host exporter from a pre-built GitHub release tarball.
+
+    Returns (success, version_string).
+    """
+    _log(f"Checking latest {info['display_name']} version...")
+    latest, err = check_exporter_release(info.get("_exporter_type_key", binary))
+    if not latest:
+        _log(f"ERROR: Could not determine latest version: {err}")
+        return False, None
+
+    # Determine architecture
+    arch_out, _, _ = ssh.execute_sudo("dpkg --print-architecture", timeout=10)
+    arch = (arch_out or "amd64").strip()
+    dl_arch = "arm64" if arch == "arm64" else "amd64"
+
+    vprefix = info.get("asset_version_prefix", "")
+    dl_url = (
+        f"https://github.com/{info['github_repo']}/releases/download/v{latest}/"
+        f"{binary}-{vprefix}{latest}.linux-{dl_arch}.tar.gz"
+    )
+    _log(f"Downloading {info['display_name']} v{latest} ({dl_arch})...")
+    dl_cmd = (
+        f"cd /tmp && "
+        f"(curl -sSL -o {binary}.tar.gz '{dl_url}' 2>/dev/null "
+        f"|| wget -q -O {binary}.tar.gz '{dl_url}') && "
+        f"tar xzf {binary}.tar.gz"
+    )
+    stdout, stderr, code = ssh.execute_sudo(dl_cmd, timeout=120)
+    _log_cmd_output(_log, stdout, stderr, code)
+    if code != 0:
+        _log(f"ERROR: Failed to download {info['display_name']}.")
+        return False, None
+
+    # Install binary
+    extract_dir = f"{binary}-{vprefix}{latest}.linux-{dl_arch}"
+    _log("Installing binary...")
+    stdout, stderr, code = ssh.execute_sudo(
+        f"cp /tmp/{extract_dir}/{binary} /usr/local/bin/ && "
+        f"chown {binary}:{binary} /usr/local/bin/{binary}",
+        timeout=30,
+    )
+    _log_cmd_output(_log, stdout, stderr, code)
+    if code != 0:
+        _log("ERROR: Failed to install binary.")
+        return False, None
+
+    # Clean up
+    ssh.execute_sudo(f"rm -rf /tmp/{binary}.tar.gz /tmp/{extract_dir}", timeout=15)
+
+    return True, latest
+
+
 def run_host_exporter_install(instance_id, log_callback=None):
     """Install an exporter on a Proxmox host via SSH.
 
@@ -566,26 +688,14 @@ def run_host_exporter_install(instance_id, log_callback=None):
         _log("ERROR: No SSH credential configured for this host.")
         return False, log_lines
 
-    # Get latest version
-    _log(f"Checking latest {info['display_name']} version...")
-    latest, err = check_exporter_release(instance.exporter_type)
-    if not latest:
-        _log(f"ERROR: Could not determine latest version: {err}")
-        return False, log_lines
-
     binary = info["binary_name"]
-    _log(f"Installing {info['display_name']} v{latest} on {host.name} ({host.hostname})...")
+    _log(f"Installing {info['display_name']} on {host.name} ({host.hostname})...")
 
     instance.status = "installing"
     db.session.commit()
 
     try:
         with SSHClient.from_credential(host.hostname, credential) as ssh:
-            # Determine architecture
-            arch_out, _, _ = ssh.execute_sudo("dpkg --print-architecture", timeout=10)
-            arch = (arch_out or "amd64").strip()
-            dl_arch = "arm64" if arch == "arm64" else "amd64"
-
             # Create user
             _log(f"Creating {binary} user...")
             stdout, stderr, code = ssh.execute_sudo(
@@ -594,38 +704,13 @@ def run_host_exporter_install(instance_id, log_callback=None):
             )
             _log_cmd_output(_log, stdout, stderr, code)
 
-            # Download and extract
-            vprefix = info.get("asset_version_prefix", "")
-            dl_url = (
-                f"https://github.com/{info['github_repo']}/releases/download/v{latest}/"
-                f"{binary}-{vprefix}{latest}.linux-{dl_arch}.tar.gz"
-            )
-            _log(f"Downloading {info['display_name']} v{latest} ({dl_arch})...")
-            dl_cmd = (
-                f"cd /tmp && "
-                f"(curl -sSL -o {binary}.tar.gz '{dl_url}' 2>/dev/null "
-                f"|| wget -q -O {binary}.tar.gz '{dl_url}') && "
-                f"tar xzf {binary}.tar.gz"
-            )
-            stdout, stderr, code = ssh.execute_sudo(dl_cmd, timeout=120)
-            _log_cmd_output(_log, stdout, stderr, code)
-            if code != 0:
-                _log(f"ERROR: Failed to download {info['display_name']}.")
-                instance.status = "failed"
-                db.session.commit()
-                return False, log_lines
+            # Install binary based on method
+            if info.get("install_method") == "go_build":
+                ok, version = _install_host_exporter_go_build(ssh, info, binary, _log)
+            else:
+                ok, version = _install_host_exporter_release(ssh, info, binary, _log)
 
-            # Install binary
-            extract_dir = f"{binary}-{vprefix}{latest}.linux-{dl_arch}"
-            _log("Installing binary...")
-            stdout, stderr, code = ssh.execute_sudo(
-                f"cp /tmp/{extract_dir}/{binary} /usr/local/bin/ && "
-                f"chown {binary}:{binary} /usr/local/bin/{binary}",
-                timeout=30,
-            )
-            _log_cmd_output(_log, stdout, stderr, code)
-            if code != 0:
-                _log("ERROR: Failed to install binary.")
+            if not ok:
                 instance.status = "failed"
                 db.session.commit()
                 return False, log_lines
@@ -681,14 +766,11 @@ def run_host_exporter_install(instance_id, log_callback=None):
             if code != 0 or (stdout or "").strip() != "active":
                 _log(f"WARNING: {info['display_name']} may not be running.")
 
-            # Clean up
-            ssh.execute_sudo(f"rm -rf /tmp/{binary}.tar.gz /tmp/{extract_dir}", timeout=15)
-
-            _log(f"{info['display_name']} v{latest} installed successfully.")
+            _log(f"{info['display_name']} installed successfully (version: {version}).")
 
             from datetime import datetime, timezone
             instance.status = "installed"
-            instance.version = latest
+            instance.version = version
             instance.installed_at = datetime.now(timezone.utc)
             db.session.commit()
 
