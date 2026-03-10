@@ -571,7 +571,7 @@ def _install_host_exporter_go_build(ssh, info, binary, _log):
 
     # Clone and build
     _log(f"Cloning {go_module}...")
-    clone_dir = f"/tmp/{binary}-src"
+    clone_dir = f"/tmp/{binary}-src"  # nosec B108 — remote SSH path, not a local temp file
     clone_cmd = (
         f"rm -rf {clone_dir} && "
         f"git clone --depth 1 https://{go_module}.git {clone_dir}"
