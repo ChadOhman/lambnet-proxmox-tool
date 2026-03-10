@@ -1345,8 +1345,8 @@ class TestHostExporterRoutes:
     def test_host_exporter_add_missing_host(self, auth_client):
         resp = auth_client.post("/prometheus/host-exporters/add", data={
             "host_id": "",
-            "exporter_type": "smcipmi_exporter",
-            "port": "9850",
+            "exporter_type": "ipmi_exporter",
+            "port": "9290",
         }, follow_redirects=False)
         assert resp.status_code in (302, 303)
 
@@ -1357,16 +1357,16 @@ class TestHostExporterRoutes:
 
         resp = auth_client.post("/prometheus/host-exporters/add", data={
             "host_id": str(host_id),
-            "exporter_type": "smcipmi_exporter",
-            "port": "9850",
+            "exporter_type": "ipmi_exporter",
+            "port": "9290",
         }, follow_redirects=False)
         assert resp.status_code in (302, 303)
 
         with app.app_context():
             exp = HostExporterInstance.query.filter_by(host_id=host_id).first()
             assert exp is not None
-            assert exp.exporter_type == "smcipmi_exporter"
-            assert exp.port == 9850
+            assert exp.exporter_type == "ipmi_exporter"
+            assert exp.port == 9290
             assert exp.status == "pending"
 
             db.session.delete(exp)
@@ -1378,8 +1378,8 @@ class TestHostExporterRoutes:
             host = _create_ipmi_host(app, name="hexp-dup", hostname="10.0.0.92")
             exp = HostExporterInstance(
                 host_id=host.id,
-                exporter_type="smcipmi_exporter",
-                port=9850,
+                exporter_type="ipmi_exporter",
+                port=9290,
                 status="pending",
             )
             db.session.add(exp)
@@ -1388,14 +1388,14 @@ class TestHostExporterRoutes:
 
         resp = auth_client.post("/prometheus/host-exporters/add", data={
             "host_id": str(host_id),
-            "exporter_type": "smcipmi_exporter",
-            "port": "9850",
+            "exporter_type": "ipmi_exporter",
+            "port": "9290",
         }, follow_redirects=False)
         assert resp.status_code in (302, 303)
 
         with app.app_context():
             count = HostExporterInstance.query.filter_by(
-                host_id=host_id, exporter_type="smcipmi_exporter"
+                host_id=host_id, exporter_type="ipmi_exporter"
             ).count()
             assert count == 1
 
@@ -1408,8 +1408,8 @@ class TestHostExporterRoutes:
             host = _create_ipmi_host(app, name="hexp-del", hostname="10.0.0.93")
             exp = HostExporterInstance(
                 host_id=host.id,
-                exporter_type="smcipmi_exporter",
-                port=9850,
+                exporter_type="ipmi_exporter",
+                port=9290,
                 status="pending",
             )
             db.session.add(exp)
@@ -1431,8 +1431,8 @@ class TestHostExporterRoutes:
             host = _create_ipmi_host(app, name="hexp-del-block", hostname="10.0.0.94")
             exp = HostExporterInstance(
                 host_id=host.id,
-                exporter_type="smcipmi_exporter",
-                port=9850,
+                exporter_type="ipmi_exporter",
+                port=9290,
                 status="installed",
             )
             db.session.add(exp)
@@ -1471,8 +1471,8 @@ class TestHostExporterModel:
             host = _create_ipmi_host(app, name="hexp-model", hostname="10.0.0.95")
             exp = HostExporterInstance(
                 host_id=host.id,
-                exporter_type="smcipmi_exporter",
-                port=9850,
+                exporter_type="ipmi_exporter",
+                port=9290,
                 status="pending",
             )
             db.session.add(exp)
@@ -1489,8 +1489,8 @@ class TestHostExporterModel:
             host = _create_ipmi_host(app, name="hexp-rel", hostname="10.0.0.96")
             exp = HostExporterInstance(
                 host_id=host.id,
-                exporter_type="smcipmi_exporter",
-                port=9850,
+                exporter_type="ipmi_exporter",
+                port=9290,
                 status="installed",
             )
             db.session.add(exp)
@@ -1498,15 +1498,15 @@ class TestHostExporterModel:
 
             host = ProxmoxHost.query.get(host.id)
             assert len(host.host_exporter_instances) == 1
-            assert host.host_exporter_instances[0].exporter_type == "smcipmi_exporter"
+            assert host.host_exporter_instances[0].exporter_type == "ipmi_exporter"
 
             db.session.delete(exp)
             ProxmoxHost.query.filter_by(id=host.id).delete()
             db.session.commit()
 
-    def test_smcipmi_exporter_is_host_level(self):
+    def test_ipmi_exporter_is_host_level(self):
         from apps.exporters import KNOWN_EXPORTERS
-        info = KNOWN_EXPORTERS["smcipmi_exporter"]
+        info = KNOWN_EXPORTERS["ipmi_exporter"]
         assert info.get("host_level") is True
 
     def test_non_host_level_exporters_lack_flag(self):

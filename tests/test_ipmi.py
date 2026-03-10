@@ -360,26 +360,26 @@ class TestIpmiPrometheusQuery:
         with app.app_context():
             client = PrometheusQueryClient()
             with patch.object(client, "_run_snapshot_queries") as mock_run:
-                mock_run.return_value = {"snapshots": [{"power_consumption_watts": 200}], "source": "smcipmi_exporter"}
-                result = client.get_ipmi_metrics_exporter("10.0.0.50:9850", "day")
-                assert result["source"] == "smcipmi_exporter"
+                mock_run.return_value = {"snapshots": [{"power_consumption_watts": 200}], "source": "ipmi_exporter"}
+                result = client.get_ipmi_metrics_exporter("10.0.0.50:9290", "day")
+                assert result["source"] == "ipmi_exporter"
                 mock_run.assert_called_once()
                 # Verify queries contain expected metric names
                 queries = mock_run.call_args[0][0]
                 assert "power_consumption_watts" in queries
-                assert "power_supply_status" in queries
+                assert "cpu_temp" in queries
 
 
 # ---------------------------------------------------------------------------
 # Exporters registry test
 # ---------------------------------------------------------------------------
 
-class TestSmcipmiExporter:
+class TestIpmiExporter:
     def test_registered_in_known_exporters(self):
         from apps.exporters import KNOWN_EXPORTERS
-        assert "smcipmi_exporter" in KNOWN_EXPORTERS
-        info = KNOWN_EXPORTERS["smcipmi_exporter"]
-        assert info["default_port"] == 9850
-        assert info["github_repo"] == "GSI-HPC/prometheus-smcipmi-exporter"
-        assert info["job_name"] == "smcipmi"
+        assert "ipmi_exporter" in KNOWN_EXPORTERS
+        info = KNOWN_EXPORTERS["ipmi_exporter"]
+        assert info["default_port"] == 9290
+        assert info["github_repo"] == "prometheus-community/ipmi_exporter"
+        assert info["job_name"] == "ipmi"
         assert info.get("host_level") is True

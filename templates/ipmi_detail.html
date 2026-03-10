@@ -239,11 +239,17 @@
             </div>
             <div class="card-body">
                 <div class="row">
-                    <div class="col-md-6">
+                    <div class="col-md-6 mb-3">
                         <canvas id="ipmiPowerChart" height="200"></canvas>
                     </div>
-                    <div class="col-md-6">
-                        <canvas id="ipmiPsuChart" height="200"></canvas>
+                    <div class="col-md-6 mb-3">
+                        <canvas id="ipmiCpuTempChart" height="200"></canvas>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <canvas id="ipmiSysTempChart" height="200"></canvas>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <canvas id="ipmiFanChart" height="200"></canvas>
                     </div>
                 </div>
                 <p id="ipmiChartEmpty" class="text-muted text-center d-none mt-3">No historical data available. Data will be collected automatically every 5 minutes.</p>
@@ -328,7 +334,37 @@
 
 {% block scripts %}
 <script>
-let ipmiPowerChart, ipmiPsuChart;
+let ipmiPowerChart, ipmiCpuTempChart, ipmiSysTempChart, ipmiFanChart;
+
+const ipmiChartOpts = (title) => ({
+    responsive: true,
+    plugins: { legend: { display: false }, title: { display: true, text: title, color: '#ccc' }},
+    scales: {
+        x: { display: true, ticks: { maxTicksLimit: 8, color: '#999' }, grid: { color: 'rgba(255,255,255,0.05)' }},
+        y: { display: true, beginAtZero: false, ticks: { color: '#999' }, grid: { color: 'rgba(255,255,255,0.05)' }},
+    }
+});
+
+function makeIpmiChart(canvasId, labels, data, color, title, existingChart) {
+    if (existingChart) existingChart.destroy();
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    return new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: title,
+                data: data,
+                borderColor: color,
+                backgroundColor: color + '1a',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 0,
+            }]
+        },
+        options: ipmiChartOpts(title),
+    });
+}
 
 function loadIpmiCharts() {
     const timeframe = document.getElementById('ipmiTimeframe').value;
@@ -347,61 +383,22 @@ function loadIpmiCharts() {
                 const d = new Date(s.captured_at);
                 return d.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
             });
-            const powerData = snaps.map(s => s.power_consumption_watts ?? s.power_watts ?? null);
-            const psuData = snaps.map(s => s.power_supply_status ?? null);
 
-            if (ipmiPowerChart) ipmiPowerChart.destroy();
-            const ctx1 = document.getElementById('ipmiPowerChart').getContext('2d');
-            ipmiPowerChart = new Chart(ctx1, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Power (W)',
-                        data: powerData,
-                        borderColor: '#ffc107',
-                        backgroundColor: 'rgba(255,193,7,0.1)',
-                        fill: true,
-                        tension: 0.3,
-                        pointRadius: 0,
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: { legend: { display: false }, title: { display: true, text: 'Power Consumption (Watts)', color: '#ccc' }},
-                    scales: {
-                        x: { display: true, ticks: { maxTicksLimit: 8, color: '#999' }, grid: { color: 'rgba(255,255,255,0.05)' }},
-                        y: { display: true, beginAtZero: false, ticks: { color: '#999' }, grid: { color: 'rgba(255,255,255,0.05)' }},
-                    }
-                }
-            });
+            ipmiPowerChart = makeIpmiChart('ipmiPowerChart', labels,
+                snaps.map(s => s.power_consumption_watts ?? s.power_watts ?? null),
+                '#ffc107', 'Power Consumption (Watts)', ipmiPowerChart);
 
-            if (ipmiPsuChart) ipmiPsuChart.destroy();
-            const ctx2 = document.getElementById('ipmiPsuChart').getContext('2d');
-            ipmiPsuChart = new Chart(ctx2, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'PSU Status',
-                        data: psuData,
-                        borderColor: '#198754',
-                        backgroundColor: 'rgba(25,135,84,0.1)',
-                        fill: true,
-                        tension: 0.3,
-                        pointRadius: 0,
-                        stepped: true,
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: { legend: { display: false }, title: { display: true, text: 'PSU Status (0=OK, 1=OFF, 2=Fail, 3=Faulty)', color: '#ccc' }},
-                    scales: {
-                        x: { display: true, ticks: { maxTicksLimit: 8, color: '#999' }, grid: { color: 'rgba(255,255,255,0.05)' }},
-                        y: { display: true, min: -0.5, max: 3.5, ticks: { stepSize: 1, color: '#999', callback: v => ['OK','OFF','Fail','Faulty'][v] || '' }, grid: { color: 'rgba(255,255,255,0.05)' }},
-                    }
-                }
-            });
+            ipmiCpuTempChart = makeIpmiChart('ipmiCpuTempChart', labels,
+                snaps.map(s => s.cpu_temp ?? null),
+                '#dc3545', 'CPU Temperature (\u00b0C)', ipmiCpuTempChart);
+
+            ipmiSysTempChart = makeIpmiChart('ipmiSysTempChart', labels,
+                snaps.map(s => s.system_temp ?? null),
+                '#fd7e14', 'System Temperature (\u00b0C)', ipmiSysTempChart);
+
+            ipmiFanChart = makeIpmiChart('ipmiFanChart', labels,
+                snaps.map(s => s.fan_speed_rpm ?? null),
+                '#0dcaf0', 'Fan Speed (RPM)', ipmiFanChart);
         })
         .catch(() => {
             document.getElementById('ipmiChartEmpty').classList.remove('d-none');

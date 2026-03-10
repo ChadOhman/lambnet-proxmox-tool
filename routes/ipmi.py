@@ -164,19 +164,18 @@ def metrics_api(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
     timeframe = request.args.get("timeframe", "day")
 
-    # Try Prometheus SMCIPMI exporter first
+    # Try Prometheus IPMI exporter first
     if Setting.get("prometheus_enabled", "false") == "true":
         try:
             from clients.prometheus_query import PrometheusQueryClient
             prom = PrometheusQueryClient()
-            # Use the host's IPMI address as the exporter target
-            if host.ipmi_address:
-                from apps.exporters import KNOWN_EXPORTERS
-                port = KNOWN_EXPORTERS["smcipmi_exporter"]["default_port"]
-                target = f"{host.ipmi_address}:{port}"
-                data = prom.get_ipmi_metrics_exporter(target, timeframe)
-                if data and data.get("snapshots"):
-                    return jsonify(data)
+            # The exporter runs on the host, scrape at host.hostname:port
+            from apps.exporters import KNOWN_EXPORTERS
+            port = KNOWN_EXPORTERS["ipmi_exporter"]["default_port"]
+            target = f"{host.hostname}:{port}"
+            data = prom.get_ipmi_metrics_exporter(target, timeframe)
+            if data and data.get("snapshots"):
+                return jsonify(data)
         except Exception:
             logger.debug("Prometheus IPMI query failed for host %s", host_id, exc_info=True)
 

@@ -71,19 +71,18 @@ KNOWN_EXPORTERS = {
         "job_name": "jitsi_jvb",
         "builtin": True,
     },
-    "smcipmi_exporter": {
-        "display_name": "Supermicro IPMI Exporter",
-        "github_repo": "GSI-HPC/prometheus-smcipmi-exporter",
-        "binary_name": "prometheus-smcipmi-exporter",
-        "default_port": 9850,
-        "systemd_unit": "smcipmi_exporter.service",
+    "ipmi_exporter": {
+        "display_name": "IPMI Exporter",
+        "github_repo": "prometheus-community/ipmi_exporter",
+        "binary_name": "ipmi_exporter",
+        "default_port": 9290,
+        "systemd_unit": "ipmi_exporter.service",
         "requires_config": False,  # Config auto-generated from host IPMI settings
-        "job_name": "smcipmi",
+        "job_name": "ipmi",
         "host_level": True,
-        "install_method": "go_build",  # No pre-built releases; requires `go build` from source
-        "go_module": "github.com/GSI-HPC/prometheus-smcipmi-exporter",
-        "custom_systemd": True,  # Uses -port/-configFile instead of --web.listen-address
-        "config_file_path": "/etc/smcipmi_exporter/config.yml",
+        "install_method": "release",
+        "config_file_path": "/etc/ipmi_exporter/config.yml",
+        "extra_install_deps": ["freeipmi"],
     },
 }
 
@@ -243,22 +242,15 @@ def _generate_exporter_systemd_unit(exporter_type, port, env_file=None):
     if env_file:
         env_line = f"\nEnvironmentFile={env_file}"
 
-    # SMCIPMI exporter uses -port/-configFile instead of --web.listen-address
-    if info.get("custom_systemd"):
-        config_path = info.get("config_file_path", "/etc/smcipmi_exporter/config.yml")
-        exec_start = (
-            f"ExecStart=/usr/local/bin/{binary} \\\n"
-            f"  -port {port} \\\n"
-            f"  -configFile {config_path}"
-        )
-    else:
-        extra_args = ""
-        for arg in info.get("exec_extra_args", []):
-            extra_args += f" \\\n  {arg}"
-        exec_start = (
-            f"ExecStart=/usr/local/bin/{binary} \\\n"
-            f"  --web.listen-address=:{port}{extra_args}"
-        )
+    extra_args = ""
+    for arg in info.get("exec_extra_args", []):
+        extra_args += f" \\\n  {arg}"
+    if info.get("config_file_path"):
+        extra_args += f" \\\n  --config.file={info['config_file_path']}"
+    exec_start = (
+        f"ExecStart=/usr/local/bin/{binary} \\\n"
+        f"  --web.listen-address=:{port}{extra_args}"
+    )
 
     return f"""[Unit]
 Description={info['display_name']}
@@ -546,72 +538,6 @@ def run_exporter_uninstall(instance_id, log_callback=None):
 # ---------------------------------------------------------------------------
 
 
-def _install_host_exporter_go_build(ssh, info, binary, _log):
-    """Install a host exporter by building from Go source.
-
-    Returns (success, version_string).
-    """
-    go_module = info["go_module"]
-
-    # Check Go is available
-    _log("Checking for Go toolchain...")
-    stdout, stderr, code = ssh.execute_sudo("go version", timeout=15)
-    if code != 0:
-        _log("Go not found. Installing Go toolchain...")
-        install_cmd = (
-            "apt-get update -qq && apt-get install -y -qq golang-go git >/dev/null 2>&1"
-        )
-        stdout, stderr, code = ssh.execute_sudo(install_cmd, timeout=180)
-        _log_cmd_output(_log, stdout, stderr, code)
-        if code != 0:
-            _log("ERROR: Failed to install Go toolchain.")
-            return False, None
-    else:
-        _log(f"  {(stdout or '').strip()}")
-
-    # Clone and build
-    _log(f"Cloning {go_module}...")
-    clone_dir = f"/tmp/{binary}-src"  # nosec B108 — remote SSH path, not a local temp file
-    clone_cmd = (
-        f"rm -rf {clone_dir} && "
-        f"git clone --depth 1 https://{go_module}.git {clone_dir}"
-    )
-    stdout, stderr, code = ssh.execute_sudo(clone_cmd, timeout=120)
-    _log_cmd_output(_log, stdout, stderr, code)
-    if code != 0:
-        _log("ERROR: Failed to clone repository.")
-        return False, None
-
-    _log("Building from source (this may take a minute)...")
-    build_cmd = f"cd {clone_dir} && go build -o {binary} ."
-    stdout, stderr, code = ssh.execute_sudo(build_cmd, timeout=300)
-    _log_cmd_output(_log, stdout, stderr, code)
-    if code != 0:
-        _log("ERROR: Go build failed.")
-        return False, None
-
-    # Install binary
-    _log("Installing binary...")
-    stdout, stderr, code = ssh.execute_sudo(
-        f"cp {clone_dir}/{binary} /usr/local/bin/ && "
-        f"chown {binary}:{binary} /usr/local/bin/{binary}",
-        timeout=30,
-    )
-    _log_cmd_output(_log, stdout, stderr, code)
-    if code != 0:
-        _log("ERROR: Failed to install binary.")
-        return False, None
-
-    # Get commit hash as version
-    stdout, _, _ = ssh.execute_sudo(f"cd {clone_dir} && git rev-parse --short HEAD", timeout=10)
-    version = (stdout or "").strip() or "source"
-
-    # Clean up
-    ssh.execute_sudo(f"rm -rf {clone_dir}", timeout=15)
-
-    return True, version
-
-
 def _install_host_exporter_release(ssh, info, binary, _log):
     """Install a host exporter from a pre-built GitHub release tarball.
 
@@ -717,18 +643,28 @@ def run_host_exporter_install(instance_id, log_callback=None):
             )
             _log_cmd_output(_log, stdout, stderr, code)
 
-            # Install binary based on method
-            if info.get("install_method") == "go_build":
-                ok, version = _install_host_exporter_go_build(ssh, info, binary, _log)
-            else:
-                ok, version = _install_host_exporter_release(ssh, info, binary, _log)
+            # Install system dependencies (e.g. freeipmi for ipmi_exporter)
+            extra_deps = info.get("extra_install_deps")
+            if extra_deps:
+                deps_str = " ".join(extra_deps)
+                _log(f"Installing dependencies: {deps_str}...")
+                stdout, stderr, code = ssh.execute_sudo(
+                    f"apt-get update -qq && apt-get install -y -qq {deps_str} >/dev/null 2>&1",
+                    timeout=180,
+                )
+                _log_cmd_output(_log, stdout, stderr, code)
+                if code != 0:
+                    _log(f"WARNING: Failed to install dependencies: {deps_str}")
+
+            # Install binary from release tarball
+            ok, version = _install_host_exporter_release(ssh, info, binary, _log)
 
             if not ok:
                 instance.status = "failed"
                 db.session.commit()
                 return False, log_lines
 
-            # Write SMCIPMI config.yml if applicable
+            # Write config.yml if applicable (e.g. IPMI exporter with BMC credentials)
             if info.get("config_file_path"):
                 config_path = info["config_file_path"]
                 config_dir = config_path.rsplit("/", 1)[0]
@@ -739,18 +675,18 @@ def run_host_exporter_install(instance_id, log_callback=None):
                 if host.ipmi_password:
                     from auth.credential_store import decrypt
                     ipmi_pass = decrypt(host.ipmi_password) or ""
-                ipmi_target = host.ipmi_address or host.hostname
 
                 config_yml = (
-                    f"login:\n"
-                    f"  user:     {ipmi_user}\n"
-                    f"  password: {ipmi_pass}\n"
-                    f"\n"
-                    f"collectors:\n"
-                    f"  pminfo: True\n"
-                    f"\n"
-                    f"targets:\n"
-                    f"  - {ipmi_target}\n"
+                    f"modules:\n"
+                    f"  default:\n"
+                    f"    collectors:\n"
+                    f"      - bmc\n"
+                    f"      - ipmi\n"
+                    f"      - dcmi\n"
+                    f"    user: \"{ipmi_user}\"\n"
+                    f"    pass: \"{ipmi_pass}\"\n"
+                    f"    privilege: \"admin\"\n"
+                    f"    driver: \"LAN_2_0\"\n"
                 )
 
                 _log(f"Writing exporter config to {config_path}...")

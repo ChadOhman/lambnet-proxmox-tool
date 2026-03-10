@@ -443,18 +443,21 @@ class PrometheusQueryClient:
         return self._run_snapshot_queries(queries, start, end, step, source="mastodon_exporter")
 
     def get_ipmi_metrics_exporter(self, target, timeframe="day"):
-        """Query smcipmi_exporter metrics and return snapshots."""
+        """Query ipmi_exporter metrics and return snapshots."""
         dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
         end = time.time()
         start = end - dur
         inst = f'instance="{target}"'
 
         queries = {
-            "power_consumption_watts": f'smcipmi_pminfo_power_consumption_watts{{{inst}}}',
-            "power_supply_status": f'smcipmi_pminfo_power_supply_status{{{inst}}}',
+            "power_consumption_watts": f"ipmi_dcmi_power_consumption_current_watts{{{inst}}}",
+            "cpu_temp": f'ipmi_temperature_celsius{{{inst},name=~"CPU.*Temp|Processor.*"}}',
+            "system_temp": f'ipmi_temperature_celsius{{{inst},name=~"System.*Temp|Inlet.*|Ambient.*"}}',
+            "fan_speed_rpm": f"avg(ipmi_fan_speed_rpm{{{inst}}})",
+            "chassis_power_state": f"ipmi_chassis_power_state{{{inst}}}",
         }
 
-        return self._run_snapshot_queries(queries, start, end, step, source="smcipmi_exporter")
+        return self._run_snapshot_queries(queries, start, end, step, source="ipmi_exporter")
 
     def get_jvb_metrics_exporter(self, target, timeframe="day"):
         """Query native JVB Prometheus metrics and return snapshots."""

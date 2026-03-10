@@ -606,7 +606,7 @@
                         <div class="col-md-2">
                             <label class="form-label">Port</label>
                             <input type="number" class="form-control" name="port" id="hostExporterPortInput"
-                                   placeholder="9850" min="1" max="65535">
+                                   placeholder="9290" min="1" max="65535">
                         </div>
                         <div class="col-md-3">
                             <button type="submit" class="btn btn-success"><i class="bi bi-plus-lg"></i> Add</button>
@@ -714,7 +714,7 @@
                                             <label class="form-label"><code>{{ var }}</code></label>
                                             <input type="text" class="form-control form-control-sm font-monospace" name="config_{{ var }}"
                                                    value="{{ exp.config[var] if exp.config and var in exp.config else '' }}"
-                                                   placeholder="{{ '/opt/SMCIPMITool/SMCIPMITool' if var == 'SMCIPMI_TOOL_PATH' else '' }}">
+                                                   placeholder="">
                                         </div>
                                         {% endfor %}
                                         <div class="col-md-2">
@@ -922,7 +922,6 @@ fetch('/prometheus/preflight/status').then(r => r.json()).then(data => {
 var _envVarPlaceholders = {
     'DATA_SOURCE_NAME': 'postgresql://user:pass@localhost/db?sslmode=disable',
     'REDIS_ADDR': 'redis://localhost:6379',
-    'SMCIPMI_TOOL_PATH': '/opt/SMCIPMITool/SMCIPMITool'
 };
 
 function updateExporterForm() {

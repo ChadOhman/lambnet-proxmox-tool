@@ -41,6 +41,7 @@ def create_app(test_config=None):
     with app.app_context():
         db.create_all()
         _migrate_ipmi_columns()
+        _migrate_smcipmi_to_ipmi_exporter()
         _seed_roles()
         _ensure_default_admin()
 
@@ -313,6 +314,23 @@ def _migrate_ipmi_columns():
     _add_column_if_missing("proxmox_hosts", "ipmi_username", "VARCHAR(128)")
     _add_column_if_missing("proxmox_hosts", "ipmi_password", "TEXT")
     _add_column_if_missing("proxmox_hosts", "ipmi_verify_ssl", "BOOLEAN DEFAULT 0")
+
+
+def _migrate_smcipmi_to_ipmi_exporter():
+    """Migrate any existing smcipmi_exporter instances to ipmi_exporter."""
+    try:
+        from models import HostExporterInstance
+        rows = HostExporterInstance.query.filter_by(exporter_type="smcipmi_exporter").all()
+        for row in rows:
+            row.exporter_type = "ipmi_exporter"
+            row.port = 9290
+            row.status = "pending"
+            row.version = None
+        if rows:
+            db.session.commit()
+            logger.info("Migrated %d smcipmi_exporter instance(s) to ipmi_exporter.", len(rows))
+    except Exception:
+        pass  # Table may not exist yet on fresh installs
 
 
 def _seed_roles():
