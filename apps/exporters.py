@@ -892,18 +892,22 @@ def _regenerate_prometheus_config(_log=None):
             continue
         by_type.setdefault(exp.exporter_type, []).append(f"{ip}:{exp.port}")
 
-    # Include host-level exporters (e.g. SMCIPMI)
+    # Include host-level exporters
     host_installed = (
         HostExporterInstance.query
         .filter(HostExporterInstance.status == "installed")  # noqa: E712
         .join(ProxmoxHost)
         .all()
     )
+    # IPMI exporter uses multi-target pattern (separate handling below)
+    ipmi_targets = []
     for exp in host_installed:
         host = exp.host
-        # Host-level exporters run on the Proxmox host itself, so always
-        # use the host's management IP as the Prometheus scrape target.
-        by_type.setdefault(exp.exporter_type, []).append(f"{host.hostname}:{exp.port}")
+        if exp.exporter_type == "ipmi_exporter":
+            bmc_ip = host.ipmi_address or host.hostname
+            ipmi_targets.append((bmc_ip, host.hostname, exp.port, host.name))
+        else:
+            by_type.setdefault(exp.exporter_type, []).append(f"{host.hostname}:{exp.port}")
 
     # Include builtin exporters (e.g. JVB) from settings
     if Setting.get("jitsi_prometheus_scrape", "false") == "true":
@@ -931,6 +935,29 @@ def _regenerate_prometheus_config(_log=None):
   - job_name: "{job_name}"
     static_configs:
       - targets: [{targets_str}]"""
+
+    # IPMI exporter uses multi-target pattern: Prometheus sends the BMC IP
+    # as a query param and the exporter connects to it via IPMI/LAN.
+    if ipmi_targets:
+        # Group by exporter address (host:port) — typically one exporter per host
+        for bmc_ip, host_ip, port, host_name in sorted(ipmi_targets):
+            extra_configs += f"""
+
+  - job_name: "ipmi_{host_name}"
+    scrape_interval: 60s
+    scrape_timeout: 30s
+    metrics_path: /ipmi
+    params:
+      module: ["default"]
+    static_configs:
+      - targets: ["{bmc_ip}"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: "{host_ip}:{port}" """
 
     # Generate full config
     mstdnca_url = Setting.get("prometheus_mstdnca_metrics_url", "")

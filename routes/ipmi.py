@@ -169,10 +169,8 @@ def metrics_api(host_id):
         try:
             from clients.prometheus_query import PrometheusQueryClient
             prom = PrometheusQueryClient()
-            # The exporter runs on the host, scrape at host.hostname:port
-            from apps.exporters import KNOWN_EXPORTERS
-            port = KNOWN_EXPORTERS["ipmi_exporter"]["default_port"]
-            target = f"{host.hostname}:{port}"
+            # Multi-target exporter: instance label is the BMC IP
+            target = host.ipmi_address or host.hostname
             data = prom.get_ipmi_metrics_exporter(target, timeframe)
             if data and data.get("snapshots"):
                 return jsonify(data)

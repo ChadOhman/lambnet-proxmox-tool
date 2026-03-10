@@ -361,7 +361,7 @@ class TestIpmiPrometheusQuery:
             client = PrometheusQueryClient()
             with patch.object(client, "_run_snapshot_queries") as mock_run:
                 mock_run.return_value = {"snapshots": [{"power_consumption_watts": 200}], "source": "ipmi_exporter"}
-                result = client.get_ipmi_metrics_exporter("10.0.0.50:9290", "day")
+                result = client.get_ipmi_metrics_exporter("10.0.0.50", "day")
                 assert result["source"] == "ipmi_exporter"
                 mock_run.assert_called_once()
                 # Verify queries contain expected metric names
