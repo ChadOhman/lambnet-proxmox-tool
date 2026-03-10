@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}IPMI Hardware Health - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-thermometer-half"></i> IPMI Hardware Health</h2>
+</div>
+
+<div class="row g-4">
+    {% for item in host_data %}
+    {% set host = item.host %}
+    {% set snap = item.snapshot %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card bg-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <a href="{{ url_for('ipmi.detail', host_id=host.id) }}" class="text-light text-decoration-none">
+                        {{ host.name }}
+                    </a>
+                    {% if snap %}
+                        {% if snap.power_state == 'On' %}
+                        <span class="badge bg-success ms-2">On</span>
+                        {% elif snap.power_state == 'Off' %}
+                        <span class="badge bg-danger ms-2">Off</span>
+                        {% else %}
+                        <span class="badge bg-secondary ms-2">{{ snap.power_state }}</span>
+                        {% endif %}
+                        {% if snap.health == 'OK' %}
+                        <span class="badge bg-success ms-1" title="Health: OK"><i class="bi bi-heart-pulse-fill"></i></span>
+                        {% elif snap.health == 'Warning' %}
+                        <span class="badge bg-warning text-dark ms-1" title="Health: Warning"><i class="bi bi-exclamation-triangle-fill"></i></span>
+                        {% elif snap.health == 'Critical' %}
+                        <span class="badge bg-danger ms-1" title="Health: Critical"><i class="bi bi-x-circle-fill"></i></span>
+                        {% endif %}
+                    {% endif %}
+                </h5>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-label="Actions for {{ host.name }}" type="button">
+                        <i class="bi bi-three-dots-vertical" aria-hidden="true"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-dark">
+                        <li>
+                            <a class="dropdown-item" href="{{ url_for('ipmi.detail', host_id=host.id) }}">
+                                <i class="bi bi-info-circle"></i> Details
+                            </a>
+                        </li>
+                        <li>
+                            <form method="post" action="{{ url_for('ipmi.test_connection', host_id=host.id) }}">
+                                <button type="submit" class="dropdown-item">
+                                    <i class="bi bi-plug"></i> Test Connection
+                                </button>
+                            </form>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{{ url_for('ipmi.sel', host_id=host.id) }}">
+                                <i class="bi bi-journal-text"></i> Event Log
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if snap %}
+                <div class="row text-center mb-2">
+                    <div class="col-4">
+                        <small class="text-muted d-block">CPU Temp</small>
+                        <strong>{{ snap.cpu_temp if snap.cpu_temp is not none else '—' }}{% if snap.cpu_temp is not none %}&deg;C{% endif %}</strong>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted d-block">System Temp</small>
+                        <strong>{{ snap.system_temp if snap.system_temp is not none else '—' }}{% if snap.system_temp is not none %}&deg;C{% endif %}</strong>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted d-block">Power</small>
+                        <strong>{{ snap.total_watts if snap.total_watts is not none else '—' }}{% if snap.total_watts is not none %}W{% endif %}</strong>
+                    </div>
+                </div>
+                <p class="mb-1"><small class="text-muted">{{ snap.manufacturer }} {{ snap.model }}</small></p>
+                <p class="mb-0"><small class="text-muted"><i class="bi bi-cpu"></i> {{ snap.processor_count }}x {{ snap.processor_model }} &middot; {{ snap.total_memory_gb }}GB RAM</small></p>
+                {% else %}
+                <p class="text-muted mb-0"><i class="bi bi-exclamation-circle"></i> Unable to reach BMC at {% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i> hidden</span>{% else %}{{ host.ipmi_address }}{% endif %}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-thermometer-half" style="font-size: 3rem;"></i>
+                <h4 class="mt-3">No IPMI-Enabled Hosts</h4>
+                <p class="text-muted">Enable IPMI on a host by editing its configuration in the Hosts page.</p>
+                <a href="/hosts" class="btn btn-primary">
+                    <i class="bi bi-server"></i> Go to Hosts
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

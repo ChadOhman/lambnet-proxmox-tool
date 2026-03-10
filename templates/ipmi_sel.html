@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}IPMI Event Log - {{ host.name }} - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>
+        <a href="{{ url_for('ipmi.index') }}" class="text-muted text-decoration-none">
+            <i class="bi bi-thermometer-half"></i> IPMI
+        </a>
+        <i class="bi bi-chevron-right text-muted" style="font-size: 0.8em;"></i>
+        <a href="{{ url_for('ipmi.detail', host_id=host.id) }}" class="text-muted text-decoration-none">{{ host.name }}</a>
+        <i class="bi bi-chevron-right text-muted" style="font-size: 0.8em;"></i>
+        Event Log
+    </h2>
+</div>
+
+<div class="card bg-dark">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-journal-text"></i> System Event Log ({{ entries|length }} entries)</h5>
+    </div>
+    <div class="card-body">
+        {% if entries %}
+        <div class="table-responsive">
+            <table class="table table-dark table-sm table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 5%">#</th>
+                        <th style="width: 18%">Time</th>
+                        <th style="width: 12%">Severity</th>
+                        <th style="width: 15%">Sensor Type</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for e in entries %}
+                <tr>
+                    <td>{{ e.id }}</td>
+                    <td class="text-nowrap">{{ e.created }}</td>
+                    <td>
+                        {% if e.severity in ('OK', 'Informational') %}
+                        <span class="badge bg-info">{{ e.severity }}</span>
+                        {% elif e.severity == 'Warning' %}
+                        <span class="badge bg-warning text-dark">Warning</span>
+                        {% elif e.severity in ('Critical', 'Error') %}
+                        <span class="badge bg-danger">{{ e.severity }}</span>
+                        {% else %}
+                        <span class="badge bg-secondary">{{ e.severity }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ e.sensor_type or '—' }}</td>
+                    <td>{{ e.message }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center mb-0">No system event log entries found.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

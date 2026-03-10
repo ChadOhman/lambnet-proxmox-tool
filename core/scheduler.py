@@ -967,6 +967,70 @@ def _check_unpoller_release(app):
             logger.error("Failed to check unpoller releases: %s", e)
 
 
+def _poll_ipmi_sensors(app):
+    """Poll IPMI sensors for all IPMI-enabled hosts and store snapshots."""
+    with app.app_context():
+        import json
+
+        from models import HostMetricSnapshot, ProxmoxHost, Setting, db
+
+        if Setting.get("ipmi_polling_enabled", "true") == "false":
+            return
+
+        hosts = ProxmoxHost.query.filter_by(ipmi_enabled=True).all()
+        if not hosts:
+            return
+
+        from auth.credential_store import decrypt
+        from clients.ipmi_client import RedfishClient
+
+        for host in hosts:
+            if not host.ipmi_address or not host.ipmi_password:
+                continue
+            try:
+                password = decrypt(host.ipmi_password)
+                if not password:
+                    continue
+                client = RedfishClient(
+                    base_url=f"https://{host.ipmi_address}",
+                    username=host.ipmi_username or "",
+                    password=password,
+                    verify_ssl=host.ipmi_verify_ssl,
+                )
+                snapshot = client.get_health_snapshot()
+                if snapshot:
+                    snap = HostMetricSnapshot(
+                        host_id=host.id,
+                        data=json.dumps({
+                            "cpu_temp": snapshot.get("cpu_temp"),
+                            "system_temp": snapshot.get("system_temp"),
+                            "power_watts": snapshot.get("total_watts"),
+                            "power_state": snapshot.get("power_state"),
+                            "health": snapshot.get("health"),
+                            "fan_count": len(snapshot.get("fans", [])),
+                            "psu_count": len(snapshot.get("power_supplies", [])),
+                        }),
+                    )
+                    db.session.add(snap)
+                    db.session.commit()
+                client.logout()
+            except Exception:
+                logger.debug("IPMI poll failed for host %s (%s)", host.name, host.ipmi_address, exc_info=True)
+
+
+def _purge_old_ipmi_snapshots(app):
+    """Purge IPMI metric snapshots older than the configured retention period."""
+    with app.app_context():
+        from models import HostMetricSnapshot, Setting, db
+
+        days = int(Setting.get("ipmi_snapshot_retention_days", "30") or 30)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        deleted = HostMetricSnapshot.query.filter(HostMetricSnapshot.captured_at < cutoff).delete()
+        if deleted:
+            db.session.commit()
+            logger.info("Purged %d old IPMI metric snapshots (older than %d days).", deleted, days)
+
+
 def init_scheduler(app):
     global _scheduler
 
@@ -1167,6 +1231,28 @@ def init_scheduler(app):
         args=[app],
         id="unpoller_check",
         name="Check for unpoller releases",
+        replace_existing=True,
+        max_instances=1,
+    )
+
+    # IPMI sensor polling - runs every 5 minutes
+    _scheduler.add_job(
+        _poll_ipmi_sensors,
+        trigger=IntervalTrigger(minutes=5),
+        args=[app],
+        id="ipmi_sensor_poll",
+        name="Poll IPMI sensors on all enabled hosts",
+        replace_existing=True,
+        max_instances=1,
+    )
+
+    # IPMI snapshot retention purge - runs daily
+    _scheduler.add_job(
+        _purge_old_ipmi_snapshots,
+        trigger=IntervalTrigger(hours=24),
+        args=[app],
+        id="ipmi_snapshot_purge",
+        name="Purge old IPMI metric snapshots",
         replace_existing=True,
         max_instances=1,
     )

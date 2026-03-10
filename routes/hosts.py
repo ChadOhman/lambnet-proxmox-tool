@@ -173,6 +173,15 @@ def add():
     else:
         host.encrypted_password = encrypt(request.form.get("password", ""))
 
+    # IPMI configuration
+    host.ipmi_enabled = "ipmi_enabled" in request.form
+    host.ipmi_address = request.form.get("ipmi_address", "").strip() or None
+    host.ipmi_username = request.form.get("ipmi_username", "").strip() or None
+    ipmi_pw = request.form.get("ipmi_password", "").strip()
+    if ipmi_pw:
+        host.ipmi_password = encrypt(ipmi_pw)
+    host.ipmi_verify_ssl = "ipmi_verify_ssl" in request.form
+
     db.session.add(host)
     db.session.flush()
     log_action("host_add", "host", resource_id=host.id, resource_name=host.name)

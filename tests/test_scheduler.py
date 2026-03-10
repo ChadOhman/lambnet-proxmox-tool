@@ -207,6 +207,8 @@ class TestInitScheduler:
             "prometheus_collect",
             "prometheus_check",
             "unpoller_check",
+            "ipmi_sensor_poll",
+            "ipmi_snapshot_purge",
         }
         assert expected_ids == registered_ids
 

@@ -143,9 +143,34 @@
                         <label class="form-label">Password</label>
                         <input type="password" class="form-control" name="password">
                     </div>
-                    <div class="form-check">
+                    <div class="form-check mb-3">
                         <input type="checkbox" class="form-check-input" name="verify_ssl" id="verifySsl">
                         <label class="form-check-label" for="verifySsl">Verify SSL Certificate</label>
+                    </div>
+
+                    <hr class="border-secondary">
+                    <h6 class="text-muted mb-3"><i class="bi bi-thermometer-half"></i> IPMI / BMC Configuration (Optional)</h6>
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" name="ipmi_enabled" id="ipmiEnabled" onchange="toggleIpmiFields()">
+                        <label class="form-check-label" for="ipmiEnabled">Enable IPMI</label>
+                    </div>
+                    <div id="ipmiFields" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label">BMC IP / Hostname</label>
+                            <input type="text" class="form-control" name="ipmi_address" placeholder="e.g. 10.0.0.50">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">BMC Username</label>
+                            <input type="text" class="form-control" name="ipmi_username" placeholder="e.g. ADMIN">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">BMC Password</label>
+                            <input type="password" class="form-control" name="ipmi_password">
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="ipmi_verify_ssl" id="ipmiVerifySsl">
+                            <label class="form-check-label" for="ipmiVerifySsl">Verify BMC SSL Certificate</label>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer border-secondary">
@@ -184,6 +209,11 @@ function onHostTypeChange() {
     else if (!isPBS && isPBSUser) userEl.value = 'root@pam';
 
     hintEl.classList.toggle('d-none', !isPBS);
+}
+
+function toggleIpmiFields() {
+    const enabled = document.getElementById('ipmiEnabled').checked;
+    document.getElementById('ipmiFields').classList.toggle('d-none', !enabled);
 }
 
 // Hide hint initially (PVE selected by default)

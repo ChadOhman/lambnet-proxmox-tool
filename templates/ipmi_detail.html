@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+{% block title %}IPMI - {{ host.name }} - Mastodon Canada Administration Tool{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>
+        <a href="{{ url_for('ipmi.index') }}" class="text-muted text-decoration-none">
+            <i class="bi bi-thermometer-half"></i> IPMI
+        </a>
+        <i class="bi bi-chevron-right text-muted" style="font-size: 0.8em;"></i>
+        {{ host.name }}
+        {% if snapshot %}
+            {% if snapshot.power_state == 'On' %}
+            <span class="badge bg-success">On</span>
+            {% elif snapshot.power_state == 'Off' %}
+            <span class="badge bg-danger">Off</span>
+            {% else %}
+            <span class="badge bg-secondary">{{ snapshot.power_state }}</span>
+            {% endif %}
+        {% endif %}
+    </h2>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('ipmi.sel', host_id=host.id) }}" class="btn btn-outline-secondary">
+            <i class="bi bi-journal-text"></i> Event Log
+        </a>
+        <form method="post" action="{{ url_for('ipmi.test_connection', host_id=host.id) }}">
+            <button type="submit" class="btn btn-outline-primary">
+                <i class="bi bi-plug"></i> Test
+            </button>
+        </form>
+    </div>
+</div>
+
+{% if not snapshot %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i> Unable to reach BMC at {% if safety_mode %}<span class="text-muted"><i class="bi bi-eye-slash"></i> hidden</span>{% else %}{{ host.ipmi_address }}{% endif %}. Check the IPMI configuration.
+</div>
+{% else %}
+
+<!-- System Info -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card bg-dark">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-cpu"></i> System Information</h5></div>
+            <div class="card-body">
+                <table class="table table-dark table-sm mb-0">
+                    <tr><td class="text-muted" style="width:40%">Manufacturer</td><td>{{ snapshot.manufacturer }}</td></tr>
+                    <tr><td class="text-muted">Model</td><td>{{ snapshot.model }}</td></tr>
+                    <tr><td class="text-muted">Serial</td><td>{% if safety_mode %}<i class="bi bi-eye-slash text-muted"></i>{% else %}{{ snapshot.serial }}{% endif %}</td></tr>
+                    <tr><td class="text-muted">BIOS Version</td><td>{{ snapshot.bios_version }}</td></tr>
+                    <tr><td class="text-muted">Processors</td><td>{{ snapshot.processor_count }}x {{ snapshot.processor_model }}</td></tr>
+                    <tr><td class="text-muted">Total Memory</td><td>{{ snapshot.total_memory_gb }} GB</td></tr>
+                    <tr><td class="text-muted">Health</td><td>
+                        {% if snapshot.health == 'OK' %}
+                        <span class="badge bg-success">OK</span>
+                        {% elif snapshot.health == 'Warning' %}
+                        <span class="badge bg-warning text-dark">Warning</span>
+                        {% else %}
+                        <span class="badge bg-danger">{{ snapshot.health }}</span>
+                        {% endif %}
+                    </td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Power Control -->
+    <div class="col-md-6">
+        <div class="card bg-dark">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-power"></i> Power Control</h5></div>
+            <div class="card-body">
+                {% if snapshot.total_watts is not none %}
+                <div class="text-center mb-3">
+                    <span style="font-size: 2rem; font-weight: bold;">{{ snapshot.total_watts }}W</span>
+                    <br><small class="text-muted">Current Power Draw</small>
+                </div>
+                {% endif %}
+
+                {% if current_user.can_manage_ipmi %}
+                <div class="d-flex gap-2 flex-wrap justify-content-center">
+                    {% if snapshot.power_state != 'On' %}
+                    <form method="post" action="{{ url_for('ipmi.power_action', host_id=host.id) }}">
+                        <input type="hidden" name="action" value="on">
+                        <button type="submit" class="btn btn-success btn-sm" data-confirm="Power ON {{ host.name }}?">
+                            <i class="bi bi-play-fill"></i> Power On
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% if snapshot.power_state == 'On' %}
+                    <form method="post" action="{{ url_for('ipmi.power_action', host_id=host.id) }}">
+                        <input type="hidden" name="action" value="graceful_shutdown">
+                        <button type="submit" class="btn btn-warning btn-sm" data-confirm="Graceful shutdown {{ host.name }}?">
+                            <i class="bi bi-stop-fill"></i> Shutdown
+                        </button>
+                    </form>
+                    <form method="post" action="{{ url_for('ipmi.power_action', host_id=host.id) }}">
+                        <input type="hidden" name="action" value="reset">
+                        <button type="submit" class="btn btn-outline-warning btn-sm" data-confirm="Force restart {{ host.name }}? This will immediately reset the server.">
+                            <i class="bi bi-arrow-clockwise"></i> Restart
+                        </button>
+                    </form>
+                    <form method="post" action="{{ url_for('ipmi.power_action', host_id=host.id) }}">
+                        <input type="hidden" name="action" value="off">
+                        <button type="submit" class="btn btn-danger btn-sm" data-confirm="Force power OFF {{ host.name }}? This is equivalent to pulling the power cord.">
+                            <i class="bi bi-x-circle"></i> Force Off
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% else %}
+                <p class="text-muted text-center mb-0"><i class="bi bi-lock"></i> Power control requires IPMI management permission.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Temperatures -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card bg-dark">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-thermometer-half"></i> Temperatures</h5></div>
+            <div class="card-body">
+                {% if snapshot.temperatures %}
+                <table class="table table-dark table-sm mb-0">
+                    <thead><tr><th>Sensor</th><th>Reading</th><th>Threshold</th><th>Status</th></tr></thead>
+                    <tbody>
+                    {% for t in snapshot.temperatures %}
+                    <tr>
+                        <td>{{ t.name }}</td>
+                        <td>{{ t.reading_celsius }}&deg;C</td>
+                        <td>{{ t.upper_threshold_critical if t.upper_threshold_critical is not none else '—' }}{% if t.upper_threshold_critical is not none %}&deg;C{% endif %}</td>
+                        <td>
+                            {% if t.health == 'OK' %}<span class="badge bg-success">OK</span>
+                            {% elif t.health == 'Warning' %}<span class="badge bg-warning text-dark">Warning</span>
+                            {% else %}<span class="badge bg-danger">{{ t.health }}</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">No temperature sensors found.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Fans -->
+    <div class="col-md-6">
+        <div class="card bg-dark">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-fan"></i> Fans</h5></div>
+            <div class="card-body">
+                {% if snapshot.fans %}
+                <table class="table table-dark table-sm mb-0">
+                    <thead><tr><th>Fan</th><th>Speed</th><th>Status</th></tr></thead>
+                    <tbody>
+                    {% for f in snapshot.fans %}
+                    <tr>
+                        <td>{{ f.name }}</td>
+                        <td>{{ f.reading_rpm }} {{ f.units }}</td>
+                        <td>
+                            {% if f.health == 'OK' %}<span class="badge bg-success">OK</span>
+                            {% elif f.health == 'Warning' %}<span class="badge bg-warning text-dark">Warning</span>
+                            {% else %}<span class="badge bg-danger">{{ f.health }}</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">No fan sensors found.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Power Supplies -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-lightning-charge"></i> Power Supplies</h5></div>
+            <div class="card-body">
+                {% if snapshot.power_supplies %}
+                <table class="table table-dark table-sm mb-0">
+                    <thead><tr><th>PSU</th><th>Model</th><th>Output</th><th>Capacity</th><th>Status</th></tr></thead>
+                    <tbody>
+                    {% for p in snapshot.power_supplies %}
+                    <tr>
+                        <td>{{ p.name }}</td>
+                        <td>{{ p.model or '—' }}</td>
+                        <td>{{ p.power_output_watts if p.power_output_watts is not none else '—' }}{% if p.power_output_watts is not none %}W{% endif %}</td>
+                        <td>{{ p.power_capacity_watts if p.power_capacity_watts is not none else '—' }}{% if p.power_capacity_watts is not none %}W{% endif %}</td>
+                        <td>
+                            {% if p.health == 'OK' %}<span class="badge bg-success">OK</span>
+                            {% elif p.health == 'Warning' %}<span class="badge bg-warning text-dark">Warning</span>
+                            {% else %}<span class="badge bg-danger">{{ p.health }}</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">No power supply information available.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Historical Charts -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-graph-up"></i> Historical Metrics</h5>
+                <select class="form-select form-select-sm w-auto" id="ipmiTimeframe" onchange="loadIpmiCharts()">
+                    <option value="hour">1 Hour</option>
+                    <option value="day" selected>24 Hours</option>
+                    <option value="3d">3 Days</option>
+                    <option value="week">1 Week</option>
+                    <option value="month">30 Days</option>
+                </select>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <canvas id="ipmiPowerChart" height="200"></canvas>
+                    </div>
+                    <div class="col-md-6">
+                        <canvas id="ipmiPsuChart" height="200"></canvas>
+                    </div>
+                </div>
+                <p id="ipmiChartEmpty" class="text-muted text-center d-none mt-3">No historical data available. Data will be collected automatically every 5 minutes.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- IPMI Configuration -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-gear"></i> IPMI Configuration</h5></div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('ipmi.configure', host_id=host.id) }}">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">BMC IP / Hostname</label>
+                            <input type="text" class="form-control" name="ipmi_address" value="{{ host.ipmi_address or '' }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">BMC Username</label>
+                            <input type="text" class="form-control" name="ipmi_username" value="{{ host.ipmi_username or '' }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">BMC Password</label>
+                            <input type="password" class="form-control" name="ipmi_password" placeholder="{% if host.ipmi_password %}(unchanged){% endif %}">
+                        </div>
+                        <div class="col-md-3 d-flex align-items-end gap-3">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" name="ipmi_enabled" id="cfgIpmiEnabled" {% if host.ipmi_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="cfgIpmiEnabled">Enabled</label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" name="ipmi_verify_ssl" id="cfgIpmiSsl" {% if host.ipmi_verify_ssl %}checked{% endif %}>
+                                <label class="form-check-label" for="cfgIpmiSsl">Verify SSL</label>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+
+<!-- Recent SEL Entries -->
+{% if sel_entries %}
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-journal-text"></i> Recent System Events</h5>
+                <a href="{{ url_for('ipmi.sel', host_id=host.id) }}" class="btn btn-outline-secondary btn-sm">View All</a>
+            </div>
+            <div class="card-body">
+                <table class="table table-dark table-sm mb-0">
+                    <thead><tr><th>Time</th><th>Severity</th><th>Message</th></tr></thead>
+                    <tbody>
+                    {% for e in sel_entries[:10] %}
+                    <tr>
+                        <td class="text-nowrap">{{ e.created }}</td>
+                        <td>
+                            {% if e.severity in ('OK', 'Informational') %}<span class="badge bg-info">{{ e.severity }}</span>
+                            {% elif e.severity == 'Warning' %}<span class="badge bg-warning text-dark">Warning</span>
+                            {% elif e.severity in ('Critical', 'Error') %}<span class="badge bg-danger">{{ e.severity }}</span>
+                            {% else %}<span class="badge bg-secondary">{{ e.severity }}</span>{% endif %}
+                        </td>
+                        <td>{{ e.message }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+let ipmiPowerChart, ipmiPsuChart;
+
+function loadIpmiCharts() {
+    const timeframe = document.getElementById('ipmiTimeframe').value;
+    fetch('{{ url_for("ipmi.metrics_api", host_id=host.id) }}?timeframe=' + timeframe)
+        .then(r => r.json())
+        .then(data => {
+            const snaps = data.snapshots || [];
+            const emptyEl = document.getElementById('ipmiChartEmpty');
+            if (!snaps.length) {
+                emptyEl.classList.remove('d-none');
+                return;
+            }
+            emptyEl.classList.add('d-none');
+
+            const labels = snaps.map(s => {
+                const d = new Date(s.captured_at);
+                return d.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+            });
+            const powerData = snaps.map(s => s.power_consumption_watts ?? s.power_watts ?? null);
+            const psuData = snaps.map(s => s.power_supply_status ?? null);
+
+            if (ipmiPowerChart) ipmiPowerChart.destroy();
+            const ctx1 = document.getElementById('ipmiPowerChart').getContext('2d');
+            ipmiPowerChart = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Power (W)',
+                        data: powerData,
+                        borderColor: '#ffc107',
+                        backgroundColor: 'rgba(255,193,7,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false }, title: { display: true, text: 'Power Consumption (Watts)', color: '#ccc' }},
+                    scales: {
+                        x: { display: true, ticks: { maxTicksLimit: 8, color: '#999' }, grid: { color: 'rgba(255,255,255,0.05)' }},
+                        y: { display: true, beginAtZero: false, ticks: { color: '#999' }, grid: { color: 'rgba(255,255,255,0.05)' }},
+                    }
+                }
+            });
+
+            if (ipmiPsuChart) ipmiPsuChart.destroy();
+            const ctx2 = document.getElementById('ipmiPsuChart').getContext('2d');
+            ipmiPsuChart = new Chart(ctx2, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'PSU Status',
+                        data: psuData,
+                        borderColor: '#198754',
+                        backgroundColor: 'rgba(25,135,84,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        stepped: true,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false }, title: { display: true, text: 'PSU Status (0=OK, 1=OFF, 2=Fail, 3=Faulty)', color: '#ccc' }},
+                    scales: {
+                        x: { display: true, ticks: { maxTicksLimit: 8, color: '#999' }, grid: { color: 'rgba(255,255,255,0.05)' }},
+                        y: { display: true, min: -0.5, max: 3.5, ticks: { stepSize: 1, color: '#999', callback: v => ['OK','OFF','Fail','Faulty'][v] || '' }, grid: { color: 'rgba(255,255,255,0.05)' }},
+                    }
+                }
+            });
+        })
+        .catch(() => {
+            document.getElementById('ipmiChartEmpty').classList.remove('d-none');
+        });
+}
+
+loadIpmiCharts();
+</script>
+{% endblock %}
