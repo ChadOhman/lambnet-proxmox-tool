@@ -60,6 +60,20 @@
                         {% endif %}
                     </td></tr>
                 </table>
+                {% if snapshot.health_issues %}
+                <div class="alert alert-danger mt-3 mb-0 py-2">
+                    <strong><i class="bi bi-exclamation-triangle-fill"></i> Health Issues Detected:</strong>
+                    <ul class="mb-0 mt-1">
+                    {% for issue in snapshot.health_issues %}
+                        <li>{{ issue.subsystem }}: <span class="badge bg-danger">{{ issue.health }}</span></li>
+                    {% endfor %}
+                    </ul>
+                </div>
+                {% elif snapshot.health != 'OK' %}
+                <div class="alert alert-warning mt-3 mb-0 py-2">
+                    <i class="bi bi-info-circle"></i> The BMC reports <strong>{{ snapshot.health }}</strong> overall health, but no specific component issues were identified via Redfish. Check the <a href="{{ url_for('ipmi.sel', host_id=host.id) }}" class="alert-link">System Event Log</a> for details.
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>

@@ -75,6 +75,16 @@
                         <strong>{{ snap.total_watts if snap.total_watts is not none else '—' }}{% if snap.total_watts is not none %}W{% endif %}</strong>
                     </div>
                 </div>
+                {% if snap.health_issues %}
+                <div class="alert alert-danger py-1 px-2 mb-2 small">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    {% for issue in snap.health_issues %}{{ issue.subsystem }}: {{ issue.health }}{% if not loop.last %}, {% endif %}{% endfor %}
+                </div>
+                {% elif snap.health and snap.health != 'OK' %}
+                <div class="alert alert-warning py-1 px-2 mb-2 small">
+                    <i class="bi bi-info-circle"></i> Health: {{ snap.health }} — check <a href="{{ url_for('ipmi.sel', host_id=host.id) }}" class="alert-link">Event Log</a>
+                </div>
+                {% endif %}
                 <p class="mb-1"><small class="text-muted">{{ snap.manufacturer }} {{ snap.model }}</small></p>
                 <p class="mb-0"><small class="text-muted"><i class="bi bi-cpu"></i> {{ snap.processor_count }}x {{ snap.processor_model }} &middot; {{ snap.total_memory_gb }}GB RAM</small></p>
                 {% else %}

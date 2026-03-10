@@ -132,6 +132,19 @@ class RedfishClient:
         data = self._get("/redfish/v1/Systems/1")
         if not data:
             return None
+
+        # Collect subsystem health rollups to explain overall health status
+        health_rollup = []
+        for key, label in (
+            ("ProcessorSummary", "Processors"),
+            ("MemorySummary", "Memory"),
+            ("StorageSummary", "Storage"),
+        ):
+            sub = data.get(key, {})
+            sub_health = sub.get("Status", {}).get("HealthRollup") or sub.get("Status", {}).get("Health")
+            if sub_health and sub_health != "OK":
+                health_rollup.append({"subsystem": label, "health": sub_health})
+
         return {
             "manufacturer": data.get("Manufacturer", ""),
             "model": data.get("Model", ""),
@@ -142,6 +155,7 @@ class RedfishClient:
             "power_state": data.get("PowerState", "Unknown"),
             "health": data.get("Status", {}).get("Health", "Unknown"),
             "state": data.get("Status", {}).get("State", "Unknown"),
+            "health_rollup": health_rollup,
             "total_memory_gb": (data.get("MemorySummary", {}).get("TotalSystemMemoryGiB") or 0),
             "processor_count": (data.get("ProcessorSummary", {}).get("Count") or 0),
             "processor_model": (data.get("ProcessorSummary", {}).get("Model", "")),
@@ -291,6 +305,18 @@ class RedfishClient:
                 total_watts = pc["power_consumed_watts"]
                 break
 
+        # Collect any non-OK sensors/components to explain Critical health
+        health_issues = list(info.get("health_rollup", []))
+        for t in temps:
+            if t.get("health") and t["health"] != "OK":
+                health_issues.append({"subsystem": f"Sensor: {t['name']}", "health": t["health"]})
+        for f in thermal.get("fans", []):
+            if f.get("health") and f["health"] != "OK":
+                health_issues.append({"subsystem": f"Fan: {f['name']}", "health": f["health"]})
+        for p in power.get("power_supplies", []):
+            if p.get("health") and p["health"] != "OK":
+                health_issues.append({"subsystem": f"PSU: {p['name']}", "health": p["health"]})
+
         return {
             **info,
             "temperatures": temps,
@@ -300,4 +326,5 @@ class RedfishClient:
             "cpu_temp": cpu_temp,
             "system_temp": system_temp,
             "total_watts": total_watts,
+            "health_issues": health_issues,
         }
