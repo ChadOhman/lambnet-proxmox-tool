@@ -435,6 +435,58 @@
     </div>
 </div>
 
+<!-- IPMI / BMC Configuration -->
+{% if current_user.can_manage_hosts %}
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-thermometer-half"></i> IPMI / BMC Configuration</h5>
+        {% if host.ipmi_enabled %}
+        <a href="{{ url_for('ipmi.detail', host_id=host.id) }}" class="btn btn-outline-info btn-sm"><i class="bi bi-box-arrow-up-right"></i> IPMI Dashboard</a>
+        {% else %}
+        <span class="badge bg-secondary">Disabled</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <form method="post" action="{{ url_for('ipmi.configure', host_id=host.id) }}">
+            <div class="form-check mb-3">
+                <input type="checkbox" class="form-check-input" name="ipmi_enabled" id="ipmiEnabled"
+                       {% if host.ipmi_enabled %}checked{% endif %}
+                       onchange="document.getElementById('ipmiFields').classList.toggle('d-none', !this.checked)">
+                <label class="form-check-label" for="ipmiEnabled">Enable IPMI</label>
+            </div>
+            <div id="ipmiFields" class="{% if not host.ipmi_enabled %}d-none{% endif %}">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">BMC IP / Hostname</label>
+                        <input type="text" class="form-control bg-dark text-light border-secondary" name="ipmi_address"
+                               value="{{ host.ipmi_address or '' }}" placeholder="e.g. 10.0.0.50">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">BMC Username</label>
+                        <input type="text" class="form-control bg-dark text-light border-secondary" name="ipmi_username"
+                               value="{{ host.ipmi_username or '' }}" placeholder="e.g. ADMIN">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">BMC Password</label>
+                        <input type="password" class="form-control bg-dark text-light border-secondary" name="ipmi_password"
+                               placeholder="{% if host.ipmi_password %}••••••••{% else %}Enter password{% endif %}">
+                        {% if host.ipmi_password %}
+                        <small class="text-muted">Leave blank to keep current password</small>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="form-check mb-3">
+                    <input type="checkbox" class="form-check-input" name="ipmi_verify_ssl" id="ipmiVerifySsl"
+                           {% if host.ipmi_verify_ssl %}checked{% endif %}>
+                    <label class="form-check-label" for="ipmiVerifySsl">Verify BMC SSL Certificate</label>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-secondary btn-sm">Save IPMI Configuration</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
 <!-- Pending Updates -->
 <div class="card bg-dark mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
