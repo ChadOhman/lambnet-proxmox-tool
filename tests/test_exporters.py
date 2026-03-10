@@ -789,6 +789,111 @@ class TestExporterAwareQueries:
             snap = result["snapshots"][0]
             assert "used_memory_bytes" in snap
 
+    @patch("clients.prometheus_query.requests.get")
+    def test_get_es_metrics_exporter(self, mock_get, app):
+        from clients.prometheus_query import PrometheusQueryClient
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {"resultType": "matrix", "result": [{
+                "metric": {},
+                "values": [[1000, "1.0"], [1060, "1.0"]],
+            }]},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        with app.app_context():
+            client = PrometheusQueryClient(base_url="http://localhost:9090")
+            result = client.get_es_metrics_exporter("10.0.0.50:9114", "hour")
+            assert result["source"] == "elasticsearch_exporter"
+            assert len(result["snapshots"]) > 0
+            snap = result["snapshots"][0]
+            assert "cluster_health" in snap
+            assert "captured_at" in snap
+
+
+# ---------------------------------------------------------------------------
+# Elasticsearch metrics history route tests
+# ---------------------------------------------------------------------------
+
+class TestEsMetricsHistoryRoute:
+
+    def test_es_metrics_history_wrong_service_type(self, app, auth_client):
+        from models import GuestService
+        with app.app_context():
+            guest = _create_guest(app, name="es-route-wrong", ip="10.0.0.95")
+            svc = GuestService(
+                guest_id=guest.id, service_name="redis",
+                unit_name="redis-server.service", port=6379,
+            )
+            db.session.add(svc)
+            db.session.commit()
+            svc_id = svc.id
+
+        resp = auth_client.get(f"/services/{svc_id}/es/metrics-history")
+        assert resp.status_code == 400
+
+    def test_es_metrics_history_sqlite_fallback(self, app, auth_client):
+        from models import GuestService
+        with app.app_context():
+            guest = _create_guest(app, name="es-route-sqlite", ip="10.0.0.96")
+            svc = GuestService(
+                guest_id=guest.id, service_name="elasticsearch",
+                unit_name="elasticsearch.service", port=9200,
+            )
+            db.session.add(svc)
+            db.session.commit()
+            svc_id = svc.id
+
+        resp = auth_client.get(f"/services/{svc_id}/es/metrics-history")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "snapshots" in data
+        assert data["source"] == "sqlite"
+
+    @patch("clients.prometheus_query.requests.get")
+    def test_es_metrics_history_prometheus(self, mock_get, app, auth_client):
+        from models import GuestService, Setting
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {"resultType": "matrix", "result": [{
+                "metric": {},
+                "values": [[1000, "2.0"], [1060, "2.0"]],
+            }]},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        with app.app_context():
+            Setting.set("prometheus_enabled", "true")
+            Setting.set("prometheus_url", "http://localhost:9090")
+            db.session.commit()
+
+            guest = _create_guest(app, name="es-route-prom", ip="10.0.0.97")
+            svc = GuestService(
+                guest_id=guest.id, service_name="elasticsearch",
+                unit_name="elasticsearch.service", port=9200,
+            )
+            db.session.add(svc)
+            db.session.commit()
+            svc_id = svc.id
+
+        resp = auth_client.get(f"/services/{svc_id}/es/metrics-history?timeframe=hour")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "snapshots" in data
+        assert len(data["snapshots"]) > 0
+
+        with app.app_context():
+            Setting.set("prometheus_enabled", "false")
+            Setting.set("prometheus_url", "")
+            db.session.commit()
+
 
 # ---------------------------------------------------------------------------
 # Mastodon built-in exporter tests

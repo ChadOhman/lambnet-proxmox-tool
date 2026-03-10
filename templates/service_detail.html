@@ -256,6 +256,47 @@
     </div>
 </div>
 
+<!-- Elasticsearch Historical Charts -->
+<div class="card bg-dark mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Historical Charts <span id="esChartSource" class="badge bg-secondary ms-2 d-none" style="font-size: 0.65rem;"></span></h5>
+        <div class="btn-group btn-group-sm" id="esChartTimeframe">
+            <button class="btn btn-outline-secondary active" data-tf="day">1 Day</button>
+            <button class="btn btn-outline-secondary" data-tf="3d">3 Days</button>
+            <button class="btn btn-outline-secondary" data-tf="week">7 Days</button>
+            <button class="btn btn-outline-secondary" data-tf="month">30 Days</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="esChartLoading" class="text-center text-muted py-3">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading chart data...
+        </div>
+        <div id="esChartError" class="text-center text-muted py-3 d-none"></div>
+        <div id="esCharts" class="d-none">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">JVM Heap Usage (MB)</div>
+                    <canvas id="es-chart-heap" height="120" role="img" aria-label="Elasticsearch JVM heap usage over time"></canvas>
+                </div>
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">CPU %</div>
+                    <canvas id="es-chart-cpu" height="120" role="img" aria-label="Elasticsearch CPU usage over time"></canvas>
+                </div>
+            </div>
+            <div class="row g-3 mt-1">
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">Document Count</div>
+                    <canvas id="es-chart-docs" height="120" role="img" aria-label="Elasticsearch document count over time"></canvas>
+                </div>
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">Store Size (MB)</div>
+                    <canvas id="es-chart-store" height="120" role="img" aria-label="Elasticsearch store size over time"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% elif stats.type == 'redis' %}
 <div class="card bg-dark mb-4">
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-database"></i> Memory</h5></div>
@@ -2117,6 +2158,9 @@ function refreshStats() {
                     unassEl.textContent = data.unassigned_shards || 0;
                     unassEl.className = 'fs-5' + (data.unassigned_shards ? ' text-danger' : '');
                 }
+
+                // Refresh charts after each stat update
+                if (typeof esLoadCharts === 'function') esLoadCharts();
             }
 
             // Redis
@@ -2989,6 +3033,98 @@ function pgLoadCharts() {
 document.addEventListener('DOMContentLoaded', pgLoadCharts);
 
 {% endif %}{# stats.type == 'postgresql' #}
+
+{% if stats.type == 'elasticsearch' %}
+let _esHeapChart = null;
+let _esCpuChart = null;
+let _esDocsChart = null;
+let _esStoreChart = null;
+
+function esLoadCharts(timeframe) {
+    timeframe = timeframe || 'day';
+    if (typeof Chart === 'undefined') return;
+    document.getElementById('esChartLoading').classList.remove('d-none');
+    document.getElementById('esCharts').classList.add('d-none');
+    document.getElementById('esChartError').classList.add('d-none');
+
+    fetch('/services/{{ service.id }}/es/metrics-history?timeframe=' + timeframe, {cache: 'no-store'})
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('esChartLoading').classList.add('d-none');
+        const snaps = data.snapshots || [];
+        if (!snaps.length) {
+            document.getElementById('esChartError').textContent = 'No historical data available.';
+            document.getElementById('esChartError').classList.remove('d-none');
+            return;
+        }
+        document.getElementById('esCharts').classList.remove('d-none');
+
+        var srcBadge = document.getElementById('esChartSource');
+        if (data.source && srcBadge) {
+            var srcLabels = {elasticsearch_exporter: 'elasticsearch_exporter', mstdnca: 'Prometheus', sqlite: 'SQLite'};
+            srcBadge.textContent = srcLabels[data.source] || data.source;
+            srcBadge.classList.remove('d-none');
+        }
+
+        const labels = snaps.map(s => {
+            const d = new Date(s.captured_at);
+            const _ctz = window.USER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
+            return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', timeZone: _ctz});
+        });
+
+        const heapMB = snaps.map(s => s.jvm_heap_used_bytes != null ? +(s.jvm_heap_used_bytes / 1048576).toFixed(1) : null);
+        const cpu = snaps.map(s => s.cpu_percent != null ? +Number(s.cpu_percent).toFixed(1) : null);
+        const docs = snaps.map(s => s.doc_count ?? null);
+        const storeMB = snaps.map(s => s.store_size_bytes != null ? +(s.store_size_bytes / 1048576).toFixed(1) : null);
+
+        const chartOpts = {
+            type: 'line',
+            options: {
+                responsive: true,
+                animation: false,
+                plugins: {legend: {display: false}},
+                scales: {
+                    x: {ticks: {color: '#6c757d', maxTicksLimit: 8}, grid: {color: '#2d2d2d'}},
+                    y: {ticks: {color: '#6c757d'}, grid: {color: '#2d2d2d'}, beginAtZero: true},
+                },
+            },
+        };
+
+        function makeOrUpdate(chart, canvasId, label, dataArr, color, yCallback) {
+            var opts = JSON.parse(JSON.stringify(chartOpts));
+            if (yCallback) opts.options.scales.y.ticks.callback = yCallback;
+            if (chart) {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = dataArr;
+                chart.update();
+                return chart;
+            }
+            opts.data = {labels: labels, datasets: [{label: label, data: dataArr, borderColor: color, backgroundColor: color + '22', fill: true, tension: 0.3, pointRadius: 0}]};
+            return new Chart(document.getElementById(canvasId), opts);
+        }
+
+        _esHeapChart = makeOrUpdate(_esHeapChart, 'es-chart-heap', 'JVM Heap (MB)', heapMB, '#8b5cf6', v => v + ' MB');
+        _esCpuChart = makeOrUpdate(_esCpuChart, 'es-chart-cpu', 'CPU %', cpu, '#ef4444', v => v + '%');
+        _esDocsChart = makeOrUpdate(_esDocsChart, 'es-chart-docs', 'Documents', docs, '#3b82f6');
+        _esStoreChart = makeOrUpdate(_esStoreChart, 'es-chart-store', 'Store (MB)', storeMB, '#10b981', v => v + ' MB');
+    })
+    .catch(err => {
+        document.getElementById('esChartLoading').classList.add('d-none');
+        document.getElementById('esChartError').textContent = 'Failed to load chart data.';
+        document.getElementById('esChartError').classList.remove('d-none');
+    });
+}
+
+document.querySelectorAll('#esChartTimeframe button').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('#esChartTimeframe button').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        esLoadCharts(this.dataset.tf);
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function() { esLoadCharts('day'); });
+{% endif %}{# stats.type == 'elasticsearch' #}
 
 {% if stats.type == 'redis' %}
 let _redisMemChart = null;

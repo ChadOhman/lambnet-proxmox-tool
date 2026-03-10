@@ -665,6 +665,76 @@ def redis_metrics_history(service_id):
     return jsonify({"snapshots": result, "source": "sqlite"})
 
 
+@bp.route("/<int:service_id>/es/metrics-history")
+def es_metrics_history(service_id):
+    from models import Setting
+
+    svc = GuestService.query.get_or_404(service_id)
+    if svc.service_name != "elasticsearch":
+        return jsonify({"error": "Not an Elasticsearch service"}), 400
+
+    timeframe = request.args.get("timeframe", "day")
+    if Setting.get("prometheus_enabled", "false") == "true" and Setting.get("prometheus_url", ""):
+        try:
+            from clients.prometheus_query import PrometheusQueryClient, _get_exporter_target
+            prom = PrometheusQueryClient()
+
+            # Try elasticsearch_exporter first, then mstdnca_es_* gauges
+            es_target = _get_exporter_target(svc.guest_id, "elasticsearch_exporter")
+            data = None
+            if es_target:
+                logger.debug("Querying elasticsearch_exporter at %s for service %s", es_target, svc.id)
+                data = prom.get_es_metrics_exporter(es_target, timeframe)
+
+            if not data or not data.get("snapshots"):
+                logger.debug("elasticsearch_exporter returned no data (target=%s), trying mstdnca_es_* metrics", es_target)
+                es_metrics = [
+                    "mstdnca_es_cluster_health",
+                    "mstdnca_es_doc_count",
+                    "mstdnca_es_store_size_bytes",
+                    "mstdnca_es_jvm_heap_used_bytes",
+                    "mstdnca_es_jvm_heap_max_bytes",
+                    "mstdnca_es_cpu_percent",
+                ]
+                data = prom.get_service_metrics_history(svc.id, es_metrics, timeframe)
+                _es_key_map = {
+                    "es_cluster_health": "cluster_health",
+                    "es_doc_count": "doc_count",
+                    "es_store_size_bytes": "store_size_bytes",
+                    "es_jvm_heap_used_bytes": "jvm_heap_used_bytes",
+                    "es_jvm_heap_max_bytes": "jvm_heap_max_bytes",
+                    "es_cpu_percent": "cpu_percent",
+                }
+                for snap in data.get("snapshots", []):
+                    for old_key, new_key in _es_key_map.items():
+                        if old_key in snap:
+                            snap[new_key] = snap.pop(old_key)
+
+            if data and data.get("snapshots"):
+                return jsonify(data)
+        except Exception:
+            logger.debug("Prometheus query failed for ES metrics history, falling back to SQLite", exc_info=True)
+
+    # Fall back to SQLite
+    limit = min(int(request.args.get("limit", 144)), 288)
+    rows = (
+        ServiceMetricSnapshot.query
+        .filter_by(service_id=svc.id)
+        .order_by(ServiceMetricSnapshot.captured_at.asc())
+        .limit(limit)
+        .all()
+    )
+    result = []
+    for row in rows:
+        try:
+            d = json.loads(row.data or "{}")
+        except (json.JSONDecodeError, TypeError):
+            d = {}
+        d["captured_at"] = row.captured_at.isoformat()
+        result.append(d)
+    return jsonify({"snapshots": result, "source": "sqlite"})
+
+
 @bp.route("/<int:service_id>/mastodon/metrics-history")
 def mastodon_metrics_history(service_id):
     from models import Setting

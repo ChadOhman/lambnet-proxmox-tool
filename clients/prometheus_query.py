@@ -372,6 +372,24 @@ class PrometheusQueryClient:
 
         return self._run_snapshot_queries(queries, start, end, step, source="redis_exporter")
 
+    def get_es_metrics_exporter(self, target, timeframe="day"):
+        """Query elasticsearch_exporter metrics and return snapshots."""
+        dur, step = _TIMEFRAMES.get(timeframe, _TIMEFRAMES["day"])
+        end = time.time()
+        start = end - dur
+        inst = f'instance="{target}"'
+
+        queries = {
+            "cluster_health": f'elasticsearch_cluster_health_status{{{inst}}}',
+            "doc_count": f'elasticsearch_indices_docs{{{inst}}}',
+            "store_size_bytes": f'elasticsearch_indices_store_size_bytes{{{inst}}}',
+            "jvm_heap_used_bytes": f'sum(elasticsearch_jvm_memory_used_bytes{{{inst}}})',
+            "jvm_heap_max_bytes": f'sum(elasticsearch_jvm_memory_max_bytes{{{inst}}})',
+            "cpu_percent": f'avg(elasticsearch_os_cpu_percent{{{inst}}})',
+        }
+
+        return self._run_snapshot_queries(queries, start, end, step, source="elasticsearch_exporter")
+
     def get_mastodon_metrics(self, target, timeframe="day"):
         """Query Mastodon built-in Prometheus exporter metrics and return snapshots.
 
