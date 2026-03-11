@@ -14,6 +14,35 @@
     </h2>
 </div>
 
+{% if entries %}
+<div class="card bg-dark mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-center">
+            <div class="col-auto">
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" id="hideNoise" checked>
+                    <label class="form-check-label small" for="hideNoise">Hide polling noise</label>
+                </div>
+            </div>
+            <div class="col-auto">
+                <div class="btn-group btn-group-sm" role="group" id="severityFilters">
+                    <button type="button" class="btn btn-outline-info active" data-severity="ok">OK / Info</button>
+                    <button type="button" class="btn btn-outline-warning active" data-severity="warning">Warning</button>
+                    <button type="button" class="btn btn-outline-danger active" data-severity="critical">Critical</button>
+                    <button type="button" class="btn btn-outline-secondary active" data-severity="other">Other</button>
+                </div>
+            </div>
+            <div class="col">
+                <input type="search" class="form-control form-control-sm bg-dark text-light border-secondary" id="msgSearch" placeholder="Search messages…">
+            </div>
+            <div class="col-auto">
+                <span class="text-muted small" id="rowCounter"></span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="card bg-dark">
     <div class="card-header">
         <h5 class="mb-0"><i class="bi bi-journal-text"></i> System Event Log ({{ entries|length }} entries)</h5>
@@ -21,7 +50,7 @@
     <div class="card-body">
         {% if entries %}
         <div class="table-responsive">
-            <table class="table table-dark table-sm table-hover mb-0">
+            <table class="table table-dark table-sm table-hover mb-0" id="selTable">
                 <thead>
                     <tr>
                         <th style="width: 5%">#</th>
@@ -33,7 +62,7 @@
                 </thead>
                 <tbody>
                 {% for e in entries %}
-                <tr>
+                <tr data-severity="{{ e.severity | lower }}" data-message="{{ e.message | lower }}">
                     <td>{{ e.id }}</td>
                     <td class="text-nowrap">{{ e.created }}</td>
                     <td>
@@ -59,4 +88,70 @@
         {% endif %}
     </div>
 </div>
+
+{% if entries %}
+<script>
+(function () {
+    const NOISE_RE = /redfish session|web login|web logout/i;
+    const OK_SEVERITIES = new Set(['ok', 'informational']);
+    const WARN_SEVERITIES = new Set(['warning']);
+    const CRIT_SEVERITIES = new Set(['critical', 'error']);
+
+    const rows = Array.from(document.querySelectorAll('#selTable tbody tr'));
+    const hideNoise = document.getElementById('hideNoise');
+    const msgSearch = document.getElementById('msgSearch');
+    const counter = document.getElementById('rowCounter');
+    const severityBtns = document.querySelectorAll('#severityFilters [data-severity]');
+
+    function activeSeverities() {
+        const active = new Set();
+        severityBtns.forEach(btn => {
+            if (btn.classList.contains('active')) active.add(btn.dataset.severity);
+        });
+        return active;
+    }
+
+    function severityBucket(sev) {
+        if (OK_SEVERITIES.has(sev)) return 'ok';
+        if (WARN_SEVERITIES.has(sev)) return 'warning';
+        if (CRIT_SEVERITIES.has(sev)) return 'critical';
+        return 'other';
+    }
+
+    function filterRows() {
+        const noNoise = hideNoise.checked;
+        const search = msgSearch.value.toLowerCase();
+        const active = activeSeverities();
+        let shown = 0;
+
+        rows.forEach(row => {
+            const msg = row.dataset.message;
+            const sev = row.dataset.severity;
+            const bucket = severityBucket(sev);
+
+            const passNoise = !noNoise || !NOISE_RE.test(msg);
+            const passSev = active.has(bucket);
+            const passSearch = !search || msg.includes(search);
+
+            const visible = passNoise && passSev && passSearch;
+            row.style.display = visible ? '' : 'none';
+            if (visible) shown++;
+        });
+
+        counter.textContent = shown + ' of ' + rows.length + ' shown';
+    }
+
+    hideNoise.addEventListener('change', filterRows);
+    msgSearch.addEventListener('input', filterRows);
+    severityBtns.forEach(btn => {
+        btn.addEventListener('click', function () {
+            this.classList.toggle('active');
+            filterRows();
+        });
+    });
+
+    filterRows();
+})();
+</script>
+{% endif %}
 {% endblock %}
