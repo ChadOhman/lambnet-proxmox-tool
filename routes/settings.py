@@ -130,7 +130,8 @@ def _get_latest_release():
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
             return data.get("tag_name", "").lstrip("v") or None
-    except Exception:
+    except Exception as e:
+        logger.debug("Could not fetch latest release: %s", e)
         return None
 
 
