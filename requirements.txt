@@ -7,7 +7,7 @@ proxmoxer==2.1.0
 requests==2.32.4
 paramiko==3.5.0
 cryptography==46.0.5
-APScheduler==3.10.4
+APScheduler==3.11.2
 Werkzeug==3.1.6
 PyJWT[crypto]==2.10.1
 gunicorn==23.0.0
