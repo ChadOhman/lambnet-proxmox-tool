@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 # Cache for Cloudflare public keys
 _jwks_cache = {"keys": None, "fetched_at": 0}
 JWKS_CACHE_TTL = 3600  # 1 hour
+JWKS_STALE_MAX_AGE = 86400  # 24 hours — max age for stale key reuse
 
 
 def _get_cf_config():
@@ -72,8 +73,8 @@ def _fetch_jwks(team_domain):
             return _jwks_cache["keys"]
     except Exception as e:
         logger.error(f"Failed to fetch Cloudflare JWKS from {certs_url}: {e}")
-        # Return stale cache if available
-        if _jwks_cache["keys"]:
+        # Return stale cache if available but not too old
+        if _jwks_cache["keys"] and (now - _jwks_cache["fetched_at"]) < JWKS_STALE_MAX_AGE:
             return _jwks_cache["keys"]
         return []
 

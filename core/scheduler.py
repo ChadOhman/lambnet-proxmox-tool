@@ -602,13 +602,14 @@ def _poll_unifi_events(app):
             return
 
         from auth.credential_store import decrypt
-        from clients.unifi_client import UniFiClient
+        from clients.unifi_client import get_cached_client
 
         base_url = Setting.get("unifi_base_url", "")
         username = Setting.get("unifi_username", "")
         encrypted_pw = Setting.get("unifi_password", "")
         site = Setting.get("unifi_site", "default")
         is_udm = Setting.get("unifi_is_udm", "true") == "true"
+        verify_ssl = Setting.get("unifi_verify_ssl", "false") == "true"
 
         if not base_url or not username or not encrypted_pw:
             return
@@ -617,7 +618,7 @@ def _poll_unifi_events(app):
         if not password:
             return
 
-        client = UniFiClient(base_url, username, password, site=site, is_udm=is_udm)
+        client = get_cached_client(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
 
         geoip_enabled = Setting.get("unifi_geoip_enabled", "false") == "true"
         geoip_db_path = Setting.get("unifi_geoip_db_path", "")
@@ -852,17 +853,18 @@ def _collect_prometheus_metrics(app):
                     update_unifi_health_metrics,
                     update_unifi_metrics,
                 )
-                from clients.unifi_client import UniFiClient
+                from clients.unifi_client import get_cached_client
 
                 base_url = Setting.get("unifi_base_url", "")
                 username = Setting.get("unifi_username", "")
                 encrypted_pw = Setting.get("unifi_password", "")
                 site = Setting.get("unifi_site", "default")
                 is_udm = Setting.get("unifi_is_udm", "true") == "true"
+                verify_ssl = Setting.get("unifi_verify_ssl", "false") == "true"
                 if base_url and username and encrypted_pw:
                     password = decrypt(encrypted_pw)
                     if password:
-                        uc = UniFiClient(base_url, username, password, site=site, is_udm=is_udm)
+                        uc = get_cached_client(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
                         devices = uc.get_devices() or []
                         clients_list = uc.get_clients() or []
                         update_unifi_metrics(site, device_count=len(devices), client_count=len(clients_list))

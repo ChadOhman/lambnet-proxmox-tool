@@ -1,6 +1,6 @@
-from flask import request
 from flask_login import current_user
 
+from auth.local_network import _get_client_ip
 from models import AuditLog, db
 
 
@@ -18,7 +18,7 @@ def log_action(action, resource_type, resource_id=None, resource_name=None, deta
         resource_id=resource_id,
         resource_name=resource_name,
         details=details,
-        ip_address=request.remote_addr,
+        ip_address=_get_client_ip(),
     ))
 
     # Broadcast to collaboration hub (best-effort — never breaks the audit write)

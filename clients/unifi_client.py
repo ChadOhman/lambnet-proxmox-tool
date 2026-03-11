@@ -1,9 +1,9 @@
 import logging
+import threading
 
 import requests
 import urllib3
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 
@@ -20,15 +20,18 @@ def _safe_float(val):
 class UniFiClient:
     """Client for UniFi Controller / UniFi OS API."""
 
-    def __init__(self, base_url, username, password, site="default", is_udm=True):
+    def __init__(self, base_url, username, password, site="default", is_udm=True, verify_ssl=False):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
         self.site = site
         self.is_udm = is_udm
         self.session = requests.Session()
-        self.session.verify = False
+        self.session.verify = verify_ssl
+        if not verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self._logged_in = False
+        self._login_error = None
 
     @property
     def _prefix(self):
@@ -51,10 +54,13 @@ class UniFiClient:
             )
             if resp.status_code == 200:
                 self._logged_in = True
+                self._login_error = None
                 return True
+            self._login_error = f"HTTP {resp.status_code}"
             logger.warning("UniFi login failed: HTTP %s", resp.status_code)
             return False
         except requests.RequestException as e:
+            self._login_error = str(e)
             logger.error("UniFi login error: %s", e)
             return False
 
@@ -65,6 +71,11 @@ class UniFiClient:
         url = f"{self.base_url}{self._prefix}{path}"
         try:
             resp = self.session.get(url, timeout=15)
+            if resp.status_code == 401:
+                self._logged_in = False
+                if not self.login():
+                    return None
+                resp = self.session.get(url, timeout=15)
             if resp.status_code == 200:
                 return resp.json().get("data", [])
             logger.warning("UniFi API GET %s: HTTP %s", path, resp.status_code)
@@ -80,6 +91,11 @@ class UniFiClient:
         url = f"{self.base_url}{self._prefix}{path}"
         try:
             resp = self.session.post(url, json=payload, timeout=15)
+            if resp.status_code == 401:
+                self._logged_in = False
+                if not self.login():
+                    return False, "Not authenticated"
+                resp = self.session.post(url, json=payload, timeout=15)
             if resp.status_code == 200:
                 return True, "OK"
             return False, f"HTTP {resp.status_code}"
@@ -94,6 +110,11 @@ class UniFiClient:
         url = f"{self.base_url}{self._prefix}{path}"
         try:
             resp = self.session.post(url, json=payload, timeout=15)
+            if resp.status_code == 401:
+                self._logged_in = False
+                if not self.login():
+                    return None
+                resp = self.session.post(url, json=payload, timeout=15)
             if resp.status_code == 200:
                 return resp.json().get("data", [])
             logger.warning("UniFi API POST %s: HTTP %s", path, resp.status_code)
@@ -372,8 +393,39 @@ class UniFiClient:
 
     def test_connection(self):
         if not self.login():
-            return False, "Login failed"
+            return False, f"Login failed: {self._login_error}"
         devices = self.get_devices()
         if devices is None:
             return False, "Could not fetch devices"
         return True, f"Connected. {len(devices)} device(s) found."
+
+
+# ---------------------------------------------------------------------------
+# Module-level cached client
+# ---------------------------------------------------------------------------
+_cached_client: "UniFiClient | None" = None
+_cached_settings_key: "tuple | None" = None
+_client_lock = threading.Lock()
+
+
+def get_cached_client(base_url, username, password, site="default", is_udm=True, verify_ssl=False):
+    """Return a cached UniFiClient, creating a new one only if settings changed."""
+    global _cached_client, _cached_settings_key
+    key = (base_url, username, password, site, is_udm, verify_ssl)
+    if _cached_client is not None and _cached_settings_key == key:
+        return _cached_client
+    with _client_lock:
+        # Double-check after acquiring lock
+        if _cached_client is not None and _cached_settings_key == key:
+            return _cached_client
+        _cached_client = UniFiClient(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
+        _cached_settings_key = key
+        return _cached_client
+
+
+def invalidate_cached_client():
+    """Discard the cached client (e.g. after settings change)."""
+    global _cached_client, _cached_settings_key
+    with _client_lock:
+        _cached_client = None
+        _cached_settings_key = None

@@ -74,6 +74,7 @@ def _get_settings_dict():
         "unifi_site": Setting.get("unifi_site", "default"),
         "unifi_is_udm": Setting.get("unifi_is_udm", "true"),
         "unifi_filter_subnet": Setting.get("unifi_filter_subnet", ""),
+        "unifi_verify_ssl": Setting.get("unifi_verify_ssl", "false"),
         "unifi_geoip_enabled": Setting.get("unifi_geoip_enabled", "false"),
         "unifi_geoip_db_path": Setting.get("unifi_geoip_db_path", ""),
         "unifi_api_poll_enabled": Setting.get("unifi_api_poll_enabled", "true"),
@@ -130,7 +131,8 @@ def _get_latest_release():
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
             return data.get("tag_name", "").lstrip("v") or None
-    except Exception:
+    except Exception as e:
+        logger.debug("Could not fetch latest release: %s", e)
         return None
 
 
@@ -337,6 +339,11 @@ def save_unifi():
     Setting.set("unifi_site", site or "default")
     Setting.set("unifi_is_udm", "true" if is_udm else "false")
     Setting.set("unifi_filter_subnet", filter_subnet)
+    verify_ssl = "unifi_verify_ssl" in request.form
+    Setting.set("unifi_verify_ssl", "true" if verify_ssl else "false")
+
+    from clients.unifi_client import invalidate_cached_client
+    invalidate_cached_client()
 
     log_action("settings_unifi_save", "settings", resource_name="unifi")
     db.session.commit()
@@ -356,13 +363,14 @@ def test_unifi():
     encrypted_pw = Setting.get("unifi_password", "")
     site = Setting.get("unifi_site", "default")
     is_udm = Setting.get("unifi_is_udm", "true") == "true"
+    verify_ssl = Setting.get("unifi_verify_ssl", "false") == "true"
 
     if not base_url or not username or not encrypted_pw:
         flash("UniFi controller URL, username, and password are required.", "error")
         return redirect(url_for("settings.index"))
 
     password = decrypt(encrypted_pw)
-    client = UniFiClient(base_url, username, password, site=site, is_udm=is_udm)
+    client = UniFiClient(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
     ok, msg = client.test_connection()
 
     if ok:

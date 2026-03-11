@@ -20,3 +20,4 @@ secret.key
 *.swo
 *~
 .claude/
+.worktrees/

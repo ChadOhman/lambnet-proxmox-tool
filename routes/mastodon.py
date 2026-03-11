@@ -6,7 +6,7 @@ from datetime import datetime
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
 
-from apps.utils import _SHELL_SAFE_RE
+from apps.utils import _SHELL_SAFE_RE, JobTracker
 from auth.audit import log_action
 from models import Guest, Setting, db
 
@@ -14,8 +14,8 @@ from models import Guest, Setting, db
 # In-memory upgrade job state — tracks the currently-running upgrade so the
 # frontend can poll for real-time log output.
 # ---------------------------------------------------------------------------
-_upgrade_job = {"running": False, "success": None, "log": []}
-_preflight_job = {"running": False, "success": None, "log": []}
+_upgrade_job = JobTracker()
+_preflight_job = JobTracker()
 
 logger = logging.getLogger(__name__)
 

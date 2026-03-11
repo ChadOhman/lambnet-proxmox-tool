@@ -1,12 +1,13 @@
 """
 Local network authentication bypass.
 
-Requests originating from trusted subnets (default: 10.0.0.0/8) are
-automatically authenticated as the admin user without requiring login.
-This allows seamless local access from the datacenter LAN while still
-requiring CF Access / login for external connections.
+Requests originating from trusted subnets are automatically authenticated
+as the admin user without requiring login. This allows seamless local
+access from the datacenter LAN while still requiring CF Access / login
+for external connections.
 
-Trusted subnets are configurable via the Settings UI.
+No subnets are trusted by default. Trusted subnets must be explicitly
+configured via the Settings UI.
 """
 
 import ipaddress
@@ -20,7 +21,7 @@ from models import Role, Setting, User
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TRUSTED_SUBNETS = "10.0.0.0/8"
+DEFAULT_TRUSTED_SUBNETS = ""
 
 
 def _get_trusted_networks():

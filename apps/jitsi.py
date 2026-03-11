@@ -10,7 +10,8 @@ import base64
 import logging
 import re
 import time
-from datetime import datetime
+
+from apps.backup import backup_guest, snapshot_guest
 
 # Shared shell-safety and output helpers from the Mastodon module
 from apps.utils import _log_cmd_output, _validate_shell_param, _version_gt
@@ -145,90 +146,6 @@ def check_jitsi_release():
 # ---------------------------------------------------------------------------
 # Proxmox protection helpers
 # ---------------------------------------------------------------------------
-
-def _snapshot_jitsi_guest(guest):
-    """Create a Proxmox snapshot of a guest before Jitsi install/upgrade.
-
-    Polls until the snapshot task completes (up to 5 minutes).
-    Returns (success, message).
-    """
-    if not guest.proxmox_host:
-        return False, f"Guest '{guest.name}' has no Proxmox host configured"
-
-    try:
-        client = ProxmoxClient(guest.proxmox_host)
-        node = client.find_guest_node(guest.vmid)
-        if not node:
-            return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
-
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        snapname = f"pre-jitsi-{timestamp}"
-        description = f"Auto-snapshot before Jitsi install/upgrade at {timestamp}"
-
-        ok, upid = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
-        if not ok:
-            return False, f"Failed to start snapshot: {upid}"
-
-        # Poll until snapshot completes
-        deadline = time.time() + 300  # 5 minutes
-        while time.time() < deadline:
-            time.sleep(2)
-            try:
-                status = client.get_task_status(node, upid)
-                if status.get("status") == "stopped":
-                    exit_status = status.get("exitstatus", "")
-                    if exit_status == "OK":
-                        return True, f"Snapshot {snapname} of '{guest.name}' completed"
-                    return False, f"Snapshot task failed: {exit_status}"
-            except Exception as e:
-                logger.debug("Error polling snapshot task for %s: %s", guest.name, e)
-
-        return False, "Snapshot timed out after 5 minutes"
-    except Exception as e:
-        logger.error("Snapshot of %s failed: %s", guest.name, e)
-        return False, f"Snapshot failed: {e}"
-
-
-def _backup_jitsi_guest(guest, storage, mode="snapshot"):
-    """Create a vzdump backup of a guest before Jitsi install/upgrade. Polls until complete.
-
-    mode: "snapshot" (live, no downtime), "suspend" (brief pause), "stop" (shut down).
-    Returns (success, message).
-    """
-    if not guest.proxmox_host:
-        return False, f"Guest '{guest.name}' has no Proxmox host configured"
-
-    try:
-        client = ProxmoxClient(guest.proxmox_host)
-        node = client.find_guest_node(guest.vmid)
-        if not node:
-            return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
-
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        notes = f"pre-jitsi-{timestamp}"
-
-        ok, upid = client.create_backup(node, guest.vmid, storage, mode=mode, notes=notes)
-        if not ok:
-            return False, f"Failed to start backup: {upid}"
-
-        timeout = 1800  # 30 minutes
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            time.sleep(5)
-            try:
-                status = client.get_task_status(node, upid)
-                if status.get("status") == "stopped":
-                    exit_status = status.get("exitstatus", "")
-                    if exit_status == "OK":
-                        return True, f"Backup of '{guest.name}' to '{storage}' completed"
-                    return False, f"Backup task failed: {exit_status}"
-            except Exception as e:
-                logger.debug("Error polling backup task for %s: %s", guest.name, e)
-
-        return False, f"Backup of '{guest.name}' timed out after {timeout // 60} minutes"
-    except Exception as e:
-        logger.error("Backup of %s failed: %s", guest.name, e)
-        return False, f"Backup failed: {e}"
 
 
 # ---------------------------------------------------------------------------
@@ -599,13 +516,13 @@ def _run_protection(config, app_guest, log, skip_protection=False):
         log(f"=== Step 1: Creating vzdump backup to storage '{backup_storage}' "
             f"(mode: {backup_mode}) ===")
         log("(This may take several minutes — please be patient)")
-        ok, msg = _backup_jitsi_guest(app_guest, backup_storage, mode=backup_mode)
+        ok, msg = backup_guest(app_guest, backup_storage, "jitsi", mode=backup_mode)
         log(f"Backup {app_guest.name}: {msg}")
         if not ok:
             return False
     else:
         log("=== Step 1: Creating Proxmox snapshot ===")
-        ok, msg = _snapshot_jitsi_guest(app_guest)
+        ok, msg = snapshot_guest(app_guest, "jitsi")
         log(f"Snapshot {app_guest.name}: {msg}")
         if not ok:
             return False

@@ -17,6 +17,7 @@ import queue
 import threading
 import time
 import uuid
+from collections import deque
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -123,7 +124,7 @@ class TerminalSession:
         self.started_at = datetime.now(timezone.utc)
         self._lock = threading.Lock()
         self._queues: dict = {}        # id(ws) -> queue.Queue; each connection drains its own
-        self._buffer_chunks: list = []
+        self._buffer_chunks: deque = deque()
         self._buffer_size: int = 0
 
     def add_subscriber(self, ws) -> queue.Queue:
@@ -178,7 +179,7 @@ class TerminalSession:
             self._buffer_chunks.append(data)
             self._buffer_size += len(data)
             while self._buffer_size > self.MAX_BUFFER and self._buffer_chunks:
-                removed = self._buffer_chunks.pop(0)
+                removed = self._buffer_chunks.popleft()
                 self._buffer_size -= len(removed)
 
     def _snapshot(self) -> str:
@@ -233,6 +234,7 @@ class CursorHub:
 
     def update(self, username: str, display_name: str, page: str,
                x_pct: float, y_pct: float, color: str):
+        now = time.time()
         with self._lock:
             self._positions[username] = {
                 "display_name": display_name,
@@ -240,8 +242,13 @@ class CursorHub:
                 "x_pct": x_pct,
                 "y_pct": y_pct,
                 "color": color,
-                "ts": time.time(),
+                "ts": now,
             }
+            # Evict expired cursor positions to prevent unbounded growth
+            cutoff = now - self.EXPIRY
+            stale = [u for u, v in self._positions.items() if v["ts"] < cutoff]
+            for u in stale:
+                del self._positions[u]
 
     def get_for_page(self, page: str, exclude_username: str = None) -> list:
         now = time.time()

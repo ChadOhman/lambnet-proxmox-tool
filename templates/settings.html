@@ -207,6 +207,11 @@
                         <label class="form-check-label" for="unifiIsUdm">UDM / UniFi OS (uses <code>/proxy/network</code> prefix)</label>
                         <div class="form-text">Uncheck for standalone UniFi Controller software.</div>
                     </div>
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" name="unifi_verify_ssl" id="unifiVerifySsl" {{ 'checked' if settings.unifi_verify_ssl == 'true' }}>
+                        <label class="form-check-label" for="unifiVerifySsl">Verify SSL Certificate</label>
+                        <div class="form-text">Enable for controllers with valid TLS certificates. Disable for self-signed certs.</div>
+                    </div>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">Save UniFi Settings</button>
                         <button type="submit" formaction="/settings/unifi/test" class="btn btn-outline-secondary">

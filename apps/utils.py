@@ -62,3 +62,36 @@ def _version_gt(candidate: str, current: str) -> bool:
     if pre_b is None:
         return False  # candidate is pre-release, current is stable → older
     return pre_a > pre_b  # both pre-release: lexicographic comparison
+
+
+class JobTracker:
+    """Tracks in-memory state for a background job.
+
+    Supports dict-style access (job["running"], job["log"]) for compatibility
+    with existing call sites, as well as attribute access (job.running, job.log).
+
+    Usage:
+        _upgrade_job = JobTracker()  # replaces {"running": False, "success": None, "log": []}
+    """
+
+    def __init__(self):
+        self.running: bool = False
+        self.success: bool | None = None
+        self.log: list = []
+
+    def reset(self) -> None:
+        """Reset to initial state (call before starting a new job)."""
+        self.running = False
+        self.success = None
+        self.log = []
+
+    def update(self, d: dict) -> None:
+        """Update multiple attributes from a dict (dict-compatibility method)."""
+        for k, v in d.items():
+            setattr(self, k, v)
+
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+    def __setitem__(self, key: str, value) -> None:
+        setattr(self, key, value)

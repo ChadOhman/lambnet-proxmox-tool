@@ -10,10 +10,10 @@ PGBouncer-to-direct-DB swap for migrations, and service restarts.
 import json
 import logging
 import re
-import time
 from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
+from apps.backup import backup_guest, snapshot_guest
 from apps.utils import _log_cmd_output, _validate_shell_param, _version_gt
 from clients.proxmox_api import ProxmoxClient
 from clients.ssh_client import SSHClient
@@ -142,73 +142,6 @@ def check_mastodon_release():
         return False, "", ""
 
 
-def snapshot_guest(guest):
-    """Create a Proxmox snapshot of a guest before upgrade.
-
-    Returns (success, message).
-    """
-    if not guest.proxmox_host:
-        return False, f"Guest '{guest.name}' has no Proxmox host configured"
-
-    try:
-        client = ProxmoxClient(guest.proxmox_host)
-        node = client.find_guest_node(guest.vmid)
-        if not node:
-            return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
-
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        snapname = f"pre-mastodon-{timestamp}"
-        description = f"Auto-snapshot before Mastodon upgrade at {timestamp}"
-
-        return client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
-    except Exception as e:
-        logger.error("Snapshot of %s failed: %s", guest.name, e)
-        return False, f"Snapshot failed: {e}"
-
-
-def backup_guest(guest, storage, mode="snapshot"):
-    """Create a vzdump backup of a guest before upgrade. Polls until the task completes.
-
-    mode: "snapshot" (live, no downtime), "suspend" (brief pause), "stop" (shut down).
-    Returns (success, message).
-    """
-    if not guest.proxmox_host:
-        return False, f"Guest '{guest.name}' has no Proxmox host configured"
-
-    try:
-        client = ProxmoxClient(guest.proxmox_host)
-        node = client.find_guest_node(guest.vmid)
-        if not node:
-            return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
-
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        notes = f"pre-mastodon-{timestamp}"
-
-        ok, upid = client.create_backup(node, guest.vmid, storage, mode=mode, notes=notes)
-        if not ok:
-            return False, f"Failed to start backup: {upid}"
-
-        # Poll until the vzdump task completes (can take several minutes for large guests)
-        timeout = 1800  # 30 minutes
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            time.sleep(5)
-            try:
-                status = client.get_task_status(node, upid)
-                if status.get("status") == "stopped":
-                    exit_status = status.get("exitstatus", "")
-                    if exit_status == "OK":
-                        return True, f"Backup of '{guest.name}' to '{storage}' completed"
-                    return False, f"Backup task failed: {exit_status}"
-            except Exception as e:
-                logger.debug(f"Error polling backup task for {guest.name}: {e}")
-
-        return False, f"Backup of '{guest.name}' timed out after {timeout // 60} minutes"
-    except Exception as e:
-        logger.error("Backup of %s failed: %s", guest.name, e)
-        return False, f"Backup failed: {e}"
-
-
 def _run_second_guest_sync(guest, user, app_dir, log, branch=""):
     """Sync code to a second Mastodon app guest via SSH (no DB migrations).
 
@@ -328,8 +261,8 @@ def _swap_env_db(ssh, app_dir, new_host, new_port):
 
     env_file = f"{app_dir}/.env.production"
     cmds = [
-        f"sed -i 's/^DB_HOST=.*/DB_HOST={new_host}/' {env_file}",
-        f"sed -i 's/^DB_PORT=.*/DB_PORT={new_port}/' {env_file}",
+        f"sed -i 's|^DB_HOST=.*|DB_HOST={new_host}|' {env_file}",
+        f"sed -i 's|^DB_PORT=.*|DB_PORT={new_port}|' {env_file}",
     ]
     for cmd in cmds:
         stdout, stderr, code = ssh.execute_sudo(cmd, timeout=10)
@@ -876,36 +809,36 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
             log(f"=== Step 1: Creating vzdump backups to storage '{backup_storage}' (mode: {backup_mode}) ===")
             log("(This may take several minutes — please be patient)")
 
-            ok, msg = backup_guest(mastodon_guest, backup_storage, mode=backup_mode)
+            ok, msg = backup_guest(mastodon_guest, backup_storage, "mastodon", mode=backup_mode)
             log(f"Backup {mastodon_guest.name}: {msg}")
             if not ok:
                 return False, "\n".join(log_lines)
 
             if mastodon_guest_2:
-                ok, msg = backup_guest(mastodon_guest_2, backup_storage, mode=backup_mode)
+                ok, msg = backup_guest(mastodon_guest_2, backup_storage, "mastodon", mode=backup_mode)
                 log(f"Backup {mastodon_guest_2.name}: {msg}")
                 if not ok:
                     return False, "\n".join(log_lines)
 
-            ok, msg = backup_guest(db_guest, backup_storage, mode=backup_mode)
+            ok, msg = backup_guest(db_guest, backup_storage, "mastodon", mode=backup_mode)
             log(f"Backup {db_guest.name}: {msg}")
             if not ok:
                 return False, "\n".join(log_lines)
         else:
             log("=== Step 1: Creating Proxmox snapshots ===")
 
-            ok, msg = snapshot_guest(mastodon_guest)
+            ok, msg = snapshot_guest(mastodon_guest, "mastodon")
             log(f"Snapshot {mastodon_guest.name}: {msg}")
             if not ok:
                 return False, "\n".join(log_lines)
 
             if mastodon_guest_2:
-                ok, msg = snapshot_guest(mastodon_guest_2)
+                ok, msg = snapshot_guest(mastodon_guest_2, "mastodon")
                 log(f"Snapshot {mastodon_guest_2.name}: {msg}")
                 if not ok:
                     return False, "\n".join(log_lines)
 
-            ok, msg = snapshot_guest(db_guest)
+            ok, msg = snapshot_guest(db_guest, "mastodon")
             log(f"Snapshot {db_guest.name}: {msg}")
             if not ok:
                 return False, "\n".join(log_lines)

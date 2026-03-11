@@ -136,15 +136,21 @@ class TestPrometheusExporter:
 class TestMetricsEndpoint:
     """Test the /metrics route."""
 
-    def test_metrics_endpoint_accessible(self, app, client):
-        """The /metrics endpoint should be accessible without login."""
+    def test_metrics_endpoint_requires_login_when_no_token(self, app, client):
+        """Without a token configured, unauthenticated requests should get 401."""
         with app.app_context():
             from models import Setting
-            # Ensure no auth token is set
             Setting.set("prometheus_auth_token", "")
         resp = client.get("/metrics")
+        assert resp.status_code == 401
+
+    def test_metrics_endpoint_accessible_when_logged_in(self, app, auth_client):
+        """Without a token configured, authenticated users should get 200."""
+        with app.app_context():
+            from models import Setting
+            Setting.set("prometheus_auth_token", "")
+        resp = auth_client.get("/metrics")
         assert resp.status_code == 200
-        assert b"mstdnca_" in resp.data or resp.status_code == 200
 
     def test_metrics_endpoint_auth_required(self, app, client):
         """When auth token is set, requests without it should be rejected."""

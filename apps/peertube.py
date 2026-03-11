@@ -13,6 +13,8 @@ import time
 from datetime import datetime
 from urllib.request import Request, urlopen
 
+from apps.backup import backup_guest, snapshot_guest
+
 # Shared shell-safety and output helpers from the Mastodon module
 from apps.utils import _log_cmd_output, _validate_shell_param, _version_gt
 from clients.proxmox_api import ProxmoxClient
@@ -100,71 +102,6 @@ def check_peertube_release():
 # ---------------------------------------------------------------------------
 # Proxmox protection helpers
 # ---------------------------------------------------------------------------
-
-def _snapshot_peertube_guest(guest):
-    """Create a Proxmox snapshot of a guest before PeerTube upgrade.
-
-    Returns (success, message).
-    """
-    if not guest.proxmox_host:
-        return False, f"Guest '{guest.name}' has no Proxmox host configured"
-
-    try:
-        client = ProxmoxClient(guest.proxmox_host)
-        node = client.find_guest_node(guest.vmid)
-        if not node:
-            return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
-
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        snapname = f"pre-peertube-{timestamp}"
-        description = f"Auto-snapshot before PeerTube upgrade at {timestamp}"
-
-        return client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
-    except Exception as e:
-        logger.error("Snapshot of %s failed: %s", guest.name, e)
-        return False, f"Snapshot failed: {e}"
-
-
-def _backup_peertube_guest(guest, storage, mode="snapshot"):
-    """Create a vzdump backup of a guest before PeerTube upgrade. Polls until complete.
-
-    mode: "snapshot" (live, no downtime), "suspend" (brief pause), "stop" (shut down).
-    Returns (success, message).
-    """
-    if not guest.proxmox_host:
-        return False, f"Guest '{guest.name}' has no Proxmox host configured"
-
-    try:
-        client = ProxmoxClient(guest.proxmox_host)
-        node = client.find_guest_node(guest.vmid)
-        if not node:
-            return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
-
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        notes = f"pre-peertube-{timestamp}"
-
-        ok, upid = client.create_backup(node, guest.vmid, storage, mode=mode, notes=notes)
-        if not ok:
-            return False, f"Failed to start backup: {upid}"
-
-        timeout = 1800  # 30 minutes
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            time.sleep(5)
-            try:
-                status = client.get_task_status(node, upid)
-                if status.get("status") == "stopped":
-                    exit_status = status.get("exitstatus", "")
-                    if exit_status == "OK":
-                        return True, f"Backup of '{guest.name}' to '{storage}' completed"
-                    return False, f"Backup task failed: {exit_status}"
-            except Exception as e:
-                logger.debug("Error polling backup task for %s: %s", guest.name, e)
-
-        return False, f"Backup of '{guest.name}' timed out after {timeout // 60} minutes"
-    except Exception as e:
-        logger.error("Backup of %s failed: %s", guest.name, e)
-        return False, f"Backup failed: {e}"
 
 
 # ---------------------------------------------------------------------------
@@ -391,14 +328,14 @@ def run_peertube_install(log_callback=None):
             f"(mode: {backup_mode}) ===")
         log("(This may take several minutes — please be patient)")
         for g in guests_to_protect:
-            ok, msg = _backup_peertube_guest(g, backup_storage, mode=backup_mode)
+            ok, msg = backup_guest(g, backup_storage, "peertube", mode=backup_mode)
             log(f"Backup {g.name}: {msg}")
             if not ok:
                 return False, "\n".join(log_lines)
     else:
         log(f"=== Step {step}: Creating Proxmox snapshots ===")
         for g in guests_to_protect:
-            ok, msg = _snapshot_peertube_guest(g)
+            ok, msg = snapshot_guest(g, "peertube")
             log(f"Snapshot {g.name}: {msg}")
             if not ok:
                 return False, "\n".join(log_lines)
@@ -520,10 +457,11 @@ def run_peertube_install(log_callback=None):
             with SSHClient.from_credential(db_guest.ip_address, db_credential) as db_ssh:
                 # Create PostgreSQL user
                 if db_password:
+                    safe_pw = db_password.replace("'", "''")  # SQL single-quote escape
                     create_user_cmd = (
                         f"su - postgres -c \"psql -tAc \\\"SELECT 1 FROM pg_roles WHERE rolname='{user}'\\\"\" "  # noqa: S608
                         f"| grep -q 1 && echo 'User exists' "
-                        f"|| su - postgres -c \"psql -c \\\"CREATE USER {user} WITH PASSWORD '{db_password}'\\\"\""
+                        f"|| su - postgres -c \"psql -c \\\"CREATE USER {user} WITH PASSWORD '{safe_pw}'\\\"\""
                     )
                 else:
                     create_user_cmd = (
@@ -1193,14 +1131,14 @@ def run_peertube_upgrade(log_callback=None, skip_protection=False):
                 f"(mode: {backup_mode}) ===")
             log("(This may take several minutes — please be patient)")
             for g in guests_to_protect:
-                ok, msg = _backup_peertube_guest(g, backup_storage, mode=backup_mode)
+                ok, msg = backup_guest(g, backup_storage, "peertube", mode=backup_mode)
                 log(f"Backup {g.name}: {msg}")
                 if not ok:
                     return False, "\n".join(log_lines)
         else:
             log(f"=== Step {step}: Creating Proxmox snapshots ===")
             for g in guests_to_protect:
-                ok, msg = _snapshot_peertube_guest(g)
+                ok, msg = snapshot_guest(g, "peertube")
                 log(f"Snapshot {g.name}: {msg}")
                 if not ok:
                     return False, "\n".join(log_lines)
