@@ -23,11 +23,16 @@ exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 exclude_dirs = [".venv", "__pycache__", "tests"]
 skips = [
     "B104",  # binding to all interfaces — expected for server
+    "B105",  # hardcoded password string — false positives on empty-string defaults
+    "B107",  # hardcoded password default — false positives on empty-string defaults
     "B110",  # try-except-pass — used intentionally
+    "B112",  # try-except-continue — used intentionally (e.g. CF Access key rotation)
     "B113",  # requests without timeout — false positives (timeouts are set)
     "B310",  # urllib urlopen audit — all URLs are constructed from https:// literals
+    "B404",  # import subprocess — subprocess use is expected and controlled
     "B507",  # paramiko AutoAddPolicy — expected for internal infrastructure SSH tool
     "B601",  # paramiko exec_command — expected; inputs are validated upstream
     "B603",  # subprocess with non-constant args — expected
     "B607",  # partial executable path — expected
+    "B608",  # SQL via string construction — queries run over SSH on managed hosts, not user input
 ]
