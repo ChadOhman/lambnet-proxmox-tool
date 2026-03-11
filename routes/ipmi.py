@@ -146,16 +146,21 @@ def sel(host_id):
         flash("IPMI is not enabled for this host.", "warning")
         return redirect(url_for("ipmi.index"))
 
+    try:
+        limit = min(int(request.args.get("limit", 500)), 2000)
+    except (ValueError, TypeError):
+        limit = 500
+
     client = _get_redfish_client(host)
     entries = []
     if client:
         try:
-            entries = client.get_sel_entries(limit=200)
+            entries = client.get_sel_entries(limit=limit)
         except Exception:
             logger.debug("Failed to fetch SEL for %s", host.name, exc_info=True)
             flash("Failed to fetch System Event Log.", "error")
 
-    return render_template("ipmi_sel.html", host=host, entries=entries)
+    return render_template("ipmi_sel.html", host=host, entries=entries, limit=limit)
 
 
 @bp.route("/api/host/<int:host_id>/metrics")
