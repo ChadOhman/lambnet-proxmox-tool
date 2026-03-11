@@ -10,6 +10,7 @@ or as a ``token`` query parameter.
 import logging
 
 from flask import Blueprint, Response, request
+from flask_login import current_user
 
 from models import Setting
 
@@ -33,6 +34,10 @@ def metrics():
             token = request.args.get("token", "")
 
         if token != expected_token:
+            return Response("Unauthorized", status=401, content_type="text/plain")
+    else:
+        # No token configured — require session login
+        if not current_user.is_authenticated:
             return Response("Unauthorized", status=401, content_type="text/plain")
 
     from clients.prometheus_exporter import get_metrics

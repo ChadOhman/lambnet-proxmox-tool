@@ -356,13 +356,14 @@ def test_unifi():
     encrypted_pw = Setting.get("unifi_password", "")
     site = Setting.get("unifi_site", "default")
     is_udm = Setting.get("unifi_is_udm", "true") == "true"
+    verify_ssl = Setting.get("unifi_verify_ssl", "false") == "true"
 
     if not base_url or not username or not encrypted_pw:
         flash("UniFi controller URL, username, and password are required.", "error")
         return redirect(url_for("settings.index"))
 
     password = decrypt(encrypted_pw)
-    client = UniFiClient(base_url, username, password, site=site, is_udm=is_udm)
+    client = UniFiClient(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
     ok, msg = client.test_connection()
 
     if ok:

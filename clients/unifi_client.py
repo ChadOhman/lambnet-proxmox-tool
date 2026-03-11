@@ -3,7 +3,6 @@ import logging
 import requests
 import urllib3
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 
@@ -20,14 +19,16 @@ def _safe_float(val):
 class UniFiClient:
     """Client for UniFi Controller / UniFi OS API."""
 
-    def __init__(self, base_url, username, password, site="default", is_udm=True):
+    def __init__(self, base_url, username, password, site="default", is_udm=True, verify_ssl=False):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
         self.site = site
         self.is_udm = is_udm
         self.session = requests.Session()
-        self.session.verify = False
+        self.session.verify = verify_ssl
+        if not verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self._logged_in = False
 
     @property

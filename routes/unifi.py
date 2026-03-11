@@ -35,6 +35,7 @@ def _get_unifi_client():
     encrypted_pw = Setting.get("unifi_password", "")
     site = Setting.get("unifi_site", "default")
     is_udm = Setting.get("unifi_is_udm", "true") == "true"
+    verify_ssl = Setting.get("unifi_verify_ssl", "false") == "true"
 
     if not base_url or not username or not encrypted_pw:
         return None
@@ -43,7 +44,7 @@ def _get_unifi_client():
     if not password:
         return None
 
-    return UniFiClient(base_url, username, password, site=site, is_udm=is_udm)
+    return UniFiClient(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
 
 
 def _filter_by_subnet(items, ip_key, subnet_str):
