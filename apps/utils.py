@@ -85,6 +85,11 @@ class JobTracker:
         self.success = None
         self.log = []
 
+    def update(self, d: dict) -> None:
+        """Update multiple attributes from a dict (dict-compatibility method)."""
+        for k, v in d.items():
+            setattr(self, k, v)
+
     def __getitem__(self, key: str):
         return getattr(self, key)
 
