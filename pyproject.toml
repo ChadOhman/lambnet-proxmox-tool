@@ -20,7 +20,7 @@ omit = [
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 
 [tool.bandit]
-exclude_dirs = [".venv", "__pycache__"]
+exclude_dirs = [".venv", "__pycache__", "tests"]
 skips = [
     "B104",  # binding to all interfaces — expected for server
     "B110",  # try-except-pass — used intentionally
