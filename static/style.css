@@ -1,68 +1,90 @@
 /* ==========================================================================
-   Retro-Terminal / CRT Design System
+   Refined Modern Minimal — Design System
    Proxmox Datacenter Administration Tool
-   Phosphor green. Scanlines. Monospace everything.
+   Clean hierarchy. Blue-violet accent. Layered dark surfaces.
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
    1. DESIGN TOKENS
    -------------------------------------------------------------------------- */
 [data-bs-theme="dark"] {
-    /* Backgrounds — CRT off-black */
-    --bs-body-bg: #0a0a0a;
-    --bs-body-color: #33ff33;
-    --bs-secondary-color: #20cc20;
-    --bs-dark-rgb: 17, 17, 17;
-    --bs-dark-bg-subtle: #111111;
-    --bs-tertiary-bg: #111111;
-    --bs-secondary-bg: #161616;
+    /* Backgrounds — 5-tier layering */
+    --ds-bg: #09090b;
+    --ds-surface: #111113;
+    --ds-surface-raised: #18181b;
+    --ds-surface-hover: #1e1e23;
+    --ds-surface-overlay: #27272a;
 
-    /* Borders — visible green, terminal-style */
-    --bs-border-color: #1a9a1a;
-    --bs-border-color-translucent: rgba(51, 255, 51, 0.12);
-    --bs-secondary-border-subtle: #1a9a1a;
-    --bs-border-radius: 0px;
-    --bs-border-radius-sm: 0px;
-    --bs-border-radius-lg: 0px;
-    --bs-border-radius-xl: 0px;
-    --bs-border-radius-xxl: 0px;
-    --bs-border-radius-pill: 0px;
+    /* Borders */
+    --ds-border: #27272a;
+    --ds-border-subtle: #1e1e23;
+    --ds-border-emphasis: #3f3f46;
 
-    /* Typography — monospace everything */
-    --bs-body-font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
-    --bs-font-monospace: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+    /* Text */
+    --ds-text: #fafafa;
+    --ds-text-secondary: #a1a1aa;
+    --ds-text-muted: #71717a;
+    --ds-text-faint: #52525b;
 
-    /* Bootstrap component overrides */
-    --bs-card-bg: #111111;
-    --bs-card-border-color: #1a9a1a;
-    --bs-modal-bg: #111111;
-    --bs-modal-border-color: #1a9a1a;
+    /* Accent — blue-violet */
+    --ds-accent: #818cf8;
+    --ds-accent-hover: #a5b4fc;
+    --ds-accent-muted: rgba(129, 140, 248, 0.12);
+    --ds-accent-strong: #6366f1;
 
-    /* Bootstrap semantic color overrides */
-    --bs-primary-rgb: 51, 255, 51;
-    --bs-success-rgb: 51, 255, 51;
-    --bs-danger-rgb: 255, 107, 107;
-    --bs-warning-rgb: 255, 179, 0;
-    --bs-info-rgb: 0, 229, 255;
+    /* Semantic colors */
+    --ds-green: #4ade80;
+    --ds-green-muted: rgba(74, 222, 128, 0.12);
+    --ds-red: #f87171;
+    --ds-red-muted: rgba(248, 113, 113, 0.12);
+    --ds-amber: #fbbf24;
+    --ds-amber-muted: rgba(251, 191, 36, 0.12);
+    --ds-cyan: #22d3ee;
+    --ds-cyan-muted: rgba(34, 211, 238, 0.12);
 
-    /* CRT custom tokens */
-    --crt-bg: #0a0a0a;
-    --crt-surface: #111111;
-    --crt-surface-raised: #161616;
-    --crt-surface-hover: #1a1a1a;
-    --crt-border: #1a9a1a;
-    --crt-border-bright: #33ff33;
-    --crt-green: #33ff33;
-    --crt-green-dim: #20cc20;
-    --crt-green-muted: #1a9a1a;
-    --crt-green-glow: rgba(51, 255, 51, 0.15);
-    --crt-green-faint: rgba(51, 255, 51, 0.06);
-    --crt-amber: #ffb300;
-    --crt-red: #ff6b6b;
-    --crt-cyan: #00e5ff;
-    --crt-white: #d0d0d0;
-    --crt-focus-ring: 0 0 0 2px #0a0a0a, 0 0 0 4px #33ff33;
-    --crt-transition: 150ms ease-out;
+    /* Effects */
+    --ds-transition: 150ms ease;
+    --ds-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --ds-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --ds-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --ds-focus-ring: 0 0 0 2px var(--ds-bg), 0 0 0 4px var(--ds-accent);
+    --ds-radius: 8px;
+    --ds-radius-sm: 6px;
+    --ds-radius-lg: 12px;
+
+    /* Bootstrap mappings */
+    --bs-body-bg: var(--ds-bg);
+    --bs-body-color: var(--ds-text);
+    --bs-secondary-color: var(--ds-text-secondary);
+    --bs-dark-rgb: 17, 17, 19;
+    --bs-dark-bg-subtle: var(--ds-surface);
+    --bs-tertiary-bg: var(--ds-surface);
+    --bs-secondary-bg: var(--ds-surface-raised);
+    --bs-border-color: var(--ds-border);
+    --bs-border-color-translucent: rgba(255, 255, 255, 0.06);
+    --bs-secondary-border-subtle: var(--ds-border);
+    --bs-border-radius: var(--ds-radius);
+    --bs-border-radius-sm: var(--ds-radius-sm);
+    --bs-border-radius-lg: var(--ds-radius-lg);
+    --bs-border-radius-xl: 16px;
+    --bs-border-radius-xxl: 20px;
+    --bs-border-radius-pill: 50rem;
+    --bs-body-font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+    --bs-font-monospace: 'JetBrains Mono', 'Cascadia Code', monospace;
+    --bs-card-bg: var(--ds-surface);
+    --bs-card-border-color: var(--ds-border);
+    --bs-modal-bg: var(--ds-surface);
+    --bs-modal-border-color: var(--ds-border);
+    --bs-primary-rgb: 129, 140, 248;
+    --bs-success-rgb: 74, 222, 128;
+    --bs-danger-rgb: 248, 113, 113;
+    --bs-warning-rgb: 251, 191, 36;
+    --bs-info-rgb: 34, 211, 238;
+
+    /* Legacy aliases for terminal_popout.html inline styles */
+    --crt-surface: var(--ds-surface);
+    --crt-border: var(--ds-border);
+    --crt-bg: var(--ds-bg);
 }
 
 /* --------------------------------------------------------------------------
@@ -72,30 +94,6 @@ body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    animation: crt-flicker 4s ease-in-out infinite;
-}
-
-/* Scanline overlay — CRT authenticity */
-body::after {
-    content: '';
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 9998;
-    background: repeating-linear-gradient(
-        to bottom,
-        transparent 0px,
-        transparent 2px,
-        rgba(0, 0, 0, 0.08) 2px,
-        rgba(0, 0, 0, 0.08) 4px
-    );
-}
-
-/* CRT flicker — 0.25Hz, 1.5% opacity change, far below seizure threshold */
-@keyframes crt-flicker {
-    0%   { opacity: 1; }
-    50%  { opacity: 0.985; }
-    100% { opacity: 1; }
 }
 
 main {
@@ -103,88 +101,83 @@ main {
 }
 
 h1, h2, h3, h4, h5, h6 {
-    font-weight: 500;
-    color: var(--crt-green);
-    text-shadow: 0 0 8px var(--crt-green-glow);
+    font-weight: 600;
+    color: var(--ds-text);
 }
 
 a {
-    color: var(--crt-green);
-    transition: color var(--crt-transition), text-shadow var(--crt-transition);
+    color: var(--ds-accent);
+    transition: color var(--ds-transition);
 }
 
 a:hover {
-    color: var(--crt-green) !important;
-    text-shadow: 0 0 8px var(--crt-green-glow);
+    color: var(--ds-accent-hover);
 }
 
 hr {
-    border-color: var(--crt-border);
+    border-color: var(--ds-border);
 }
 
 code {
     font-family: var(--bs-font-monospace);
-    color: var(--crt-cyan);
+    color: var(--ds-cyan);
 }
 
 /* --------------------------------------------------------------------------
    3. NAVBAR
    -------------------------------------------------------------------------- */
 .navbar {
-    background: var(--crt-bg) !important;
-    border-bottom: 1px solid var(--crt-border) !important;
+    background: var(--ds-bg) !important;
+    border-bottom: 1px solid var(--ds-border) !important;
 }
 
 .navbar-brand {
-    font-weight: 700;
+    font-weight: 600;
     font-size: 0.9rem;
-    color: var(--crt-green) !important;
-    text-shadow: 0 0 6px var(--crt-green-glow);
+    color: var(--ds-text) !important;
 }
 
 .navbar .nav-link {
     font-size: 0.8rem;
-    font-weight: 400;
-    color: var(--crt-green-dim) !important;
+    font-weight: 500;
+    color: var(--ds-text-muted) !important;
     padding-bottom: 0.75rem;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
-    transition: color var(--crt-transition), border-color var(--crt-transition);
+    transition: color var(--ds-transition), border-color var(--ds-transition);
 }
 
 .navbar .nav-link:hover {
-    color: var(--crt-green) !important;
-    text-shadow: 0 0 6px var(--crt-green-glow);
+    color: var(--ds-text) !important;
 }
 
 .navbar .nav-link.active {
-    color: var(--crt-green) !important;
-    border-bottom-color: var(--crt-green);
-    text-shadow: 0 0 6px var(--crt-green-glow);
+    color: var(--ds-text) !important;
+    border-bottom-color: var(--ds-accent);
 }
 
 .navbar-toggler {
-    border-color: var(--crt-border);
-    color: var(--crt-green);
+    border-color: var(--ds-border);
+    color: var(--ds-text-secondary);
 }
 
 /* --------------------------------------------------------------------------
    4. CARDS
    -------------------------------------------------------------------------- */
 .card {
-    background: var(--crt-surface) !important;
-    border: 1px solid var(--crt-border) !important;
-    border-radius: 0 !important;
+    background: var(--ds-surface) !important;
+    border: 1px solid var(--ds-border) !important;
+    border-radius: var(--ds-radius) !important;
 }
 
 .card-header {
-    background: var(--crt-surface-raised) !important;
-    border-bottom: 1px solid var(--crt-border) !important;
-    font-weight: 500;
-    font-size: 0.85rem;
-    color: var(--crt-green-dim);
+    background: var(--ds-surface-raised) !important;
+    border-bottom: 1px solid var(--ds-border-subtle) !important;
+    font-weight: 600;
+    font-size: 0.8rem;
+    color: var(--ds-text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
     padding: 0.75rem 1rem;
 }
 
@@ -192,13 +185,14 @@ code {
     padding: 1rem;
 }
 
-/* Stat cards — phosphor glow */
+/* Stat cards */
 .stat-card {
-    transition: border-color var(--crt-transition);
+    transition: border-color var(--ds-transition), box-shadow var(--ds-transition);
 }
 
 .stat-card:hover {
-    border-color: var(--crt-green) !important;
+    border-color: var(--ds-border-emphasis) !important;
+    box-shadow: var(--ds-shadow-sm);
 }
 
 a.stat-card {
@@ -207,19 +201,17 @@ a.stat-card {
 }
 
 .stat-card .stat-number {
-    font-size: 2.5rem;
+    font-size: 2.25rem;
     font-weight: 700;
     line-height: 1;
-    color: var(--crt-green);
-    text-shadow: 0 0 12px var(--crt-green-glow);
 }
 
 .stat-card .stat-label {
     font-size: 0.75rem;
-    font-weight: 400;
-    color: var(--crt-green-dim);
+    font-weight: 500;
+    color: var(--ds-text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
 }
 
 /* --------------------------------------------------------------------------
@@ -227,22 +219,22 @@ a.stat-card {
    -------------------------------------------------------------------------- */
 .table {
     --bs-table-bg: transparent;
-    --bs-table-striped-bg: var(--crt-green-faint);
-    border-color: var(--crt-border);
+    --bs-table-striped-bg: rgba(255, 255, 255, 0.02);
+    border-color: var(--ds-border);
 }
 
 .table-dark {
     --bs-table-bg: transparent !important;
-    --bs-table-color: var(--crt-green);
+    --bs-table-color: var(--ds-text);
 }
 
 .table > thead > tr > th {
     font-weight: 500;
     font-size: 0.75rem;
-    color: var(--crt-green-dim);
+    color: var(--ds-text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-bottom: 1px solid var(--crt-border) !important;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--ds-border) !important;
     padding: 0.5rem 0.75rem;
 }
 
@@ -251,104 +243,112 @@ a.stat-card {
 }
 
 .table-hover > tbody > tr:hover {
-    --bs-table-hover-bg: rgba(51, 255, 51, 0.05);
+    --bs-table-hover-bg: var(--ds-surface-hover);
 }
 
 /* --------------------------------------------------------------------------
-   6. BUTTONS — Outlined terminal style
+   6. BUTTONS
    -------------------------------------------------------------------------- */
 .btn {
-    border-radius: 0;
+    border-radius: var(--ds-radius-sm);
     font-size: 0.85rem;
     font-weight: 500;
-    transition: all var(--crt-transition);
+    transition: all var(--ds-transition);
 }
 
 .btn-primary {
-    background: transparent !important;
-    border: 1px solid var(--crt-green) !important;
-    color: var(--crt-green) !important;
+    background: var(--ds-accent-strong) !important;
+    border-color: var(--ds-accent-strong) !important;
+    color: #fff !important;
 }
 
 .btn-primary:hover,
 .btn-primary:active {
-    background: rgba(51, 255, 51, 0.1) !important;
-    border-color: var(--crt-green) !important;
-    color: var(--crt-green) !important;
-    text-shadow: 0 0 6px var(--crt-green-glow);
+    background: var(--ds-accent) !important;
+    border-color: var(--ds-accent) !important;
+    color: #fff !important;
 }
 
 .btn:focus-visible {
-    box-shadow: var(--crt-focus-ring) !important;
+    box-shadow: var(--ds-focus-ring) !important;
     outline: none;
 }
 
 .btn-outline-primary {
-    color: var(--crt-green);
-    border-color: var(--crt-green);
+    color: var(--ds-accent);
+    border-color: var(--ds-accent);
 }
 
 .btn-outline-primary:hover {
-    background: rgba(51, 255, 51, 0.1);
-    color: var(--crt-green);
-    border-color: var(--crt-green);
+    background: var(--ds-accent-muted);
+    color: var(--ds-accent-hover);
+    border-color: var(--ds-accent);
 }
 
-.btn-danger,
-.btn-outline-danger {
-    color: var(--crt-red) !important;
-    border-color: var(--crt-red) !important;
+.btn-danger {
     background: transparent !important;
+    border: 1px solid var(--ds-red) !important;
+    color: var(--ds-red) !important;
 }
 
-.btn-danger:hover,
+.btn-danger:hover {
+    background: var(--ds-red-muted) !important;
+}
+
+.btn-outline-danger {
+    color: var(--ds-red);
+    border-color: var(--ds-red);
+}
+
 .btn-outline-danger:hover {
-    background: rgba(255, 107, 107, 0.1) !important;
+    background: var(--ds-red-muted);
+    color: var(--ds-red);
+    border-color: var(--ds-red);
 }
 
 .btn-warning,
 .btn-outline-warning {
-    color: var(--crt-amber) !important;
-    border-color: var(--crt-amber) !important;
+    color: var(--ds-amber) !important;
+    border-color: var(--ds-amber) !important;
     background: transparent !important;
 }
 
 .btn-warning:hover,
 .btn-outline-warning:hover {
-    background: rgba(255, 179, 0, 0.1) !important;
+    background: var(--ds-amber-muted) !important;
 }
 
 .btn-success,
 .btn-outline-success {
-    color: var(--crt-green) !important;
-    border-color: var(--crt-green) !important;
+    color: var(--ds-green) !important;
+    border-color: var(--ds-green) !important;
     background: transparent !important;
 }
 
 .btn-success:hover,
 .btn-outline-success:hover {
-    background: rgba(51, 255, 51, 0.1) !important;
+    background: var(--ds-green-muted) !important;
 }
 
 .btn-secondary {
-    color: var(--crt-green-dim) !important;
-    border-color: var(--crt-green-muted) !important;
-    background: transparent !important;
+    background: var(--ds-surface-raised) !important;
+    border: 1px solid var(--ds-border) !important;
+    color: var(--ds-text-secondary) !important;
 }
 
 .btn-secondary:hover {
-    border-color: var(--crt-green-dim) !important;
-    background: var(--crt-green-faint) !important;
+    background: var(--ds-surface-hover) !important;
+    color: var(--ds-text) !important;
 }
 
 /* --------------------------------------------------------------------------
-   7. BADGES — Bracket style
+   7. BADGES
    -------------------------------------------------------------------------- */
 .badge {
-    border-radius: 0;
+    border-radius: var(--ds-radius-sm);
     font-size: 0.7rem;
     font-weight: 500;
-    padding: 0.2em 0.5em;
+    padding: 0.2em 0.6em;
 }
 
 /* --------------------------------------------------------------------------
@@ -356,72 +356,72 @@ a.stat-card {
    -------------------------------------------------------------------------- */
 .form-control,
 .form-select {
-    background: var(--crt-bg) !important;
-    border: 1px solid var(--crt-border) !important;
-    border-radius: 0 !important;
-    color: var(--crt-green) !important;
+    background: var(--ds-bg) !important;
+    border: 1px solid var(--ds-border) !important;
+    border-radius: var(--ds-radius-sm) !important;
+    color: var(--ds-text) !important;
 }
 
 .form-control:focus,
 .form-select:focus {
-    border-color: var(--crt-green) !important;
-    box-shadow: 0 0 6px rgba(51, 255, 51, 0.3) !important;
-    color: var(--crt-green) !important;
+    border-color: var(--ds-accent) !important;
+    box-shadow: 0 0 0 3px var(--ds-accent-muted) !important;
+    color: var(--ds-text) !important;
 }
 
 .form-control::placeholder {
-    color: var(--crt-green-muted);
+    color: var(--ds-text-faint);
 }
 
 .form-label {
     font-size: 0.8rem;
-    font-weight: 400;
-    color: var(--crt-green-dim);
+    font-weight: 500;
+    color: var(--ds-text-secondary);
 }
 
 .form-check-input:checked {
-    background-color: var(--crt-green);
-    border-color: var(--crt-green);
+    background-color: var(--ds-accent-strong);
+    border-color: var(--ds-accent-strong);
 }
 
 .form-check-input:focus {
-    box-shadow: 0 0 6px rgba(51, 255, 51, 0.3);
-    border-color: var(--crt-green);
+    box-shadow: 0 0 0 3px var(--ds-accent-muted);
+    border-color: var(--ds-accent);
 }
 
 .form-check-label {
-    color: var(--crt-green-dim);
+    color: var(--ds-text-secondary);
 }
 
 /* --------------------------------------------------------------------------
    9. MODALS
    -------------------------------------------------------------------------- */
 .modal-content {
-    background: var(--crt-surface) !important;
-    border: 1px solid var(--crt-border-bright) !important;
-    border-radius: 0 !important;
+    background: var(--ds-surface) !important;
+    border: 1px solid var(--ds-border) !important;
+    border-radius: var(--ds-radius-lg) !important;
+    box-shadow: var(--ds-shadow-lg);
 }
 
 .modal-header {
-    border-bottom-color: var(--crt-border) !important;
+    border-bottom-color: var(--ds-border-subtle) !important;
 }
 
 .modal-footer {
-    border-top-color: var(--crt-border) !important;
+    border-top-color: var(--ds-border-subtle) !important;
 }
 
 .modal-title {
-    font-weight: 500;
+    font-weight: 600;
     font-size: 0.95rem;
-    color: var(--crt-green);
-    text-shadow: 0 0 6px var(--crt-green-glow);
+    color: var(--ds-text);
 }
 
 /* --------------------------------------------------------------------------
    10. ALERTS
    -------------------------------------------------------------------------- */
 .alert {
-    border-radius: 0;
+    border-radius: var(--ds-radius);
     border-left: 4px solid;
 }
 
@@ -429,84 +429,86 @@ a.stat-card {
    11. DROPDOWNS
    -------------------------------------------------------------------------- */
 .dropdown-menu {
-    background: var(--crt-surface) !important;
-    border: 1px solid var(--crt-border) !important;
-    border-radius: 0 !important;
+    background: var(--ds-surface) !important;
+    border: 1px solid var(--ds-border) !important;
+    border-radius: var(--ds-radius) !important;
+    box-shadow: var(--ds-shadow-md);
 }
 
 .dropdown-item {
     font-size: 0.85rem;
-    color: var(--crt-green-dim);
-    transition: background var(--crt-transition);
+    color: var(--ds-text-secondary);
+    transition: background var(--ds-transition), color var(--ds-transition);
 }
 
 .dropdown-item:hover,
 .dropdown-item:focus {
-    background: rgba(51, 255, 51, 0.08) !important;
-    color: var(--crt-green);
+    background: var(--ds-surface-hover) !important;
+    color: var(--ds-text);
 }
 
 .dropdown-item.active,
 .dropdown-item:active {
-    background: var(--crt-green) !important;
-    color: var(--crt-bg);
+    background: var(--ds-accent-muted) !important;
+    color: var(--ds-accent);
 }
 
 /* --------------------------------------------------------------------------
    12. NAV PILLS & TABS
    -------------------------------------------------------------------------- */
 .nav-pills .nav-link {
-    border-radius: 0;
+    border-radius: var(--ds-radius-sm);
     font-size: 0.85rem;
-    font-weight: 400;
-    color: var(--crt-green-dim);
-    transition: all var(--crt-transition);
+    font-weight: 500;
+    color: var(--ds-text-muted);
+    transition: all var(--ds-transition);
 }
 
 .nav-pills .nav-link:hover {
-    color: var(--crt-green);
-    text-shadow: 0 0 6px var(--crt-green-glow);
+    color: var(--ds-text);
+    background: var(--ds-surface-hover);
 }
 
 .nav-pills .nav-link.active {
-    background: var(--crt-green) !important;
-    color: var(--crt-bg) !important;
+    background: var(--ds-accent-muted) !important;
+    color: var(--ds-accent) !important;
 }
 
 /* --------------------------------------------------------------------------
    13. PROGRESS BARS
    -------------------------------------------------------------------------- */
 .progress {
-    background: var(--crt-surface-raised);
-    border-radius: 0;
+    background: var(--ds-surface-raised);
+    border-radius: 999px;
     height: 6px;
-    border: 1px solid var(--crt-border);
+    border: none;
 }
 
 /* --------------------------------------------------------------------------
-   14. FOOTER — Terminal prompt style
+   14. FOOTER
    -------------------------------------------------------------------------- */
 footer {
     font-size: 0.75rem;
-    color: var(--crt-green-muted);
-    border-top: 1px solid var(--crt-border) !important;
+    color: var(--ds-text-faint);
+    border-top: 1px solid var(--ds-border) !important;
 }
 
 /* --------------------------------------------------------------------------
    15. TOASTS
    -------------------------------------------------------------------------- */
 .toast {
-    background: var(--crt-surface) !important;
-    border: 1px solid var(--crt-border) !important;
-    border-radius: 0 !important;
+    background: var(--ds-surface) !important;
+    border: 1px solid var(--ds-border) !important;
+    border-radius: var(--ds-radius) !important;
+    box-shadow: var(--ds-shadow-md);
 }
 
 /* --------------------------------------------------------------------------
    16. PRESENCE BAR & COLLABORATION
    -------------------------------------------------------------------------- */
 #presenceBar {
-    background: var(--crt-surface) !important;
-    border-bottom: 1px solid var(--crt-border) !important;
+    background: var(--ds-surface) !important;
+    border-bottom: 1px solid var(--ds-border) !important;
 }
 
 .collab-avatar {
@@ -519,14 +521,14 @@ footer {
     font-size: 10px;
     font-weight: 600;
     color: #fff;
-    border: 1px solid var(--crt-green-muted);
+    border: 1.5px solid var(--ds-border-emphasis);
     padding: 0;
     cursor: pointer;
-    transition: border-color var(--crt-transition);
+    transition: border-color var(--ds-transition);
 }
 
 .collab-avatar:hover {
-    border-color: var(--crt-green);
+    border-color: var(--ds-accent);
 }
 
 /* Ghost cursor overlay */
@@ -541,18 +543,18 @@ footer {
     width: 14px;
     height: 14px;
     border-radius: 50% 50% 50% 0;
-    background: var(--cur-color, #33ff33);
+    background: var(--cur-color, var(--ds-accent));
     border: 2px solid rgba(255, 255, 255, 0.85);
     transform: rotate(-45deg);
 }
 
 .collab-cursor-name {
-    background: var(--cur-color, #33ff33);
-    color: #0a0a0a;
+    background: var(--cur-color, var(--ds-accent));
+    color: #fff;
     font-size: 0.6rem;
     font-weight: 500;
     padding: 1px 5px;
-    border-radius: 0;
+    border-radius: var(--ds-radius-sm);
     white-space: nowrap;
     margin-top: 3px;
     margin-left: 8px;
@@ -567,111 +569,74 @@ footer {
    visually-hidden text. */
 
 .severity-critical {
-    color: var(--crt-red);
+    color: var(--ds-red);
     font-weight: 600;
 }
 
 .severity-important {
-    color: var(--crt-amber);
+    color: var(--ds-amber);
 }
 
 .severity-normal {
-    color: var(--crt-green-muted);
+    color: var(--ds-text-muted);
 }
 
 .badge-critical {
-    background-color: var(--crt-red) !important;
-    color: #0a0a0a !important;
+    background-color: var(--ds-red) !important;
+    color: #09090b !important;
 }
 
 .badge-important {
-    background-color: var(--crt-amber) !important;
-    color: #0a0a0a !important;
+    background-color: var(--ds-amber) !important;
+    color: #09090b !important;
 }
 
 .badge-normal {
-    background-color: var(--crt-green-muted) !important;
-    color: #0a0a0a !important;
+    background-color: var(--ds-text-muted) !important;
+    color: #09090b !important;
 }
 
 .status-up-to-date {
-    color: var(--crt-green);
+    color: var(--ds-green);
 }
 
 .status-updates-available {
-    color: var(--crt-amber);
+    color: var(--ds-amber);
 }
 
 .status-error {
-    color: var(--crt-red);
+    color: var(--ds-red);
 }
 
 .status-unknown {
-    color: var(--crt-green-muted);
+    color: var(--ds-text-muted);
 }
 
 /* --------------------------------------------------------------------------
-   18. STATUS INDICATOR GLOW (static, no animation)
-   -------------------------------------------------------------------------- */
-.text-success .bi-circle-fill {
-    text-shadow: 0 0 8px rgba(51, 255, 51, 0.5);
-}
-
-/* --------------------------------------------------------------------------
-   19. CURSOR BLINK — for decorative elements
-   -------------------------------------------------------------------------- */
-@keyframes cursor-blink {
-    0%, 49% { opacity: 1; }
-    50%, 100% { opacity: 0; }
-}
-
-/* --------------------------------------------------------------------------
-   20. WCAG 2.3.3: Respect reduced-motion preference
+   18. WCAG 2.3.3: Respect reduced-motion preference
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
-    body {
-        animation: none !important;
-    }
-
-    /* Remove scanlines */
-    body::after {
-        display: none !important;
-    }
-
-    .stat-card,
-    .collab-ghost-cursor,
-    .collab-avatar,
-    .fade,
-    .btn,
-    .nav-link,
-    .dropdown-item,
-    .form-control,
-    .form-select,
-    a {
-        transition: none !important;
-    }
-
-    /* Disable any blinking cursors */
-    .login-card,
-    footer::after {
-        animation: none !important;
+    *, *::before, *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
     }
 }
 
 /* --------------------------------------------------------------------------
-   21. WCAG 2.4.1: Skip-to-main-content link
+   19. WCAG 2.4.1: Skip-to-main-content link
    -------------------------------------------------------------------------- */
 .skip-link {
     position: absolute;
     top: -100%;
     left: 0;
     padding: 0.5rem 1rem;
-    background: var(--crt-green);
-    color: var(--crt-bg);
+    background: var(--ds-accent);
+    color: #fff;
     z-index: 10000;
     text-decoration: none;
     font-weight: 500;
-    border-radius: 0;
+    border-radius: var(--ds-radius-sm);
 }
 
 .skip-link:focus {
@@ -679,7 +644,7 @@ footer {
 }
 
 /* --------------------------------------------------------------------------
-   22. HTMX INDICATORS
+   20. HTMX INDICATORS
    -------------------------------------------------------------------------- */
 .htmx-indicator {
     display: none;
@@ -695,14 +660,14 @@ footer {
 }
 
 /* --------------------------------------------------------------------------
-   23. UTILITY / LAYOUT
+   21. UTILITY / LAYOUT
    -------------------------------------------------------------------------- */
 .query-cell {
     max-width: min(420px, 50vw);
 }
 
 /* --------------------------------------------------------------------------
-   24. DASHBOARD-SPECIFIC
+   22. DASHBOARD-SPECIFIC
    -------------------------------------------------------------------------- */
 #hostPerfBody td,
 #guestStatsBody td {
@@ -711,75 +676,62 @@ footer {
 }
 
 /* --------------------------------------------------------------------------
-   25. LOGIN PAGE — CRT boot sequence
+   23. LOGIN PAGE
    -------------------------------------------------------------------------- */
 .login-page {
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--crt-bg);
+    background: var(--ds-bg);
 }
 
 .login-card {
-    max-width: 420px;
+    max-width: 400px;
     width: 100%;
-    animation: crt-on 0.6s ease-out;
-}
-
-@keyframes crt-on {
-    0% {
-        transform: scaleY(0.005) scaleX(0.5);
-        opacity: 0.8;
-    }
-    40% {
-        transform: scaleY(0.005) scaleX(1);
-        opacity: 1;
-    }
-    100% {
-        transform: scaleY(1) scaleX(1);
-        opacity: 1;
-    }
 }
 
 .login-card .card {
-    background: var(--crt-bg) !important;
-    border: 1px solid var(--crt-green) !important;
+    border-radius: var(--ds-radius-lg) !important;
+    box-shadow: var(--ds-shadow-lg);
 }
 
 .login-card h2 {
-    font-family: 'VT323', 'Fira Code', monospace;
-    font-weight: 400;
-    font-size: 2rem;
-    color: var(--crt-green);
-    text-shadow: 0 0 12px var(--crt-green-glow);
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: var(--ds-text);
+    letter-spacing: -0.02em;
+}
+
+.login-card h2 i {
+    color: var(--ds-accent);
 }
 
 /* --------------------------------------------------------------------------
-   26. BREADCRUMBS
+   24. BREADCRUMBS
    -------------------------------------------------------------------------- */
 .breadcrumb {
     font-size: 0.8rem;
-    color: var(--crt-green-dim);
+    color: var(--ds-text-muted);
 }
 
 .breadcrumb-item a {
-    color: var(--crt-green-dim);
+    color: var(--ds-text-muted);
 }
 
 .breadcrumb-item.active {
-    color: var(--crt-green);
+    color: var(--ds-text);
 }
 
 /* --------------------------------------------------------------------------
-   27. TEXT MUTED OVERRIDE — ensure green tint
+   25. TEXT MUTED OVERRIDE
    -------------------------------------------------------------------------- */
 .text-muted {
-    color: var(--crt-green-muted) !important;
+    color: var(--ds-text-muted) !important;
 }
 
 /* --------------------------------------------------------------------------
-   28. RESPONSIVE — WCAG 2.5.5: Touch targets
+   26. RESPONSIVE — WCAG 2.5.5: Touch targets
    -------------------------------------------------------------------------- */
 @media (max-width: 575.98px) {
     .btn-sm {
@@ -791,7 +743,6 @@ footer {
         padding: 0.75rem;
     }
 
-    /* Slightly smaller font for dense monospace on mobile */
     .table {
         font-size: 0.8rem;
     }
