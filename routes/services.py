@@ -370,6 +370,184 @@ def _safe_float(v):
         return None
 
 
+def _analyze_pg_plan(plan_json: list) -> list[dict]:
+    """Walk a PostgreSQL EXPLAIN (FORMAT JSON) plan tree and apply pgplan-style performance rules.
+
+    Returns a list of findings: [{"severity": str, "rule": str, "message": str, "recommendation": str}, ...]
+    Severity values: "critical" | "warning" | "info"
+    """
+    _JOIN_TYPES = {"Hash Join", "Merge Join", "Nested Loop"}
+
+    def _walk_node(node: dict, findings: list, seen: set, in_join: bool = False) -> None:
+        if not isinstance(node, dict):
+            return
+        node_type = node.get("Node Type", "")
+        relation = node.get("Relation Name", "")
+        actual_rows = node.get("Actual Rows", 0) or 0
+        actual_loops = node.get("Actual Loops", 1) or 1
+        plan_rows = node.get("Plan Rows", 0) or 0
+        plan_width = node.get("Plan Width", 0) or 0
+
+        # seq_scan_in_join: Seq Scan inside a join on a large table
+        if node_type == "Seq Scan" and in_join and actual_rows > 10_000:
+            key = ("seq_scan_in_join", relation)
+            if key not in seen:
+                seen.add(key)
+                findings.append({
+                    "severity": "critical",
+                    "rule": "seq_scan_in_join",
+                    "message": f"Sequential scan on \"{relation}\" ({actual_rows:,} rows) inside a join.",
+                    "recommendation": "Add an index on the join column(s) used against this table.",
+                })
+
+        # sort_spill_to_disk: Sort node spilling to disk
+        if node_type == "Sort":
+            sort_method = node.get("Sort Method", "")
+            if "disk" in sort_method.lower():
+                key = ("sort_spill_to_disk", relation)
+                if key not in seen:
+                    seen.add(key)
+                    space_kb = node.get("Sort Space Used", 0) or 0
+                    findings.append({
+                        "severity": "critical",
+                        "rule": "sort_spill_to_disk",
+                        "message": f"Sort spilled to disk ({sort_method}, {space_kb:,} kB used).",
+                        "recommendation": "Increase work_mem to allow in-memory sorts for this query.",
+                    })
+
+        # hash_spill_to_disk: Hash node using multiple batches
+        if node_type == "Hash":
+            hash_batches = node.get("Hash Batches", 1) or 1
+            if hash_batches > 1:
+                key = ("hash_spill_to_disk", relation)
+                if key not in seen:
+                    seen.add(key)
+                    findings.append({
+                        "severity": "warning",
+                        "rule": "hash_spill_to_disk",
+                        "message": f"Hash join used {hash_batches} batches — spilled to disk.",
+                        "recommendation": "Increase work_mem to allow the hash table to fit in memory.",
+                    })
+
+        # temp_blocks_usage: Any node reading/writing temp blocks
+        temp_read = node.get("Temp Read Blocks", 0) or 0
+        temp_written = node.get("Temp Written Blocks", 0) or 0
+        if temp_read > 0 or temp_written > 0:
+            key = ("temp_blocks_usage", node_type)
+            if key not in seen:
+                seen.add(key)
+                findings.append({
+                    "severity": "warning",
+                    "rule": "temp_blocks_usage",
+                    "message": f"Temporary I/O detected: {temp_read:,} blocks read, {temp_written:,} blocks written in {node_type}.",
+                    "recommendation": "Increase work_mem or restructure the query to reduce temporary disk usage.",
+                })
+
+        # nested_loop_high_loops: Nested loop with many iterations and significant time
+        if node_type == "Nested Loop":
+            total_time = (node.get("Actual Total Time", 0) or 0) * actual_loops
+            if actual_loops > 1000 and total_time > 5000:
+                key = ("nested_loop_high_loops", "")
+                if key not in seen:
+                    seen.add(key)
+                    findings.append({
+                        "severity": "warning",
+                        "rule": "nested_loop_high_loops",
+                        "message": f"Nested loop executed {actual_loops:,} times with {total_time:,.0f} ms total time.",
+                        "recommendation": "Consider rewriting as a hash join or merge join, or add an index on the inner table.",
+                    })
+
+        # correlated_subplan_loops: Subquery scanned many times
+        if "Subquery" in node_type and actual_loops > 100:
+            key = ("correlated_subplan_loops", relation)
+            if key not in seen:
+                seen.add(key)
+                findings.append({
+                    "severity": "warning",
+                    "rule": "correlated_subplan_loops",
+                    "message": f"Subquery executed {actual_loops:,} times — likely a correlated subquery.",
+                    "recommendation": "Rewrite as a JOIN or use a CTE to avoid repeated subquery execution.",
+                })
+
+        # bitmap_heap_recheck: Bitmap Heap Scan with all lossy pages (work_mem pressure)
+        if node_type == "Bitmap Heap Scan":
+            lossy = node.get("Lossy Heap Blocks", 0) or 0
+            exact = node.get("Exact Heap Blocks", 0) or 0
+            if lossy > 0 and exact == 0:
+                key = ("bitmap_heap_recheck", relation)
+                if key not in seen:
+                    seen.add(key)
+                    findings.append({
+                        "severity": "warning",
+                        "rule": "bitmap_heap_recheck",
+                        "message": f"Bitmap heap scan on \"{relation}\" used {lossy:,} lossy pages — all rows rechecked.",
+                        "recommendation": "Increase work_mem so the bitmap fits in memory and avoids lossy storage.",
+                    })
+
+        # index_low_selectivity: Index scan removing more rows than it returns
+        if node_type.endswith("Index Scan") or node_type == "Index Only Scan":
+            rows_removed = node.get("Rows Removed by Filter", 0) or 0
+            if rows_removed > actual_rows and actual_rows > 0:
+                fraction = rows_removed / (rows_removed + actual_rows)
+                if fraction > 0.5:
+                    key = ("index_low_selectivity", relation)
+                    if key not in seen:
+                        seen.add(key)
+                        findings.append({
+                            "severity": "info",
+                            "rule": "index_low_selectivity",
+                            "message": (
+                                f"Index scan on \"{relation}\" removed {rows_removed:,} rows, "
+                                f"returning only {actual_rows:,} ({fraction:.0%} filtered out)."
+                            ),
+                            "recommendation": "Consider a partial or composite index to improve selectivity.",
+                        })
+
+        # worker_mismatch: Fewer parallel workers launched than planned
+        workers_planned = node.get("Workers Planned", 0) or 0
+        workers_launched = node.get("Workers Launched")
+        if workers_planned > 0 and workers_launched is not None and workers_launched < workers_planned:
+            key = ("worker_mismatch", node_type)
+            if key not in seen:
+                seen.add(key)
+                findings.append({
+                    "severity": "warning",
+                    "rule": "worker_mismatch",
+                    "message": f"Only {workers_launched} of {workers_planned} planned parallel workers launched.",
+                    "recommendation": "Check max_worker_processes, max_parallel_workers, and system CPU availability.",
+                })
+
+        # wide_rows: Large rows being processed in quantity
+        if plan_width > 2000 and actual_rows > 1000:
+            key = ("wide_rows", relation or node_type)
+            if key not in seen:
+                seen.add(key)
+                findings.append({
+                    "severity": "info",
+                    "rule": "wide_rows",
+                    "message": f"Node producing {actual_rows:,} rows of {plan_width} bytes each ({plan_rows * plan_width / 1024 / 1024:.1f} MB estimated).",
+                    "recommendation": "Select only required columns to reduce row width and memory pressure.",
+                })
+
+        # Recurse into child plans; propagate in_join flag for join node children
+        child_in_join = in_join or (node_type in _JOIN_TYPES)
+        for child in node.get("Plans", []):
+            _walk_node(child, findings, seen, in_join=child_in_join)
+
+    try:
+        if not isinstance(plan_json, list) or not plan_json:
+            raise ValueError("plan_json must be a non-empty list")
+        findings: list[dict] = []
+        seen: set[tuple] = set()
+        for top in plan_json:
+            root = top.get("Plan") if isinstance(top, dict) else None
+            if root:
+                _walk_node(root, findings, seen, in_join=False)
+        return findings
+    except Exception:  # noqa: BLE001
+        return [{"severity": "info", "rule": "parse_error", "message": "Could not parse plan JSON.", "recommendation": "Check that EXPLAIN (FORMAT JSON) executed successfully."}]
+
+
 def _pg_guard(service_id):
     """Return (svc, guest) or raise 404. Also checks service type."""
     svc = GuestService.query.get_or_404(service_id)
@@ -526,6 +704,70 @@ def pg_settings(service_id):
                 "description": parts[3],
             })
     return jsonify({"settings": settings})
+
+
+@bp.route("/<int:service_id>/pg/analyze-plan", methods=["POST"])
+def pg_analyze_plan(service_id):
+    """Run EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) on the remote host and return plan analysis findings."""
+    if not current_user.can_edit_services:
+        return jsonify({"ok": False, "message": "Permission denied."}), 403
+    svc, guest = _pg_guard(service_id)
+    if svc is None:
+        return jsonify({"ok": False, "message": "Not a PostgreSQL service"}), 400
+    data = request.get_json(silent=True) or {}
+    database = (data.get("database") or "").strip()
+    query = (data.get("query") or "").strip()
+    if not database or not query:
+        return jsonify({"ok": False, "message": "database and query are required"}), 400
+    if not _PG_DB_NAME_RE.match(database):
+        return jsonify({"ok": False, "message": "Invalid database name."}), 400
+
+    import uuid
+
+    from core.scanner import _execute_command
+
+    tmpfile = f"/tmp/.pg_analyze_{uuid.uuid4().hex[:12]}.sql"  # nosec B108 — remote SSH path, not local
+    safe_content = shlex.quote(f"EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {query}")
+    _, write_err = _execute_command(guest, f"printf %s {safe_content} > {tmpfile}", timeout=10)
+    if write_err:
+        return jsonify({"ok": False, "message": f"Could not write temp file: {write_err[:200]}"})
+
+    stdout, error = _execute_command(
+        guest,
+        f"sudo -u postgres psql -d {database} -t -A -f {tmpfile} 2>&1; rm -f {tmpfile}",
+        timeout=120,
+        sudo=True,
+    )
+    if error:
+        _execute_command(guest, f"rm -f {tmpfile}", timeout=5)
+        return jsonify({"ok": False, "message": f"SSH error: {error[:300]}"})
+
+    raw = (stdout or "").strip()
+    try:
+        plan_json = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return jsonify({"ok": False, "message": f"Could not parse plan JSON: {raw[:300]}"}), 400
+
+    findings = _analyze_pg_plan(plan_json)
+
+    query_time_ms = None
+    try:
+        query_time_ms = plan_json[0]["Plan"]["Actual Total Time"]
+    except (IndexError, KeyError, TypeError):
+        pass
+
+    log_action(
+        "pg_analyze_plan", "guest",
+        resource_id=guest.id, resource_name=guest.name,
+        details={
+            "service": svc.service_name,
+            "database": database,
+            "findings_count": len(findings),
+            "critical": sum(1 for f in findings if f["severity"] == "critical"),
+        },
+    )
+    db.session.commit()
+    return jsonify({"ok": True, "findings": findings, "plan_json": raw, "query_time_ms": query_time_ms})
 
 
 @bp.route("/<int:service_id>/pg/metrics-history")
