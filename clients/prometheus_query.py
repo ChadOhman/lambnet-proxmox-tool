@@ -451,6 +451,7 @@ class PrometheusQueryClient:
 
         queries = {
             "power_consumption_watts": f"ipmi_dcmi_power_consumption_current_watts{{{inst}}}",
+            "power_watts": f"sum(ipmi_power_watts{{{inst}}})",
             "cpu_temp": f'ipmi_temperature_celsius{{{inst},name=~"CPU.*Temp|Processor.*"}}',
             "system_temp": f'ipmi_temperature_celsius{{{inst},name=~"System.*Temp|Inlet.*|Ambient.*"}}',
             "fan_speed_rpm": f"avg(ipmi_fan_speed_rpm{{{inst}}})",
