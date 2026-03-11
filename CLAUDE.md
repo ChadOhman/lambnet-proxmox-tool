@@ -122,4 +122,4 @@ make all           # lint → security → test
 - `auth_client` fixture provides a pre-authenticated admin client
 - Credential store is redirected to a temp file — tests never touch `/etc/mstdnca`
 - No integration tests for Proxmox/SSH/UniFi — those modules are omitted from coverage
-- CI coverage threshold: 40% (`--cov-fail-under=40`); local Makefile uses 18%
+- Coverage threshold: 40% (`--cov-fail-under=40`) in both CI and local Makefile
