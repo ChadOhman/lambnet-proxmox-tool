@@ -520,10 +520,11 @@ def run_peertube_install(log_callback=None):
             with SSHClient.from_credential(db_guest.ip_address, db_credential) as db_ssh:
                 # Create PostgreSQL user
                 if db_password:
+                    safe_pw = db_password.replace("'", "''")  # SQL single-quote escape
                     create_user_cmd = (
                         f"su - postgres -c \"psql -tAc \\\"SELECT 1 FROM pg_roles WHERE rolname='{user}'\\\"\" "  # noqa: S608
                         f"| grep -q 1 && echo 'User exists' "
-                        f"|| su - postgres -c \"psql -c \\\"CREATE USER {user} WITH PASSWORD '{db_password}'\\\"\""
+                        f"|| su - postgres -c \"psql -c \\\"CREATE USER {user} WITH PASSWORD '{safe_pw}'\\\"\""
                     )
                 else:
                     create_user_cmd = (

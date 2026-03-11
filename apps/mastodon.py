@@ -328,8 +328,8 @@ def _swap_env_db(ssh, app_dir, new_host, new_port):
 
     env_file = f"{app_dir}/.env.production"
     cmds = [
-        f"sed -i 's/^DB_HOST=.*/DB_HOST={new_host}/' {env_file}",
-        f"sed -i 's/^DB_PORT=.*/DB_PORT={new_port}/' {env_file}",
+        f"sed -i 's|^DB_HOST=.*|DB_HOST={new_host}|' {env_file}",
+        f"sed -i 's|^DB_PORT=.*|DB_PORT={new_port}|' {env_file}",
     ]
     for cmd in cmds:
         stdout, stderr, code = ssh.execute_sudo(cmd, timeout=10)
