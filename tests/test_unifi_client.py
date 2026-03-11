@@ -2,9 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
-from clients.unifi_client import UniFiClient, _safe_float
-
 import clients.unifi_client as unifi_module
+from clients.unifi_client import UniFiClient, _safe_float
 
 
 class TestSafeFloat:
