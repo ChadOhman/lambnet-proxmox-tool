@@ -30,6 +30,7 @@ class UniFiClient:
         if not verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self._logged_in = False
+        self._login_error = None
 
     @property
     def _prefix(self):
@@ -52,10 +53,13 @@ class UniFiClient:
             )
             if resp.status_code == 200:
                 self._logged_in = True
+                self._login_error = None
                 return True
+            self._login_error = f"HTTP {resp.status_code}"
             logger.warning("UniFi login failed: HTTP %s", resp.status_code)
             return False
         except requests.RequestException as e:
+            self._login_error = str(e)
             logger.error("UniFi login error: %s", e)
             return False
 
@@ -373,7 +377,7 @@ class UniFiClient:
 
     def test_connection(self):
         if not self.login():
-            return False, "Login failed"
+            return False, f"Login failed: {self._login_error}"
         devices = self.get_devices()
         if devices is None:
             return False, "Could not fetch devices"
