@@ -1,3 +1,95 @@
+/* ==========================================================================
+   Refined Modern Minimal — Design System
+   Proxmox Datacenter Administration Tool
+   Clean hierarchy. Blue-violet accent. Layered dark surfaces.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. DESIGN TOKENS
+   -------------------------------------------------------------------------- */
+[data-bs-theme="dark"] {
+    /* Backgrounds — 5-tier layering */
+    --ds-bg: #09090b;
+    --ds-surface: #111113;
+    --ds-surface-raised: #18181b;
+    --ds-surface-hover: #1e1e23;
+    --ds-surface-overlay: #27272a;
+
+    /* Borders */
+    --ds-border: #27272a;
+    --ds-border-subtle: #1e1e23;
+    --ds-border-emphasis: #3f3f46;
+
+    /* Text */
+    --ds-text: #fafafa;
+    --ds-text-secondary: #a1a1aa;
+    --ds-text-muted: #71717a;
+    --ds-text-faint: #52525b;
+
+    /* Accent — blue-violet */
+    --ds-accent: #818cf8;
+    --ds-accent-hover: #a5b4fc;
+    --ds-accent-muted: rgba(129, 140, 248, 0.12);
+    --ds-accent-strong: #6366f1;
+
+    /* Semantic colors */
+    --ds-green: #4ade80;
+    --ds-green-muted: rgba(74, 222, 128, 0.12);
+    --ds-red: #f87171;
+    --ds-red-muted: rgba(248, 113, 113, 0.12);
+    --ds-amber: #fbbf24;
+    --ds-amber-muted: rgba(251, 191, 36, 0.12);
+    --ds-cyan: #22d3ee;
+    --ds-cyan-muted: rgba(34, 211, 238, 0.12);
+
+    /* Effects */
+    --ds-transition: 150ms ease;
+    --ds-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --ds-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --ds-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --ds-focus-ring: 0 0 0 2px var(--ds-bg), 0 0 0 4px var(--ds-accent);
+    --ds-radius: 8px;
+    --ds-radius-sm: 6px;
+    --ds-radius-lg: 12px;
+
+    /* Bootstrap mappings */
+    --bs-body-bg: var(--ds-bg);
+    --bs-body-color: var(--ds-text);
+    --bs-secondary-color: var(--ds-text-secondary);
+    --bs-dark-rgb: 17, 17, 19;
+    --bs-dark-bg-subtle: var(--ds-surface);
+    --bs-tertiary-bg: var(--ds-surface);
+    --bs-secondary-bg: var(--ds-surface-raised);
+    --bs-border-color: var(--ds-border);
+    --bs-border-color-translucent: rgba(255, 255, 255, 0.06);
+    --bs-secondary-border-subtle: var(--ds-border);
+    --bs-border-radius: var(--ds-radius);
+    --bs-border-radius-sm: var(--ds-radius-sm);
+    --bs-border-radius-lg: var(--ds-radius-lg);
+    --bs-border-radius-xl: 16px;
+    --bs-border-radius-xxl: 20px;
+    --bs-border-radius-pill: 50rem;
+    --bs-body-font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+    --bs-font-monospace: 'JetBrains Mono', 'Cascadia Code', monospace;
+    --bs-card-bg: var(--ds-surface);
+    --bs-card-border-color: var(--ds-border);
+    --bs-modal-bg: var(--ds-surface);
+    --bs-modal-border-color: var(--ds-border);
+    --bs-primary-rgb: 129, 140, 248;
+    --bs-success-rgb: 74, 222, 128;
+    --bs-danger-rgb: 248, 113, 113;
+    --bs-warning-rgb: 251, 191, 36;
+    --bs-info-rgb: 34, 211, 238;
+
+    /* Legacy aliases for terminal_popout.html inline styles */
+    --crt-surface: var(--ds-surface);
+    --crt-border: var(--ds-border);
+    --crt-bg: var(--ds-bg);
+}
+
+/* --------------------------------------------------------------------------
+   2. BASE ELEMENTS
+   -------------------------------------------------------------------------- */
 body {
     min-height: 100vh;
     display: flex;
@@ -8,17 +100,99 @@ main {
     flex: 1;
 }
 
-.card {
-    border: 1px solid rgba(255, 255, 255, 0.1);
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    color: var(--ds-text);
 }
 
+a {
+    color: var(--ds-accent);
+    transition: color var(--ds-transition);
+}
+
+a:hover {
+    color: var(--ds-accent-hover);
+}
+
+hr {
+    border-color: var(--ds-border);
+}
+
+code {
+    font-family: var(--bs-font-monospace);
+    color: var(--ds-cyan);
+}
+
+/* --------------------------------------------------------------------------
+   3. NAVBAR
+   -------------------------------------------------------------------------- */
+.navbar {
+    background: var(--ds-bg) !important;
+    border-bottom: 1px solid var(--ds-border) !important;
+}
+
+.navbar-brand {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--ds-text) !important;
+}
+
+.navbar .nav-link {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--ds-text-muted) !important;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color var(--ds-transition), border-color var(--ds-transition);
+}
+
+.navbar .nav-link:hover {
+    color: var(--ds-text) !important;
+}
+
+.navbar .nav-link.active {
+    color: var(--ds-text) !important;
+    border-bottom-color: var(--ds-accent);
+}
+
+.navbar-toggler {
+    border-color: var(--ds-border);
+    color: var(--ds-text-secondary);
+}
+
+/* --------------------------------------------------------------------------
+   4. CARDS
+   -------------------------------------------------------------------------- */
+.card {
+    background: var(--ds-surface) !important;
+    border: 1px solid var(--ds-border) !important;
+    border-radius: var(--ds-radius) !important;
+}
+
+.card-header {
+    background: var(--ds-surface-raised) !important;
+    border-bottom: 1px solid var(--ds-border-subtle) !important;
+    font-weight: 600;
+    font-size: 0.8rem;
+    color: var(--ds-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.75rem 1rem;
+}
+
+.card-body {
+    padding: 1rem;
+}
+
+/* Stat cards */
 .stat-card {
-    transition: transform 0.15s ease-in-out, border-color 0.15s ease-in-out;
+    transition: border-color var(--ds-transition), box-shadow var(--ds-transition);
 }
 
 .stat-card:hover {
-    transform: translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.25) !important;
+    border-color: var(--ds-border-emphasis) !important;
+    box-shadow: var(--ds-shadow-sm);
 }
 
 a.stat-card {
@@ -27,92 +201,451 @@ a.stat-card {
 }
 
 .stat-card .stat-number {
-    font-size: 2.5rem;
+    font-size: 2.25rem;
     font-weight: 700;
     line-height: 1;
 }
 
 .stat-card .stat-label {
-    font-size: 0.85rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--ds-text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    opacity: 0.8;
+    letter-spacing: 0.04em;
 }
 
-.severity-critical {
-    color: #dc3545;
+/* --------------------------------------------------------------------------
+   5. TABLES
+   -------------------------------------------------------------------------- */
+.table {
+    --bs-table-bg: transparent;
+    --bs-table-striped-bg: rgba(255, 255, 255, 0.02);
+    border-color: var(--ds-border);
+}
+
+.table-dark {
+    --bs-table-bg: transparent !important;
+    --bs-table-color: var(--ds-text);
+}
+
+.table > thead > tr > th {
+    font-weight: 500;
+    font-size: 0.75rem;
+    color: var(--ds-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--ds-border) !important;
+    padding: 0.5rem 0.75rem;
+}
+
+.table > :not(caption) > * > * {
+    vertical-align: middle;
+}
+
+.table-hover > tbody > tr:hover {
+    --bs-table-hover-bg: var(--ds-surface-hover);
+}
+
+/* --------------------------------------------------------------------------
+   6. BUTTONS
+   -------------------------------------------------------------------------- */
+.btn {
+    border-radius: var(--ds-radius-sm);
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all var(--ds-transition);
+}
+
+.btn-primary {
+    background: var(--ds-accent-strong) !important;
+    border-color: var(--ds-accent-strong) !important;
+    color: #fff !important;
+}
+
+.btn-primary:hover,
+.btn-primary:active {
+    background: var(--ds-accent) !important;
+    border-color: var(--ds-accent) !important;
+    color: #fff !important;
+}
+
+.btn:focus-visible {
+    box-shadow: var(--ds-focus-ring) !important;
+    outline: none;
+}
+
+.btn-outline-primary {
+    color: var(--ds-accent);
+    border-color: var(--ds-accent);
+}
+
+.btn-outline-primary:hover {
+    background: var(--ds-accent-muted);
+    color: var(--ds-accent-hover);
+    border-color: var(--ds-accent);
+}
+
+.btn-danger {
+    background: transparent !important;
+    border: 1px solid var(--ds-red) !important;
+    color: var(--ds-red) !important;
+}
+
+.btn-danger:hover {
+    background: var(--ds-red-muted) !important;
+}
+
+.btn-outline-danger {
+    color: var(--ds-red);
+    border-color: var(--ds-red);
+}
+
+.btn-outline-danger:hover {
+    background: var(--ds-red-muted);
+    color: var(--ds-red);
+    border-color: var(--ds-red);
+}
+
+.btn-warning,
+.btn-outline-warning {
+    color: var(--ds-amber) !important;
+    border-color: var(--ds-amber) !important;
+    background: transparent !important;
+}
+
+.btn-warning:hover,
+.btn-outline-warning:hover {
+    background: var(--ds-amber-muted) !important;
+}
+
+.btn-success,
+.btn-outline-success {
+    color: var(--ds-green) !important;
+    border-color: var(--ds-green) !important;
+    background: transparent !important;
+}
+
+.btn-success:hover,
+.btn-outline-success:hover {
+    background: var(--ds-green-muted) !important;
+}
+
+.btn-secondary {
+    background: var(--ds-surface-raised) !important;
+    border: 1px solid var(--ds-border) !important;
+    color: var(--ds-text-secondary) !important;
+}
+
+.btn-secondary:hover {
+    background: var(--ds-surface-hover) !important;
+    color: var(--ds-text) !important;
+}
+
+/* --------------------------------------------------------------------------
+   7. BADGES
+   -------------------------------------------------------------------------- */
+.badge {
+    border-radius: var(--ds-radius-sm);
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 0.2em 0.6em;
+}
+
+/* --------------------------------------------------------------------------
+   8. FORM CONTROLS
+   -------------------------------------------------------------------------- */
+.form-control,
+.form-select {
+    background: var(--ds-bg) !important;
+    border: 1px solid var(--ds-border) !important;
+    border-radius: var(--ds-radius-sm) !important;
+    color: var(--ds-text) !important;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--ds-accent) !important;
+    box-shadow: 0 0 0 3px var(--ds-accent-muted) !important;
+    color: var(--ds-text) !important;
+}
+
+.form-control::placeholder {
+    color: var(--ds-text-faint);
+}
+
+.form-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--ds-text-secondary);
+}
+
+.form-check-input:checked {
+    background-color: var(--ds-accent-strong);
+    border-color: var(--ds-accent-strong);
+}
+
+.form-check-input:focus {
+    box-shadow: 0 0 0 3px var(--ds-accent-muted);
+    border-color: var(--ds-accent);
+}
+
+.form-check-label {
+    color: var(--ds-text-secondary);
+}
+
+/* --------------------------------------------------------------------------
+   9. MODALS
+   -------------------------------------------------------------------------- */
+.modal-content {
+    background: var(--ds-surface) !important;
+    border: 1px solid var(--ds-border) !important;
+    border-radius: var(--ds-radius-lg) !important;
+    box-shadow: var(--ds-shadow-lg);
+}
+
+.modal-header {
+    border-bottom-color: var(--ds-border-subtle) !important;
+}
+
+.modal-footer {
+    border-top-color: var(--ds-border-subtle) !important;
+}
+
+.modal-title {
     font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--ds-text);
 }
 
-.severity-important {
-    color: #ffc107;
+/* --------------------------------------------------------------------------
+   10. ALERTS
+   -------------------------------------------------------------------------- */
+.alert {
+    border-radius: var(--ds-radius);
+    border-left: 4px solid;
 }
 
-.severity-normal {
-    color: #6c757d;
+/* --------------------------------------------------------------------------
+   11. DROPDOWNS
+   -------------------------------------------------------------------------- */
+.dropdown-menu {
+    background: var(--ds-surface) !important;
+    border: 1px solid var(--ds-border) !important;
+    border-radius: var(--ds-radius) !important;
+    box-shadow: var(--ds-shadow-md);
 }
 
-.badge-critical {
-    background-color: #dc3545 !important;
+.dropdown-item {
+    font-size: 0.85rem;
+    color: var(--ds-text-secondary);
+    transition: background var(--ds-transition), color var(--ds-transition);
 }
 
-.badge-important {
-    background-color: #ffc107 !important;
-    color: #000 !important;
+.dropdown-item:hover,
+.dropdown-item:focus {
+    background: var(--ds-surface-hover) !important;
+    color: var(--ds-text);
 }
 
-.badge-normal {
-    background-color: #6c757d !important;
+.dropdown-item.active,
+.dropdown-item:active {
+    background: var(--ds-accent-muted) !important;
+    color: var(--ds-accent);
 }
 
-.status-up-to-date {
-    color: #198754;
+/* --------------------------------------------------------------------------
+   12. NAV PILLS & TABS
+   -------------------------------------------------------------------------- */
+.nav-pills .nav-link {
+    border-radius: var(--ds-radius-sm);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--ds-text-muted);
+    transition: all var(--ds-transition);
 }
 
-.status-updates-available {
-    color: #ffc107;
+.nav-pills .nav-link:hover {
+    color: var(--ds-text);
+    background: var(--ds-surface-hover);
 }
 
-.status-error {
-    color: #dc3545;
+.nav-pills .nav-link.active {
+    background: var(--ds-accent-muted) !important;
+    color: var(--ds-accent) !important;
 }
 
-.status-unknown {
-    color: #6c757d;
+/* --------------------------------------------------------------------------
+   13. PROGRESS BARS
+   -------------------------------------------------------------------------- */
+.progress {
+    background: var(--ds-surface-raised);
+    border-radius: 999px;
+    height: 6px;
+    border: none;
 }
 
-/* WCAG 2.4.1: Skip-to-main-content link */
-.skip-link {
-    position: absolute;
-    top: -100%;
-    left: 0;
-    padding: 0.5rem 1rem;
-    background: var(--bs-primary);
+/* --------------------------------------------------------------------------
+   14. FOOTER
+   -------------------------------------------------------------------------- */
+footer {
+    font-size: 0.75rem;
+    color: var(--ds-text-faint);
+    border-top: 1px solid var(--ds-border) !important;
+}
+
+/* --------------------------------------------------------------------------
+   15. TOASTS
+   -------------------------------------------------------------------------- */
+.toast {
+    background: var(--ds-surface) !important;
+    border: 1px solid var(--ds-border) !important;
+    border-radius: var(--ds-radius) !important;
+    box-shadow: var(--ds-shadow-md);
+}
+
+/* --------------------------------------------------------------------------
+   16. PRESENCE BAR & COLLABORATION
+   -------------------------------------------------------------------------- */
+#presenceBar {
+    background: var(--ds-surface) !important;
+    border-bottom: 1px solid var(--ds-border) !important;
+}
+
+.collab-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    font-size: 10px;
+    font-weight: 600;
     color: #fff;
-    z-index: 10000;
-    text-decoration: none;
-    font-weight: 600;
-    border-radius: 0 0 4px 0;
-}
-.skip-link:focus {
-    top: 0;
+    border: 1.5px solid var(--ds-border-emphasis);
+    padding: 0;
+    cursor: pointer;
+    transition: border-color var(--ds-transition);
 }
 
-/* WCAG 2.3.3 / 1.4.3: Respect reduced-motion preference */
-@media (prefers-reduced-motion: reduce) {
-    .stat-card,
-    .collab-ghost-cursor,
-    .collab-avatar,
-    .fade {
-        transition: none !important;
-    }
+.collab-avatar:hover {
+    border-color: var(--ds-accent);
 }
 
+/* Ghost cursor overlay */
+.collab-ghost-cursor {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    transition: left 0.12s linear, top 0.12s linear;
+}
+
+.collab-cursor-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50% 50% 50% 0;
+    background: var(--cur-color, var(--ds-accent));
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    transform: rotate(-45deg);
+}
+
+.collab-cursor-name {
+    background: var(--cur-color, var(--ds-accent));
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 500;
+    padding: 1px 5px;
+    border-radius: var(--ds-radius-sm);
+    white-space: nowrap;
+    margin-top: 3px;
+    margin-left: 8px;
+}
+
+/* --------------------------------------------------------------------------
+   17. SEVERITY & STATUS CLASSES
+   -------------------------------------------------------------------------- */
 /* WCAG 1.4.1 note: severity-* and status-* classes must NEVER be the sole
    indicator of state. Every element using these classes must also include a
    visible text label or an icon with aria-label / aria-hidden + adjacent
    visually-hidden text. */
 
+.severity-critical {
+    color: var(--ds-red);
+    font-weight: 600;
+}
+
+.severity-important {
+    color: var(--ds-amber);
+}
+
+.severity-normal {
+    color: var(--ds-text-muted);
+}
+
+.badge-critical {
+    background-color: var(--ds-red) !important;
+    color: #09090b !important;
+}
+
+.badge-important {
+    background-color: var(--ds-amber) !important;
+    color: #09090b !important;
+}
+
+.badge-normal {
+    background-color: var(--ds-text-muted) !important;
+    color: #09090b !important;
+}
+
+.status-up-to-date {
+    color: var(--ds-green);
+}
+
+.status-updates-available {
+    color: var(--ds-amber);
+}
+
+.status-error {
+    color: var(--ds-red);
+}
+
+.status-unknown {
+    color: var(--ds-text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   18. WCAG 2.3.3: Respect reduced-motion preference
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   19. WCAG 2.4.1: Skip-to-main-content link
+   -------------------------------------------------------------------------- */
+.skip-link {
+    position: absolute;
+    top: -100%;
+    left: 0;
+    padding: 0.5rem 1rem;
+    background: var(--ds-accent);
+    color: #fff;
+    z-index: 10000;
+    text-decoration: none;
+    font-weight: 500;
+    border-radius: var(--ds-radius-sm);
+}
+
+.skip-link:focus {
+    top: 0;
+}
+
+/* --------------------------------------------------------------------------
+   20. HTMX INDICATORS
+   -------------------------------------------------------------------------- */
 .htmx-indicator {
     display: none;
 }
@@ -126,24 +659,91 @@ a.stat-card {
     height: 1rem;
 }
 
-.table > :not(caption) > * > * {
-    vertical-align: middle;
-}
-
-/* Constrain query text in table cells so text-truncate can take effect */
+/* --------------------------------------------------------------------------
+   21. UTILITY / LAYOUT
+   -------------------------------------------------------------------------- */
 .query-cell {
     max-width: min(420px, 50vw);
 }
 
+/* --------------------------------------------------------------------------
+   22. DASHBOARD-SPECIFIC
+   -------------------------------------------------------------------------- */
+#hostPerfBody td,
+#guestStatsBody td {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.85rem;
+}
+
+/* --------------------------------------------------------------------------
+   23. LOGIN PAGE
+   -------------------------------------------------------------------------- */
+.login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--ds-bg);
+}
+
+.login-card {
+    max-width: 400px;
+    width: 100%;
+}
+
+.login-card .card {
+    border-radius: var(--ds-radius-lg) !important;
+    box-shadow: var(--ds-shadow-lg);
+}
+
+.login-card h2 {
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: var(--ds-text);
+    letter-spacing: -0.02em;
+}
+
+.login-card h2 i {
+    color: var(--ds-accent);
+}
+
+/* --------------------------------------------------------------------------
+   24. BREADCRUMBS
+   -------------------------------------------------------------------------- */
+.breadcrumb {
+    font-size: 0.8rem;
+    color: var(--ds-text-muted);
+}
+
+.breadcrumb-item a {
+    color: var(--ds-text-muted);
+}
+
+.breadcrumb-item.active {
+    color: var(--ds-text);
+}
+
+/* --------------------------------------------------------------------------
+   25. TEXT MUTED OVERRIDE
+   -------------------------------------------------------------------------- */
+.text-muted {
+    color: var(--ds-text-muted) !important;
+}
+
+/* --------------------------------------------------------------------------
+   26. RESPONSIVE — WCAG 2.5.5: Touch targets
+   -------------------------------------------------------------------------- */
 @media (max-width: 575.98px) {
-    /* Slightly larger touch targets for small buttons */
     .btn-sm {
         min-height: 2rem;
         min-width: 2rem;
     }
 
-    /* Reclaim horizontal space on narrow screens */
     .card-body {
         padding: 0.75rem;
+    }
+
+    .table {
+        font-size: 0.8rem;
     }
 }
