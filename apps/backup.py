@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def snapshot_guest(guest, prefix: str) -> tuple[bool, str]:
-    """Create a Proxmox snapshot of a guest before upgrade.
+    """Create a Proxmox snapshot of a guest before upgrade. Polls until the task completes.
 
     Args:
         guest: Guest model instance with proxmox_host set.
@@ -32,7 +32,25 @@ def snapshot_guest(guest, prefix: str) -> tuple[bool, str]:
         snapname = f"pre-{prefix}-{timestamp}"
         description = f"Auto-snapshot before {prefix.capitalize()} upgrade at {timestamp}"
 
-        return client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+        ok, upid = client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
+        if not ok:
+            return False, f"Failed to start snapshot: {upid}"
+
+        timeout = 300  # 5 minutes
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            time.sleep(2)
+            try:
+                status = client.get_task_status(node, upid)
+                if status.get("status") == "stopped":
+                    exit_status = status.get("exitstatus", "")
+                    if exit_status == "OK":
+                        return True, f"Snapshot {snapname} of '{guest.name}' completed"
+                    return False, f"Snapshot task failed: {exit_status}"
+            except Exception as e:
+                logger.debug("Error polling snapshot task for %s: %s", guest.name, e)
+
+        return False, f"Snapshot of '{guest.name}' timed out after {timeout // 60} minutes"
     except Exception as e:
         logger.error("Snapshot of %s failed: %s", guest.name, e)
         return False, f"Snapshot failed: {e}"
