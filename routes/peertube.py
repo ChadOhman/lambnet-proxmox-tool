@@ -5,6 +5,7 @@ from datetime import datetime
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
 
+from apps.utils import JobTracker
 from auth.audit import log_action
 from models import Guest, Setting, db
 
@@ -21,9 +22,9 @@ def _parse_iso(value):
 # ---------------------------------------------------------------------------
 # In-memory job state — mirrors the pattern from routes/ghost.py
 # ---------------------------------------------------------------------------
-_upgrade_job = {"running": False, "success": None, "log": []}
-_preflight_job = {"running": False, "success": None, "log": []}
-_install_job = {"running": False, "success": None, "log": []}
+_upgrade_job = JobTracker()
+_preflight_job = JobTracker()
+_install_job = JobTracker()
 
 logger = logging.getLogger(__name__)
 
