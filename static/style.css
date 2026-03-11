@@ -1,24 +1,176 @@
+/* ==========================================================================
+   Industrial/Utilitarian Design System
+   Proxmox Datacenter Administration Tool
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. DESIGN TOKENS — Bootstrap 5.3 dark theme overrides + custom properties
+   -------------------------------------------------------------------------- */
+[data-bs-theme="dark"] {
+    /* Backgrounds */
+    --bs-body-bg: #0a0e14;
+    --bs-body-color: #d4d4d8;
+    --bs-secondary-color: #6b7280;
+    --bs-dark-rgb: 10, 14, 20;
+    --bs-dark-bg-subtle: #12171e;
+    --bs-tertiary-bg: #12171e;
+
+    /* Borders — sharp, defined */
+    --bs-border-color: #1e2733;
+    --bs-border-color-translucent: rgba(255, 255, 255, 0.08);
+    --bs-border-radius: 2px;
+    --bs-border-radius-sm: 1px;
+    --bs-border-radius-lg: 3px;
+    --bs-border-radius-xl: 4px;
+    --bs-border-radius-xxl: 4px;
+    --bs-border-radius-pill: 2px;
+
+    /* Typography */
+    --bs-body-font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    --bs-font-monospace: 'IBM Plex Mono', 'JetBrains Mono', 'Cascadia Code', monospace;
+
+    /* Bootstrap component overrides */
+    --bs-card-bg: #12171e;
+    --bs-card-border-color: #1e2733;
+    --bs-modal-bg: #12171e;
+    --bs-modal-border-color: #1e2733;
+
+    /* Industrial custom tokens */
+    --ind-surface: #12171e;
+    --ind-surface-raised: #1a2029;
+    --ind-accent: #e8a317;
+    --ind-accent-hover: #f0b42e;
+    --ind-accent-muted: rgba(232, 163, 23, 0.12);
+    --ind-border: #1e2733;
+    --ind-border-accent: #e8a317;
+    --ind-text-primary: #d4d4d8;
+    --ind-text-muted: #6b7280;
+    --ind-status-running: #22c55e;
+    --ind-status-stopped: #ef4444;
+    --ind-status-warning: #eab308;
+    --ind-status-info: #3b82f6;
+    --ind-glow-running: 0 0 8px rgba(34, 197, 94, 0.4);
+    --ind-glow-accent: 0 0 0 3px rgba(232, 163, 23, 0.4);
+}
+
+/* --------------------------------------------------------------------------
+   2. BASE ELEMENTS
+   -------------------------------------------------------------------------- */
 body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
 }
 
+/* Subtle grid-line background for industrial atmosphere */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+    background-size: 40px 40px;
+}
+
 main {
     flex: 1;
 }
 
-.card {
-    border: 1px solid rgba(255, 255, 255, 0.1);
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--bs-font-monospace);
+    font-weight: 600;
+    letter-spacing: -0.01em;
 }
 
+a {
+    transition: color 0.15s ease;
+}
+
+a:hover {
+    color: var(--ind-accent) !important;
+}
+
+hr {
+    border-color: var(--ind-border);
+}
+
+code {
+    font-family: var(--bs-font-monospace);
+    color: var(--ind-accent);
+}
+
+/* --------------------------------------------------------------------------
+   3. NAVBAR
+   -------------------------------------------------------------------------- */
+.navbar {
+    background: var(--ind-surface) !important;
+    border-bottom: 2px solid var(--ind-accent) !important;
+}
+
+.navbar-brand {
+    font-family: var(--bs-font-monospace);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+
+.navbar .nav-link {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.navbar .nav-link:hover {
+    color: var(--ind-accent) !important;
+}
+
+.navbar .nav-link.active {
+    color: var(--ind-accent) !important;
+    border-bottom-color: var(--ind-accent);
+}
+
+.navbar-toggler {
+    border-color: var(--ind-border);
+}
+
+/* --------------------------------------------------------------------------
+   4. CARDS
+   -------------------------------------------------------------------------- */
+.card {
+    background: var(--ind-surface) !important;
+    border: 1px solid var(--ind-border) !important;
+    border-left: 3px solid var(--ind-accent) !important;
+    border-radius: var(--bs-border-radius) !important;
+}
+
+.card-header {
+    background: rgba(255, 255, 255, 0.02) !important;
+    border-bottom: 1px solid var(--ind-border) !important;
+    font-family: var(--bs-font-monospace);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Stat cards — control panel feel */
 .stat-card {
-    transition: transform 0.15s ease-in-out, border-color 0.15s ease-in-out;
+    transition: transform 0.15s ease-in-out, border-color 0.15s ease-in-out,
+                box-shadow 0.15s ease-in-out;
 }
 
 .stat-card:hover {
     transform: translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.25) !important;
+    border-color: var(--ind-accent) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 a.stat-card {
@@ -29,90 +181,453 @@ a.stat-card {
 .stat-card .stat-number {
     font-size: 2.5rem;
     font-weight: 700;
+    font-family: var(--bs-font-monospace);
     line-height: 1;
 }
 
 .stat-card .stat-label {
-    font-size: 0.85rem;
+    font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    opacity: 0.8;
+    letter-spacing: 0.08em;
+    font-family: var(--bs-font-monospace);
+    color: var(--ind-text-muted);
 }
 
-.severity-critical {
-    color: #dc3545;
-    font-weight: 600;
+/* --------------------------------------------------------------------------
+   5. TABLES — Grid-like, dense data display
+   -------------------------------------------------------------------------- */
+.table {
+    --bs-table-bg: transparent;
+    --bs-table-striped-bg: rgba(255, 255, 255, 0.02);
+    border-color: var(--ind-border);
 }
 
-.severity-important {
-    color: #ffc107;
+.table-dark {
+    --bs-table-bg: transparent !important;
+    --bs-table-color: var(--ind-text-primary);
 }
 
-.severity-normal {
-    color: #6c757d;
+.table > thead > tr > th {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.75rem;
+    font-family: var(--bs-font-monospace);
+    color: var(--ind-text-muted);
+    border-bottom: 2px solid var(--ind-border) !important;
+    padding: 0.6rem 0.75rem;
 }
 
-.badge-critical {
-    background-color: #dc3545 !important;
+.table > :not(caption) > * > * {
+    vertical-align: middle;
 }
 
-.badge-important {
-    background-color: #ffc107 !important;
+.table-hover > tbody > tr:hover {
+    --bs-table-hover-bg: var(--ind-accent-muted);
+}
+
+/* --------------------------------------------------------------------------
+   6. BUTTONS
+   -------------------------------------------------------------------------- */
+.btn {
+    border-radius: var(--bs-border-radius);
+    font-family: var(--bs-font-monospace);
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
+    transition: all 0.15s ease;
+}
+
+.btn-primary {
+    background: var(--ind-accent) !important;
+    border-color: var(--ind-accent) !important;
     color: #000 !important;
 }
 
-.badge-normal {
-    background-color: #6c757d !important;
+.btn-primary:hover,
+.btn-primary:active {
+    background: var(--ind-accent-hover) !important;
+    border-color: var(--ind-accent-hover) !important;
+    color: #000 !important;
 }
 
-.status-up-to-date {
-    color: #198754;
+.btn:focus-visible {
+    box-shadow: var(--ind-glow-accent) !important;
+    outline: none;
 }
 
-.status-updates-available {
-    color: #ffc107;
+.btn-outline-primary {
+    color: var(--ind-accent);
+    border-color: var(--ind-accent);
 }
 
-.status-error {
-    color: #dc3545;
+.btn-outline-primary:hover {
+    background: var(--ind-accent);
+    border-color: var(--ind-accent);
+    color: #000;
 }
 
-.status-unknown {
-    color: #6c757d;
+/* --------------------------------------------------------------------------
+   7. BADGES
+   -------------------------------------------------------------------------- */
+.badge {
+    border-radius: var(--bs-border-radius);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-family: var(--bs-font-monospace);
+    font-size: 0.7rem;
+    font-weight: 500;
 }
 
-/* WCAG 2.4.1: Skip-to-main-content link */
-.skip-link {
-    position: absolute;
-    top: -100%;
-    left: 0;
-    padding: 0.5rem 1rem;
-    background: var(--bs-primary);
-    color: #fff;
-    z-index: 10000;
-    text-decoration: none;
+/* --------------------------------------------------------------------------
+   8. FORM CONTROLS
+   -------------------------------------------------------------------------- */
+.form-control,
+.form-select {
+    background: var(--ind-surface) !important;
+    border: 1px solid var(--ind-border) !important;
+    border-radius: var(--bs-border-radius) !important;
+    color: var(--ind-text-primary) !important;
+    font-family: var(--bs-body-font-family);
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--ind-accent) !important;
+    box-shadow: 0 0 0 2px rgba(232, 163, 23, 0.25) !important;
+}
+
+.form-control::placeholder {
+    color: var(--ind-text-muted);
+}
+
+.form-label {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ind-text-muted);
+}
+
+.form-check-input:checked {
+    background-color: var(--ind-accent);
+    border-color: var(--ind-accent);
+}
+
+.form-check-input:focus {
+    box-shadow: 0 0 0 2px rgba(232, 163, 23, 0.25);
+    border-color: var(--ind-accent);
+}
+
+/* --------------------------------------------------------------------------
+   9. MODALS
+   -------------------------------------------------------------------------- */
+.modal-content {
+    background: var(--ind-surface) !important;
+    border: 1px solid var(--ind-border) !important;
+    border-top: 3px solid var(--ind-accent) !important;
+    border-radius: var(--bs-border-radius) !important;
+}
+
+.modal-header {
+    border-bottom-color: var(--ind-border) !important;
+}
+
+.modal-footer {
+    border-top-color: var(--ind-border) !important;
+}
+
+.modal-title {
+    font-family: var(--bs-font-monospace);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.95rem;
+}
+
+/* --------------------------------------------------------------------------
+   10. ALERTS
+   -------------------------------------------------------------------------- */
+.alert {
+    border-radius: var(--bs-border-radius);
+    border-left: 4px solid;
+}
+
+/* --------------------------------------------------------------------------
+   11. DROPDOWNS
+   -------------------------------------------------------------------------- */
+.dropdown-menu {
+    background: var(--ind-surface) !important;
+    border: 1px solid var(--ind-border) !important;
+    border-radius: var(--bs-border-radius) !important;
+}
+
+.dropdown-item {
+    font-size: 0.85rem;
+    transition: background 0.1s ease;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+    background: var(--ind-accent-muted) !important;
+    color: var(--ind-text-primary);
+}
+
+.dropdown-item.active,
+.dropdown-item:active {
+    background: var(--ind-accent) !important;
+    color: #000;
+}
+
+/* --------------------------------------------------------------------------
+   12. NAV PILLS & TABS (security.html tab interface)
+   -------------------------------------------------------------------------- */
+.nav-pills .nav-link {
+    border-radius: var(--bs-border-radius);
+    font-family: var(--bs-font-monospace);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.8rem;
+    color: var(--ind-text-muted);
+    transition: all 0.15s ease;
+}
+
+.nav-pills .nav-link:hover {
+    color: var(--ind-accent);
+}
+
+.nav-pills .nav-link.active {
+    background: var(--ind-accent) !important;
+    color: #000 !important;
+}
+
+/* --------------------------------------------------------------------------
+   13. PROGRESS BARS
+   -------------------------------------------------------------------------- */
+.progress {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1px;
+}
+
+/* --------------------------------------------------------------------------
+   14. FOOTER
+   -------------------------------------------------------------------------- */
+footer {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-top: 1px solid var(--ind-border) !important;
+}
+
+/* --------------------------------------------------------------------------
+   15. TOASTS
+   -------------------------------------------------------------------------- */
+.toast {
+    background: var(--ind-surface) !important;
+    border: 1px solid var(--ind-border) !important;
+    border-left: 3px solid var(--ind-accent) !important;
+    border-radius: var(--bs-border-radius) !important;
+}
+
+/* --------------------------------------------------------------------------
+   16. PRESENCE BAR & COLLABORATION
+   -------------------------------------------------------------------------- */
+#presenceBar {
+    background: var(--ind-surface) !important;
+    border-bottom: 1px solid var(--ind-border) !important;
+}
+
+.collab-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    font-size: 10px;
     font-weight: 600;
-    border-radius: 0 0 4px 0;
-}
-.skip-link:focus {
-    top: 0;
-}
-
-/* WCAG 2.3.3 / 1.4.3: Respect reduced-motion preference */
-@media (prefers-reduced-motion: reduce) {
-    .stat-card,
-    .collab-ghost-cursor,
-    .collab-avatar,
-    .fade {
-        transition: none !important;
-    }
+    font-family: var(--bs-font-monospace);
+    color: #fff;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: transform 0.15s;
 }
 
+.collab-avatar:hover {
+    transform: scale(1.15);
+}
+
+/* Ghost cursor overlay */
+.collab-ghost-cursor {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    transition: left 0.12s linear, top 0.12s linear;
+}
+
+.collab-cursor-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50% 50% 50% 0;
+    background: var(--cur-color, #3b82f6);
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    transform: rotate(-45deg);
+}
+
+.collab-cursor-name {
+    background: var(--cur-color, #3b82f6);
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 600;
+    font-family: var(--bs-font-monospace);
+    padding: 1px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+    margin-top: 3px;
+    margin-left: 8px;
+}
+
+/* --------------------------------------------------------------------------
+   17. SEVERITY & STATUS CLASSES
+   -------------------------------------------------------------------------- */
 /* WCAG 1.4.1 note: severity-* and status-* classes must NEVER be the sole
    indicator of state. Every element using these classes must also include a
    visible text label or an icon with aria-label / aria-hidden + adjacent
    visually-hidden text. */
 
+.severity-critical {
+    color: var(--ind-status-stopped);
+    font-weight: 600;
+}
+
+.severity-important {
+    color: var(--ind-status-warning);
+}
+
+.severity-normal {
+    color: var(--ind-text-muted);
+}
+
+.badge-critical {
+    background-color: var(--ind-status-stopped) !important;
+}
+
+.badge-important {
+    background-color: var(--ind-status-warning) !important;
+    color: #000 !important;
+}
+
+.badge-normal {
+    background-color: var(--ind-text-muted) !important;
+}
+
+.status-up-to-date {
+    color: var(--ind-status-running);
+}
+
+.status-updates-available {
+    color: var(--ind-status-warning);
+}
+
+.status-error {
+    color: var(--ind-status-stopped);
+}
+
+.status-unknown {
+    color: var(--ind-text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   18. STATUS INDICATOR ANIMATIONS
+   -------------------------------------------------------------------------- */
+/* Running status — green glow + pulse */
+.text-success .bi-circle-fill {
+    text-shadow: var(--ind-glow-running);
+    animation: ind-pulse 2s ease-in-out infinite;
+}
+
+@keyframes ind-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* --------------------------------------------------------------------------
+   19. STAGGERED CARD FADE-IN
+   -------------------------------------------------------------------------- */
+@keyframes ind-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.row > [class*="col-"] > .card {
+    animation: ind-fade-in 0.3s ease-out both;
+}
+
+.row > [class*="col-"]:nth-child(1) > .card { animation-delay: 0s; }
+.row > [class*="col-"]:nth-child(2) > .card { animation-delay: 0.05s; }
+.row > [class*="col-"]:nth-child(3) > .card { animation-delay: 0.05s; }
+.row > [class*="col-"]:nth-child(4) > .card { animation-delay: 0.1s; }
+.row > [class*="col-"]:nth-child(5) > .card { animation-delay: 0.1s; }
+.row > [class*="col-"]:nth-child(6) > .card { animation-delay: 0.15s; }
+.row > [class*="col-"]:nth-child(7) > .card { animation-delay: 0.15s; }
+.row > [class*="col-"]:nth-child(8) > .card { animation-delay: 0.2s; }
+.row > [class*="col-"]:nth-child(n+9) > .card { animation-delay: 0.25s; }
+
+/* --------------------------------------------------------------------------
+   20. WCAG 2.3.3 / 1.4.3: Respect reduced-motion preference
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+    .stat-card,
+    .collab-ghost-cursor,
+    .collab-avatar,
+    .fade,
+    .btn,
+    .nav-link,
+    .dropdown-item,
+    .form-control,
+    .form-select,
+    a {
+        transition: none !important;
+    }
+
+    .text-success .bi-circle-fill {
+        animation: none !important;
+    }
+
+    .row > [class*="col-"] > .card {
+        animation: none !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   21. WCAG 2.4.1: Skip-to-main-content link
+   -------------------------------------------------------------------------- */
+.skip-link {
+    position: absolute;
+    top: -100%;
+    left: 0;
+    padding: 0.5rem 1rem;
+    background: var(--ind-accent);
+    color: #000;
+    z-index: 10000;
+    text-decoration: none;
+    font-weight: 600;
+    font-family: var(--bs-font-monospace);
+    border-radius: 0 0 var(--bs-border-radius) 0;
+}
+
+.skip-link:focus {
+    top: 0;
+}
+
+/* --------------------------------------------------------------------------
+   22. HTMX INDICATORS
+   -------------------------------------------------------------------------- */
 .htmx-indicator {
     display: none;
 }
@@ -126,15 +641,63 @@ a.stat-card {
     height: 1rem;
 }
 
-.table > :not(caption) > * > * {
-    vertical-align: middle;
-}
+/* --------------------------------------------------------------------------
+   23. UTILITY / LAYOUT
+   -------------------------------------------------------------------------- */
 
 /* Constrain query text in table cells so text-truncate can take effect */
 .query-cell {
     max-width: min(420px, 50vw);
 }
 
+/* --------------------------------------------------------------------------
+   24. DASHBOARD-SPECIFIC
+   -------------------------------------------------------------------------- */
+#hostPerfBody td,
+#guestStatsBody td {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.85rem;
+}
+
+/* --------------------------------------------------------------------------
+   25. LOGIN PAGE
+   -------------------------------------------------------------------------- */
+.login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bs-body-bg);
+}
+
+.login-card {
+    max-width: 400px;
+    width: 100%;
+}
+
+.login-card .card {
+    border-top: 3px solid var(--ind-accent) !important;
+    border-left: 1px solid var(--ind-border) !important;
+}
+
+.login-card h2 {
+    font-family: var(--bs-font-monospace);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 1.5rem;
+}
+
+/* --------------------------------------------------------------------------
+   26. BREADCRUMBS
+   -------------------------------------------------------------------------- */
+.breadcrumb {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.8rem;
+}
+
+/* --------------------------------------------------------------------------
+   27. RESPONSIVE — WCAG 2.5.5: Touch targets
+   -------------------------------------------------------------------------- */
 @media (max-width: 575.98px) {
     /* Slightly larger touch targets for small buttons */
     .btn-sm {
