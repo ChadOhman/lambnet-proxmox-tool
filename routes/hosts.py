@@ -191,6 +191,34 @@ def add():
     return redirect(url_for("hosts.index"))
 
 
+def _parse_guest_tags(proxmox_tags: str) -> list:
+    """Parse Proxmox tag string (semicolon or comma-separated) into a list of tag names."""
+    if not proxmox_tags:
+        return []
+    return [t.strip() for t in re.split(r"[;,]", proxmox_tags) if t.strip()]
+
+
+def _handle_vmid_reuse(existing, new_guest_data: dict, host) -> bool:
+    """Detect and handle VMID reuse (type change). Returns True if reuse was detected."""
+    if existing.guest_type == new_guest_data["type"]:
+        return False
+    old_type = existing.guest_type
+    existing.guest_type = new_guest_data["type"]
+    existing.clear_stale_data()
+    logger.warning(
+        "VMID %s on '%s': type changed %s -> %s (reuse detected, stale data cleared)",
+        new_guest_data["vmid"], host.name, old_type, new_guest_data["type"],
+    )
+    log_action("guest_vmid_reuse", "guest", resource_id=existing.id, resource_name=existing.name,
+               details={"vmid": new_guest_data["vmid"], "old_type": old_type, "new_type": new_guest_data["type"], "host": host.name})
+    flash(
+        f"VMID {new_guest_data['vmid']} on '{host.name}' changed from {old_type.upper()} to {new_guest_data['type'].upper()}. "
+        "Stale scan results, packages, and services have been cleared.",
+        "warning",
+    )
+    return True
+
+
 @bp.route("/<int:host_id>/test", methods=["POST"])
 def test_connection(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
@@ -235,12 +263,7 @@ def discover(host_id):
         repl_map = client.get_replication_map()
 
         # Pre-load all tag names seen in this batch to avoid O(N×M) per-guest queries
-        all_tag_names = {
-            t.strip()
-            for g in node_guests
-            for t in re.split(r"[;,]", g.get("tags", ""))
-            if t.strip()
-        }
+        all_tag_names = {tag for g in node_guests for tag in _parse_guest_tags(g.get("tags", ""))}
         tag_cache = {t.name: t for t in Tag.query.filter(Tag.name.in_(all_tag_names)).all()}
 
         def _resolve_tag(name, _cache=tag_cache):
@@ -286,8 +309,7 @@ def discover(host_id):
                     existing.proxmox_host_id = host.id
 
             # Parse tags - Proxmox uses semicolons (PVE 8+) or commas (older)
-            proxmox_tags = g.get("tags", "")
-            tag_names = [t.strip() for t in re.split(r"[;,]", proxmox_tags) if t.strip()] if proxmox_tags else []
+            tag_names = _parse_guest_tags(g.get("tags", ""))
 
             # Only fetch IP for running guests (skip stopped ones for speed)
             ip = None
@@ -323,22 +345,8 @@ def discover(host_id):
             else:
                 # Detect VMID reuse: type changed means old guest was destroyed
                 # and a new one created with the same VMID
-                if existing.guest_type != g["type"]:
-                    old_type = existing.guest_type
-                    existing.guest_type = g["type"]
-                    existing.clear_stale_data()
+                if _handle_vmid_reuse(existing, g, host):
                     reused += 1
-                    logger.warning(
-                        "VMID %s on '%s': type changed %s -> %s (reuse detected, stale data cleared)",
-                        vmid, host.name, old_type, g["type"],
-                    )
-                    log_action("guest_vmid_reuse", "guest", resource_id=existing.id, resource_name=existing.name,
-                               details={"vmid": vmid, "old_type": old_type, "new_type": g["type"], "host": host.name})
-                    flash(
-                        f"VMID {vmid} on '{host.name}' changed from {old_type.upper()} to {g['type'].upper()}. "
-                        "Stale scan results, packages, and services have been cleared.",
-                        "warning",
-                    )
 
                 # Update IP, name, replication, MAC, power state, and tags
                 if ip:
@@ -399,12 +407,7 @@ def discover_all():
             repl_map = client.get_replication_map()
 
             # Pre-load all tag names in this batch to avoid O(N×M) per-guest queries
-            all_tag_names = {
-                t.strip()
-                for g in node_guests
-                for t in re.split(r"[;,]", g.get("tags", ""))
-                if t.strip()
-            }
+            all_tag_names = {tag for g in node_guests for tag in _parse_guest_tags(g.get("tags", ""))}
             tag_cache = {t.name: t for t in Tag.query.filter(Tag.name.in_(all_tag_names)).all()}
 
             def _resolve_tag(name, _cache=tag_cache):
@@ -439,8 +442,7 @@ def discover_all():
                         existing = other
                         existing.proxmox_host_id = host.id
 
-                proxmox_tags = g.get("tags", "")
-                tag_names = [t.strip() for t in re.split(r"[;,]", proxmox_tags) if t.strip()] if proxmox_tags else []
+                tag_names = _parse_guest_tags(g.get("tags", ""))
 
                 ip = None
                 if status == "running":
@@ -471,22 +473,8 @@ def discover_all():
                         guest.tags.append(_resolve_tag(tag_name))
                 else:
                     # Detect VMID reuse: type changed means old guest was destroyed
-                    if existing.guest_type != g["type"]:
-                        old_type = existing.guest_type
-                        existing.guest_type = g["type"]
-                        existing.clear_stale_data()
+                    if _handle_vmid_reuse(existing, g, host):
                         reused += 1
-                        logger.warning(
-                            "VMID %s on '%s': type changed %s -> %s (reuse detected, stale data cleared)",
-                            vmid, host.name, old_type, g["type"],
-                        )
-                        log_action("guest_vmid_reuse", "guest", resource_id=existing.id, resource_name=existing.name,
-                                   details={"vmid": vmid, "old_type": old_type, "new_type": g["type"], "host": host.name})
-                        flash(
-                            f"VMID {vmid} on '{host.name}' changed from {old_type.upper()} to {g['type'].upper()}. "
-                            "Stale scan results, packages, and services have been cleared.",
-                            "warning",
-                        )
 
                     if ip:
                         existing.ip_address = ip
@@ -718,7 +706,12 @@ def set_ssh_credential(host_id):
     host = ProxmoxHost.query.get_or_404(host_id)
     credential_id = request.form.get("credential_id", "").strip()
     if credential_id:
-        cred = Credential.query.get(int(credential_id))
+        try:
+            cred_id = int(credential_id)
+        except ValueError:
+            flash("Invalid credential ID.", "error")
+            return redirect(url_for("hosts.detail", host_id=host_id))
+        cred = Credential.query.get(cred_id)
         if not cred:
             flash("Credential not found.", "error")
             return redirect(url_for("hosts.detail", host_id=host_id))
