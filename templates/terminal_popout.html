@@ -6,7 +6,7 @@
     <title>{{ guest.name }} - Terminal</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=VT323&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
@@ -17,10 +17,10 @@
             padding: 0;
             height: 100%;
             overflow: hidden;
-            background: var(--bs-body-bg, #111111);
+            background: var(--bs-body-bg, #0a0a0a);
         }
-        /* Disable grid background on terminal popout */
-        body::before {
+        /* Disable scanlines and grid background on terminal popout */
+        body::before, body::after {
             display: none;
         }
         #toolbar {
@@ -28,8 +28,8 @@
             align-items: center;
             justify-content: space-between;
             padding: 4px 10px;
-            background: var(--cm-surface, #191919);
-            border-bottom: 1px solid var(--cm-border, #2a2a2a);
+            background: var(--crt-surface, #111111);
+            border-bottom: 1px solid var(--crt-border, #1a9a1a);
             height: 36px;
             font-family: var(--bs-font-monospace);
             -webkit-app-region: drag;
@@ -83,18 +83,18 @@
             fontSize: 14,
             fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", monospace',
             theme: {
-                background: '#0d1117',
-                foreground: '#c9d1d9',
-                cursor: '#58a6ff',
-                selectionBackground: '#264f78',
-                black: '#0d1117',
-                red: '#ff7b72',
-                green: '#7ee787',
-                yellow: '#d29922',
-                blue: '#58a6ff',
+                background: '#0a0a0a',
+                foreground: '#33ff33',
+                cursor: '#33ff33',
+                selectionBackground: '#1a9a1a',
+                black: '#0a0a0a',
+                red: '#ff6b6b',
+                green: '#33ff33',
+                yellow: '#ffb300',
+                blue: '#00e5ff',
                 magenta: '#bc8cff',
-                cyan: '#39c5cf',
-                white: '#c9d1d9',
+                cyan: '#00e5ff',
+                white: '#d0d0d0',
             }
         });
 

@@ -1,62 +1,68 @@
 /* ==========================================================================
-   Clean/Minimal Design System
+   Retro-Terminal / CRT Design System
    Proxmox Datacenter Administration Tool
-   Restraint is the aesthetic. Let the data breathe.
+   Phosphor green. Scanlines. Monospace everything.
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
    1. DESIGN TOKENS
    -------------------------------------------------------------------------- */
 [data-bs-theme="dark"] {
-    /* Backgrounds — layered surfaces, minimal steps */
-    --bs-body-bg: #111111;
-    --bs-body-color: #e8e8e8;
-    --bs-secondary-color: #999999;
-    --bs-dark-rgb: 25, 25, 25;
-    --bs-dark-bg-subtle: #191919;
-    --bs-tertiary-bg: #191919;
-    --bs-secondary-bg: #1f1f1f;
+    /* Backgrounds — CRT off-black */
+    --bs-body-bg: #0a0a0a;
+    --bs-body-color: #33ff33;
+    --bs-secondary-color: #20cc20;
+    --bs-dark-rgb: 17, 17, 17;
+    --bs-dark-bg-subtle: #111111;
+    --bs-tertiary-bg: #111111;
+    --bs-secondary-bg: #161616;
 
-    /* Borders — barely visible */
-    --bs-border-color: #2a2a2a;
-    --bs-border-color-translucent: rgba(255, 255, 255, 0.06);
-    --bs-secondary-border-subtle: #2a2a2a;
-    --bs-border-radius: 12px;
-    --bs-border-radius-sm: 8px;
-    --bs-border-radius-lg: 12px;
-    --bs-border-radius-xl: 16px;
-    --bs-border-radius-xxl: 16px;
-    --bs-border-radius-pill: 50rem;
+    /* Borders — visible green, terminal-style */
+    --bs-border-color: #1a9a1a;
+    --bs-border-color-translucent: rgba(51, 255, 51, 0.12);
+    --bs-secondary-border-subtle: #1a9a1a;
+    --bs-border-radius: 0px;
+    --bs-border-radius-sm: 0px;
+    --bs-border-radius-lg: 0px;
+    --bs-border-radius-xl: 0px;
+    --bs-border-radius-xxl: 0px;
+    --bs-border-radius-pill: 0px;
 
-    /* Typography */
-    --bs-body-font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    --bs-font-monospace: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+    /* Typography — monospace everything */
+    --bs-body-font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+    --bs-font-monospace: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
 
     /* Bootstrap component overrides */
-    --bs-card-bg: #191919;
-    --bs-card-border-color: #2a2a2a;
-    --bs-modal-bg: #191919;
-    --bs-modal-border-color: #2a2a2a;
+    --bs-card-bg: #111111;
+    --bs-card-border-color: #1a9a1a;
+    --bs-modal-bg: #111111;
+    --bs-modal-border-color: #1a9a1a;
 
-    /* Clean/minimal custom tokens */
-    --cm-bg: #111111;
-    --cm-surface: #191919;
-    --cm-surface-raised: #1f1f1f;
-    --cm-surface-hover: #252525;
-    --cm-border: #2a2a2a;
-    --cm-border-subtle: #222222;
-    --cm-text-primary: #e8e8e8;
-    --cm-text-secondary: #999999;
-    --cm-text-muted: #888888;
-    --cm-accent: #7aa2f7;
-    --cm-accent-hover: #9bb8f9;
-    --cm-accent-muted: rgba(122, 162, 247, 0.10);
-    --cm-status-success: #73c991;
-    --cm-status-danger: #e06c75;
-    --cm-status-warning: #e5c07b;
-    --cm-status-info: #7aa2f7;
-    --cm-focus-ring: 0 0 0 2px #111111, 0 0 0 4px #7aa2f7;
-    --cm-transition: 150ms ease-out;
+    /* Bootstrap semantic color overrides */
+    --bs-primary-rgb: 51, 255, 51;
+    --bs-success-rgb: 51, 255, 51;
+    --bs-danger-rgb: 255, 107, 107;
+    --bs-warning-rgb: 255, 179, 0;
+    --bs-info-rgb: 0, 229, 255;
+
+    /* CRT custom tokens */
+    --crt-bg: #0a0a0a;
+    --crt-surface: #111111;
+    --crt-surface-raised: #161616;
+    --crt-surface-hover: #1a1a1a;
+    --crt-border: #1a9a1a;
+    --crt-border-bright: #33ff33;
+    --crt-green: #33ff33;
+    --crt-green-dim: #20cc20;
+    --crt-green-muted: #1a9a1a;
+    --crt-green-glow: rgba(51, 255, 51, 0.15);
+    --crt-green-faint: rgba(51, 255, 51, 0.06);
+    --crt-amber: #ffb300;
+    --crt-red: #ff6b6b;
+    --crt-cyan: #00e5ff;
+    --crt-white: #d0d0d0;
+    --crt-focus-ring: 0 0 0 2px #0a0a0a, 0 0 0 4px #33ff33;
+    --crt-transition: 150ms ease-out;
 }
 
 /* --------------------------------------------------------------------------
@@ -66,6 +72,30 @@ body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    animation: crt-flicker 4s ease-in-out infinite;
+}
+
+/* Scanline overlay — CRT authenticity */
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9998;
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        rgba(0, 0, 0, 0.08) 2px,
+        rgba(0, 0, 0, 0.08) 4px
+    );
+}
+
+/* CRT flicker — 0.25Hz, 1.5% opacity change, far below seizure threshold */
+@keyframes crt-flicker {
+    0%   { opacity: 1; }
+    50%  { opacity: 0.985; }
+    100% { opacity: 1; }
 }
 
 main {
@@ -74,89 +104,101 @@ main {
 
 h1, h2, h3, h4, h5, h6 {
     font-weight: 500;
-    color: var(--cm-text-primary);
+    color: var(--crt-green);
+    text-shadow: 0 0 8px var(--crt-green-glow);
 }
 
 a {
-    transition: color var(--cm-transition);
+    color: var(--crt-green);
+    transition: color var(--crt-transition), text-shadow var(--crt-transition);
 }
 
 a:hover {
-    color: var(--cm-accent) !important;
+    color: var(--crt-green) !important;
+    text-shadow: 0 0 8px var(--crt-green-glow);
 }
 
 hr {
-    border-color: var(--cm-border);
+    border-color: var(--crt-border);
 }
 
 code {
     font-family: var(--bs-font-monospace);
-    color: var(--cm-accent);
+    color: var(--crt-cyan);
 }
 
 /* --------------------------------------------------------------------------
    3. NAVBAR
    -------------------------------------------------------------------------- */
 .navbar {
-    background: var(--cm-surface) !important;
-    border-bottom: 1px solid var(--cm-border) !important;
+    background: var(--crt-bg) !important;
+    border-bottom: 1px solid var(--crt-border) !important;
 }
 
 .navbar-brand {
-    font-weight: 600;
-    font-size: 0.95rem;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--crt-green) !important;
+    text-shadow: 0 0 6px var(--crt-green-glow);
 }
 
 .navbar .nav-link {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--crt-green-dim) !important;
     padding-bottom: 0.75rem;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
-    transition: color var(--cm-transition), border-color var(--cm-transition);
+    transition: color var(--crt-transition), border-color var(--crt-transition);
 }
 
 .navbar .nav-link:hover {
-    color: var(--cm-accent) !important;
+    color: var(--crt-green) !important;
+    text-shadow: 0 0 6px var(--crt-green-glow);
 }
 
 .navbar .nav-link.active {
-    color: var(--cm-accent) !important;
-    border-bottom-color: var(--cm-accent);
+    color: var(--crt-green) !important;
+    border-bottom-color: var(--crt-green);
+    text-shadow: 0 0 6px var(--crt-green-glow);
 }
 
 .navbar-toggler {
-    border-color: var(--cm-border);
+    border-color: var(--crt-border);
+    color: var(--crt-green);
 }
 
 /* --------------------------------------------------------------------------
    4. CARDS
    -------------------------------------------------------------------------- */
 .card {
-    background: var(--cm-surface) !important;
-    border: 1px solid var(--cm-border) !important;
-    border-radius: var(--bs-border-radius) !important;
+    background: var(--crt-surface) !important;
+    border: 1px solid var(--crt-border) !important;
+    border-radius: 0 !important;
 }
 
 .card-header {
-    background: var(--cm-surface-raised) !important;
-    border-bottom: 1px solid var(--cm-border) !important;
+    background: var(--crt-surface-raised) !important;
+    border-bottom: 1px solid var(--crt-border) !important;
     font-weight: 500;
-    font-size: 0.875rem;
-    padding: 0.875rem 1.25rem;
+    font-size: 0.85rem;
+    color: var(--crt-green-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1rem;
 }
 
 .card-body {
-    padding: 1.25rem;
+    padding: 1rem;
 }
 
-/* Stat cards — clean hover */
+/* Stat cards — phosphor glow */
 .stat-card {
-    transition: border-color var(--cm-transition);
+    transition: border-color var(--crt-transition);
 }
 
 .stat-card:hover {
-    border-color: #333333 !important;
+    border-color: var(--crt-green) !important;
 }
 
 a.stat-card {
@@ -166,14 +208,18 @@ a.stat-card {
 
 .stat-card .stat-number {
     font-size: 2.5rem;
-    font-weight: 600;
+    font-weight: 700;
     line-height: 1;
+    color: var(--crt-green);
+    text-shadow: 0 0 12px var(--crt-green-glow);
 }
 
 .stat-card .stat-label {
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: var(--cm-text-secondary);
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--crt-green-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 /* --------------------------------------------------------------------------
@@ -181,21 +227,23 @@ a.stat-card {
    -------------------------------------------------------------------------- */
 .table {
     --bs-table-bg: transparent;
-    --bs-table-striped-bg: rgba(255, 255, 255, 0.015);
-    border-color: var(--cm-border-subtle);
+    --bs-table-striped-bg: var(--crt-green-faint);
+    border-color: var(--crt-border);
 }
 
 .table-dark {
     --bs-table-bg: transparent !important;
-    --bs-table-color: var(--cm-text-primary);
+    --bs-table-color: var(--crt-green);
 }
 
 .table > thead > tr > th {
     font-weight: 500;
-    font-size: 0.8125rem;
-    color: var(--cm-text-secondary);
-    border-bottom: 1px solid var(--cm-border) !important;
-    padding: 0.6rem 0.75rem;
+    font-size: 0.75rem;
+    color: var(--crt-green-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--crt-border) !important;
+    padding: 0.5rem 0.75rem;
 }
 
 .table > :not(caption) > * > * {
@@ -203,57 +251,104 @@ a.stat-card {
 }
 
 .table-hover > tbody > tr:hover {
-    --bs-table-hover-bg: rgba(255, 255, 255, 0.02);
+    --bs-table-hover-bg: rgba(51, 255, 51, 0.05);
 }
 
 /* --------------------------------------------------------------------------
-   6. BUTTONS
+   6. BUTTONS — Outlined terminal style
    -------------------------------------------------------------------------- */
 .btn {
-    border-radius: var(--bs-border-radius-sm);
-    font-size: 0.875rem;
+    border-radius: 0;
+    font-size: 0.85rem;
     font-weight: 500;
-    transition: background var(--cm-transition), border-color var(--cm-transition),
-                color var(--cm-transition);
+    transition: all var(--crt-transition);
 }
 
 .btn-primary {
-    background: var(--cm-accent) !important;
-    border-color: var(--cm-accent) !important;
-    color: #fff !important;
+    background: transparent !important;
+    border: 1px solid var(--crt-green) !important;
+    color: var(--crt-green) !important;
 }
 
 .btn-primary:hover,
 .btn-primary:active {
-    background: var(--cm-accent-hover) !important;
-    border-color: var(--cm-accent-hover) !important;
-    color: #fff !important;
+    background: rgba(51, 255, 51, 0.1) !important;
+    border-color: var(--crt-green) !important;
+    color: var(--crt-green) !important;
+    text-shadow: 0 0 6px var(--crt-green-glow);
 }
 
 .btn:focus-visible {
-    box-shadow: var(--cm-focus-ring) !important;
+    box-shadow: var(--crt-focus-ring) !important;
     outline: none;
 }
 
 .btn-outline-primary {
-    color: var(--cm-accent);
-    border-color: var(--cm-accent);
+    color: var(--crt-green);
+    border-color: var(--crt-green);
 }
 
 .btn-outline-primary:hover {
-    background: var(--cm-accent);
-    border-color: var(--cm-accent);
-    color: #fff;
+    background: rgba(51, 255, 51, 0.1);
+    color: var(--crt-green);
+    border-color: var(--crt-green);
+}
+
+.btn-danger,
+.btn-outline-danger {
+    color: var(--crt-red) !important;
+    border-color: var(--crt-red) !important;
+    background: transparent !important;
+}
+
+.btn-danger:hover,
+.btn-outline-danger:hover {
+    background: rgba(255, 107, 107, 0.1) !important;
+}
+
+.btn-warning,
+.btn-outline-warning {
+    color: var(--crt-amber) !important;
+    border-color: var(--crt-amber) !important;
+    background: transparent !important;
+}
+
+.btn-warning:hover,
+.btn-outline-warning:hover {
+    background: rgba(255, 179, 0, 0.1) !important;
+}
+
+.btn-success,
+.btn-outline-success {
+    color: var(--crt-green) !important;
+    border-color: var(--crt-green) !important;
+    background: transparent !important;
+}
+
+.btn-success:hover,
+.btn-outline-success:hover {
+    background: rgba(51, 255, 51, 0.1) !important;
+}
+
+.btn-secondary {
+    color: var(--crt-green-dim) !important;
+    border-color: var(--crt-green-muted) !important;
+    background: transparent !important;
+}
+
+.btn-secondary:hover {
+    border-color: var(--crt-green-dim) !important;
+    background: var(--crt-green-faint) !important;
 }
 
 /* --------------------------------------------------------------------------
-   7. BADGES
+   7. BADGES — Bracket style
    -------------------------------------------------------------------------- */
 .badge {
-    border-radius: 50rem;
+    border-radius: 0;
     font-size: 0.7rem;
     font-weight: 500;
-    padding: 0.25em 0.65em;
+    padding: 0.2em 0.5em;
 }
 
 /* --------------------------------------------------------------------------
@@ -261,150 +356,157 @@ a.stat-card {
    -------------------------------------------------------------------------- */
 .form-control,
 .form-select {
-    background: var(--cm-surface) !important;
-    border: 1px solid var(--cm-border) !important;
-    border-radius: var(--bs-border-radius-sm) !important;
-    color: var(--cm-text-primary) !important;
+    background: var(--crt-bg) !important;
+    border: 1px solid var(--crt-border) !important;
+    border-radius: 0 !important;
+    color: var(--crt-green) !important;
 }
 
 .form-control:focus,
 .form-select:focus {
-    border-color: var(--cm-accent) !important;
-    box-shadow: var(--cm-focus-ring) !important;
+    border-color: var(--crt-green) !important;
+    box-shadow: 0 0 6px rgba(51, 255, 51, 0.3) !important;
+    color: var(--crt-green) !important;
 }
 
 .form-control::placeholder {
-    color: var(--cm-text-muted);
+    color: var(--crt-green-muted);
 }
 
 .form-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--cm-text-secondary);
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--crt-green-dim);
 }
 
 .form-check-input:checked {
-    background-color: var(--cm-accent);
-    border-color: var(--cm-accent);
+    background-color: var(--crt-green);
+    border-color: var(--crt-green);
 }
 
 .form-check-input:focus {
-    box-shadow: var(--cm-focus-ring);
-    border-color: var(--cm-accent);
+    box-shadow: 0 0 6px rgba(51, 255, 51, 0.3);
+    border-color: var(--crt-green);
+}
+
+.form-check-label {
+    color: var(--crt-green-dim);
 }
 
 /* --------------------------------------------------------------------------
    9. MODALS
    -------------------------------------------------------------------------- */
 .modal-content {
-    background: var(--cm-surface) !important;
-    border: 1px solid var(--cm-border) !important;
-    border-radius: var(--bs-border-radius-lg) !important;
+    background: var(--crt-surface) !important;
+    border: 1px solid var(--crt-border-bright) !important;
+    border-radius: 0 !important;
 }
 
 .modal-header {
-    border-bottom-color: var(--cm-border) !important;
+    border-bottom-color: var(--crt-border) !important;
 }
 
 .modal-footer {
-    border-top-color: var(--cm-border) !important;
+    border-top-color: var(--crt-border) !important;
 }
 
 .modal-title {
     font-weight: 500;
-    font-size: 1rem;
+    font-size: 0.95rem;
+    color: var(--crt-green);
+    text-shadow: 0 0 6px var(--crt-green-glow);
 }
 
 /* --------------------------------------------------------------------------
    10. ALERTS
    -------------------------------------------------------------------------- */
 .alert {
-    border-radius: var(--bs-border-radius-sm);
+    border-radius: 0;
+    border-left: 4px solid;
 }
 
 /* --------------------------------------------------------------------------
    11. DROPDOWNS
    -------------------------------------------------------------------------- */
 .dropdown-menu {
-    background: var(--cm-surface) !important;
-    border: 1px solid var(--cm-border) !important;
-    border-radius: var(--bs-border-radius-sm) !important;
+    background: var(--crt-surface) !important;
+    border: 1px solid var(--crt-border) !important;
+    border-radius: 0 !important;
 }
 
 .dropdown-item {
-    font-size: 0.875rem;
-    transition: background var(--cm-transition);
-    border-radius: 4px;
-    margin: 1px 4px;
-    padding-left: 8px;
-    padding-right: 8px;
+    font-size: 0.85rem;
+    color: var(--crt-green-dim);
+    transition: background var(--crt-transition);
 }
 
 .dropdown-item:hover,
 .dropdown-item:focus {
-    background: var(--cm-surface-hover) !important;
-    color: var(--cm-text-primary);
+    background: rgba(51, 255, 51, 0.08) !important;
+    color: var(--crt-green);
 }
 
 .dropdown-item.active,
 .dropdown-item:active {
-    background: var(--cm-accent) !important;
-    color: #fff;
+    background: var(--crt-green) !important;
+    color: var(--crt-bg);
 }
 
 /* --------------------------------------------------------------------------
    12. NAV PILLS & TABS
    -------------------------------------------------------------------------- */
 .nav-pills .nav-link {
-    border-radius: var(--bs-border-radius-sm);
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--cm-text-secondary);
-    transition: background var(--cm-transition), color var(--cm-transition);
+    border-radius: 0;
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--crt-green-dim);
+    transition: all var(--crt-transition);
 }
 
 .nav-pills .nav-link:hover {
-    color: var(--cm-accent);
+    color: var(--crt-green);
+    text-shadow: 0 0 6px var(--crt-green-glow);
 }
 
 .nav-pills .nav-link.active {
-    background: var(--cm-accent) !important;
-    color: #fff !important;
+    background: var(--crt-green) !important;
+    color: var(--crt-bg) !important;
 }
 
 /* --------------------------------------------------------------------------
    13. PROGRESS BARS
    -------------------------------------------------------------------------- */
 .progress {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: var(--bs-border-radius-sm);
+    background: var(--crt-surface-raised);
+    border-radius: 0;
     height: 6px;
+    border: 1px solid var(--crt-border);
 }
 
 /* --------------------------------------------------------------------------
-   14. FOOTER
+   14. FOOTER — Terminal prompt style
    -------------------------------------------------------------------------- */
 footer {
     font-size: 0.75rem;
-    color: var(--cm-text-muted);
-    border-top: 1px solid var(--cm-border) !important;
+    color: var(--crt-green-muted);
+    border-top: 1px solid var(--crt-border) !important;
 }
 
 /* --------------------------------------------------------------------------
    15. TOASTS
    -------------------------------------------------------------------------- */
 .toast {
-    background: var(--cm-surface) !important;
-    border: 1px solid var(--cm-border) !important;
-    border-radius: var(--bs-border-radius-sm) !important;
+    background: var(--crt-surface) !important;
+    border: 1px solid var(--crt-border) !important;
+    border-radius: 0 !important;
 }
 
 /* --------------------------------------------------------------------------
    16. PRESENCE BAR & COLLABORATION
    -------------------------------------------------------------------------- */
 #presenceBar {
-    background: var(--cm-surface) !important;
-    border-bottom: 1px solid var(--cm-border) !important;
+    background: var(--crt-surface) !important;
+    border-bottom: 1px solid var(--crt-border) !important;
 }
 
 .collab-avatar {
@@ -417,14 +519,14 @@ footer {
     font-size: 10px;
     font-weight: 600;
     color: #fff;
-    border: none;
+    border: 1px solid var(--crt-green-muted);
     padding: 0;
     cursor: pointer;
-    transition: opacity var(--cm-transition);
+    transition: border-color var(--crt-transition);
 }
 
 .collab-avatar:hover {
-    opacity: 0.85;
+    border-color: var(--crt-green);
 }
 
 /* Ghost cursor overlay */
@@ -439,18 +541,18 @@ footer {
     width: 14px;
     height: 14px;
     border-radius: 50% 50% 50% 0;
-    background: var(--cur-color, #7aa2f7);
+    background: var(--cur-color, #33ff33);
     border: 2px solid rgba(255, 255, 255, 0.85);
     transform: rotate(-45deg);
 }
 
 .collab-cursor-name {
-    background: var(--cur-color, #7aa2f7);
-    color: #fff;
+    background: var(--cur-color, #33ff33);
+    color: #0a0a0a;
     font-size: 0.6rem;
     font-weight: 500;
     padding: 1px 5px;
-    border-radius: 4px;
+    border-radius: 0;
     white-space: nowrap;
     margin-top: 3px;
     margin-left: 8px;
@@ -465,51 +567,77 @@ footer {
    visually-hidden text. */
 
 .severity-critical {
-    color: var(--cm-status-danger);
+    color: var(--crt-red);
     font-weight: 600;
 }
 
 .severity-important {
-    color: var(--cm-status-warning);
+    color: var(--crt-amber);
 }
 
 .severity-normal {
-    color: var(--cm-text-muted);
+    color: var(--crt-green-muted);
 }
 
 .badge-critical {
-    background-color: var(--cm-status-danger) !important;
+    background-color: var(--crt-red) !important;
+    color: #0a0a0a !important;
 }
 
 .badge-important {
-    background-color: var(--cm-status-warning) !important;
-    color: #000 !important;
+    background-color: var(--crt-amber) !important;
+    color: #0a0a0a !important;
 }
 
 .badge-normal {
-    background-color: var(--cm-text-muted) !important;
+    background-color: var(--crt-green-muted) !important;
+    color: #0a0a0a !important;
 }
 
 .status-up-to-date {
-    color: var(--cm-status-success);
+    color: var(--crt-green);
 }
 
 .status-updates-available {
-    color: var(--cm-status-warning);
+    color: var(--crt-amber);
 }
 
 .status-error {
-    color: var(--cm-status-danger);
+    color: var(--crt-red);
 }
 
 .status-unknown {
-    color: var(--cm-text-muted);
+    color: var(--crt-green-muted);
 }
 
 /* --------------------------------------------------------------------------
-   18. WCAG 2.3.3: Respect reduced-motion preference
+   18. STATUS INDICATOR GLOW (static, no animation)
+   -------------------------------------------------------------------------- */
+.text-success .bi-circle-fill {
+    text-shadow: 0 0 8px rgba(51, 255, 51, 0.5);
+}
+
+/* --------------------------------------------------------------------------
+   19. CURSOR BLINK — for decorative elements
+   -------------------------------------------------------------------------- */
+@keyframes cursor-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+
+/* --------------------------------------------------------------------------
+   20. WCAG 2.3.3: Respect reduced-motion preference
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
+    body {
+        animation: none !important;
+    }
+
+    /* Remove scanlines */
+    body::after {
+        display: none !important;
+    }
+
     .stat-card,
     .collab-ghost-cursor,
     .collab-avatar,
@@ -522,22 +650,28 @@ footer {
     a {
         transition: none !important;
     }
+
+    /* Disable any blinking cursors */
+    .login-card,
+    footer::after {
+        animation: none !important;
+    }
 }
 
 /* --------------------------------------------------------------------------
-   19. WCAG 2.4.1: Skip-to-main-content link
+   21. WCAG 2.4.1: Skip-to-main-content link
    -------------------------------------------------------------------------- */
 .skip-link {
     position: absolute;
     top: -100%;
     left: 0;
     padding: 0.5rem 1rem;
-    background: var(--cm-accent);
-    color: #fff;
+    background: var(--crt-green);
+    color: var(--crt-bg);
     z-index: 10000;
     text-decoration: none;
     font-weight: 500;
-    border-radius: 0 0 var(--bs-border-radius-sm) 0;
+    border-radius: 0;
 }
 
 .skip-link:focus {
@@ -545,7 +679,7 @@ footer {
 }
 
 /* --------------------------------------------------------------------------
-   20. HTMX INDICATORS
+   22. HTMX INDICATORS
    -------------------------------------------------------------------------- */
 .htmx-indicator {
     display: none;
@@ -561,14 +695,14 @@ footer {
 }
 
 /* --------------------------------------------------------------------------
-   21. UTILITY / LAYOUT
+   23. UTILITY / LAYOUT
    -------------------------------------------------------------------------- */
 .query-cell {
     max-width: min(420px, 50vw);
 }
 
 /* --------------------------------------------------------------------------
-   22. DASHBOARD-SPECIFIC
+   24. DASHBOARD-SPECIFIC
    -------------------------------------------------------------------------- */
 #hostPerfBody td,
 #guestStatsBody td {
@@ -577,43 +711,75 @@ footer {
 }
 
 /* --------------------------------------------------------------------------
-   23. LOGIN PAGE
+   25. LOGIN PAGE — CRT boot sequence
    -------------------------------------------------------------------------- */
 .login-page {
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--cm-bg);
+    background: var(--crt-bg);
 }
 
 .login-card {
-    max-width: 380px;
+    max-width: 420px;
     width: 100%;
-    padding: 0 1rem;
+    animation: crt-on 0.6s ease-out;
+}
+
+@keyframes crt-on {
+    0% {
+        transform: scaleY(0.005) scaleX(0.5);
+        opacity: 0.8;
+    }
+    40% {
+        transform: scaleY(0.005) scaleX(1);
+        opacity: 1;
+    }
+    100% {
+        transform: scaleY(1) scaleX(1);
+        opacity: 1;
+    }
 }
 
 .login-card .card {
-    border-radius: var(--bs-border-radius-lg) !important;
+    background: var(--crt-bg) !important;
+    border: 1px solid var(--crt-green) !important;
 }
 
 .login-card h2 {
-    font-weight: 500;
-}
-
-.login-card h2 .bi {
-    color: var(--cm-text-secondary);
+    font-family: 'VT323', 'Fira Code', monospace;
+    font-weight: 400;
+    font-size: 2rem;
+    color: var(--crt-green);
+    text-shadow: 0 0 12px var(--crt-green-glow);
 }
 
 /* --------------------------------------------------------------------------
-   24. BREADCRUMBS
+   26. BREADCRUMBS
    -------------------------------------------------------------------------- */
 .breadcrumb {
-    font-size: 0.8125rem;
+    font-size: 0.8rem;
+    color: var(--crt-green-dim);
+}
+
+.breadcrumb-item a {
+    color: var(--crt-green-dim);
+}
+
+.breadcrumb-item.active {
+    color: var(--crt-green);
 }
 
 /* --------------------------------------------------------------------------
-   25. RESPONSIVE — WCAG 2.5.5: Touch targets
+   27. TEXT MUTED OVERRIDE — ensure green tint
+   -------------------------------------------------------------------------- */
+.text-muted {
+    color: var(--crt-green-muted) !important;
+}
+
+/* --------------------------------------------------------------------------
+   28. RESPONSIVE — WCAG 2.5.5: Touch targets
    -------------------------------------------------------------------------- */
 @media (max-width: 575.98px) {
     .btn-sm {
@@ -622,6 +788,11 @@ footer {
     }
 
     .card-body {
-        padding: 0.875rem;
+        padding: 0.75rem;
+    }
+
+    /* Slightly smaller font for dense monospace on mobile */
+    .table {
+        font-size: 0.8rem;
     }
 }
