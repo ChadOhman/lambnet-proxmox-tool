@@ -602,7 +602,7 @@ def _poll_unifi_events(app):
             return
 
         from auth.credential_store import decrypt
-        from clients.unifi_client import UniFiClient
+        from clients.unifi_client import get_cached_client
 
         base_url = Setting.get("unifi_base_url", "")
         username = Setting.get("unifi_username", "")
@@ -618,7 +618,7 @@ def _poll_unifi_events(app):
         if not password:
             return
 
-        client = UniFiClient(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
+        client = get_cached_client(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
 
         geoip_enabled = Setting.get("unifi_geoip_enabled", "false") == "true"
         geoip_db_path = Setting.get("unifi_geoip_db_path", "")
@@ -853,7 +853,7 @@ def _collect_prometheus_metrics(app):
                     update_unifi_health_metrics,
                     update_unifi_metrics,
                 )
-                from clients.unifi_client import UniFiClient
+                from clients.unifi_client import get_cached_client
 
                 base_url = Setting.get("unifi_base_url", "")
                 username = Setting.get("unifi_username", "")
@@ -864,7 +864,7 @@ def _collect_prometheus_metrics(app):
                 if base_url and username and encrypted_pw:
                     password = decrypt(encrypted_pw)
                     if password:
-                        uc = UniFiClient(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
+                        uc = get_cached_client(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
                         devices = uc.get_devices() or []
                         clients_list = uc.get_clients() or []
                         update_unifi_metrics(site, device_count=len(devices), client_count=len(clients_list))

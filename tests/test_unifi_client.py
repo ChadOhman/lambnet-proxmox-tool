@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 
 from clients.unifi_client import UniFiClient, _safe_float
 
+import clients.unifi_client as unifi_module
+
 
 class TestSafeFloat:
     def test_none(self):
@@ -236,3 +238,86 @@ class TestApiPostData:
 
         result = c._api_post_data("/api/s/default/stat/report/daily.site", {})
         assert result is None
+
+
+class TestCachedClient:
+    """Tests for the module-level cached UniFi client."""
+
+    def setup_method(self):
+        """Clear cache before each test."""
+        unifi_module._cached_client = None
+        unifi_module._cached_settings_hash = None
+
+    def test_returns_client_instance(self):
+        from clients.unifi_client import get_cached_client
+        c = get_cached_client("https://example.com", "user", "pass")
+        assert isinstance(c, UniFiClient)
+        assert c.base_url == "https://example.com"
+
+    def test_returns_same_instance_on_repeat_call(self):
+        from clients.unifi_client import get_cached_client
+        c1 = get_cached_client("https://example.com", "user", "pass")
+        c2 = get_cached_client("https://example.com", "user", "pass")
+        assert c1 is c2
+
+    def test_returns_new_instance_when_settings_change(self):
+        from clients.unifi_client import get_cached_client
+        c1 = get_cached_client("https://example.com", "user", "pass")
+        c2 = get_cached_client("https://example.com", "user", "newpass")
+        assert c1 is not c2
+
+    def test_invalidate_clears_cache(self):
+        from clients.unifi_client import get_cached_client, invalidate_cached_client
+        c1 = get_cached_client("https://example.com", "user", "pass")
+        invalidate_cached_client()
+        c2 = get_cached_client("https://example.com", "user", "pass")
+        assert c1 is not c2
+
+
+class TestSessionExpiry:
+    """Test that API methods retry login on 401."""
+
+    def _make_client(self):
+        c = UniFiClient("https://example.com", "user", "pass")
+        c._logged_in = True
+        return c
+
+    @patch.object(UniFiClient, "login", return_value=True)
+    def test_api_get_retries_on_401(self, mock_login):
+        c = self._make_client()
+        resp_401 = MagicMock(status_code=401)
+        resp_200 = MagicMock(status_code=200)
+        resp_200.json.return_value = {"data": [{"id": 1}]}
+        c.session.get = MagicMock(side_effect=[resp_401, resp_200])
+        result = c._api_get("/test")
+        assert result == [{"id": 1}]
+        assert mock_login.called
+
+    @patch.object(UniFiClient, "login", return_value=False)
+    def test_api_get_fails_after_retry_login_fails(self, mock_login):
+        c = self._make_client()
+        resp_401 = MagicMock(status_code=401)
+        c.session.get = MagicMock(return_value=resp_401)
+        result = c._api_get("/test")
+        assert result is None
+
+    @patch.object(UniFiClient, "login", return_value=True)
+    def test_api_post_retries_on_401(self, mock_login):
+        c = self._make_client()
+        resp_401 = MagicMock(status_code=401)
+        resp_200 = MagicMock(status_code=200)
+        c.session.post = MagicMock(side_effect=[resp_401, resp_200])
+        ok, msg = c._api_post("/test", {"key": "val"})
+        assert ok is True
+        assert mock_login.called
+
+    @patch.object(UniFiClient, "login", return_value=True)
+    def test_api_post_data_retries_on_401(self, mock_login):
+        c = self._make_client()
+        resp_401 = MagicMock(status_code=401)
+        resp_200 = MagicMock(status_code=200)
+        resp_200.json.return_value = {"data": [{"id": 1}]}
+        c.session.post = MagicMock(side_effect=[resp_401, resp_200])
+        result = c._api_post_data("/test", {"key": "val"})
+        assert result == [{"id": 1}]
+        assert mock_login.called

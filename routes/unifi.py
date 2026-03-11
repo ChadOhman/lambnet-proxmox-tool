@@ -27,8 +27,8 @@ def _require_login():
 
 
 def _get_unifi_client():
-    """Create a UniFi client from saved settings."""
-    from clients.unifi_client import UniFiClient
+    """Return a cached UniFi client from saved settings."""
+    from clients.unifi_client import get_cached_client
 
     base_url = Setting.get("unifi_base_url", "")
     username = Setting.get("unifi_username", "")
@@ -44,7 +44,7 @@ def _get_unifi_client():
     if not password:
         return None
 
-    return UniFiClient(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
+    return get_cached_client(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
 
 
 def _filter_by_subnet(items, ip_key, subnet_str):

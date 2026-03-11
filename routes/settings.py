@@ -342,6 +342,9 @@ def save_unifi():
     verify_ssl = "unifi_verify_ssl" in request.form
     Setting.set("unifi_verify_ssl", "true" if verify_ssl else "false")
 
+    from clients.unifi_client import invalidate_cached_client
+    invalidate_cached_client()
+
     log_action("settings_unifi_save", "settings", resource_name="unifi")
     db.session.commit()
     flash("UniFi settings saved.", "success")
