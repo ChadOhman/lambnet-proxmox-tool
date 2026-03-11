@@ -216,6 +216,32 @@ def metrics_api(host_id):
     return jsonify({"snapshots": snapshots, "source": "sqlite"})
 
 
+@bp.route("/api/host/<int:host_id>/prom-debug")
+def prom_debug(host_id):
+    """Return all IPMI metric names/labels from Prometheus for this host (debug)."""
+    if not current_user.can_manage_hosts:
+        return jsonify({"error": "forbidden"}), 403
+    host = ProxmoxHost.query.get_or_404(host_id)
+    if Setting.get("prometheus_enabled", "false") != "true":
+        return jsonify({"error": "Prometheus not enabled"})
+    try:
+        from clients.prometheus_query import PrometheusQueryClient
+        prom = PrometheusQueryClient()
+        target = host.ipmi_address or host.hostname
+        inst = f'instance="{target}"'
+        # Query all ipmi_ metrics for this instance
+        results = prom.query(f'{{__name__=~"ipmi_.*",{inst}}}')
+        metrics = {}
+        for r in results:
+            name = r.get("metric", {}).get("__name__", "?")
+            labels = {k: v for k, v in r.get("metric", {}).items() if k != "__name__"}
+            value = r.get("value", [None, None])[1]
+            metrics.setdefault(name, []).append({"labels": labels, "value": value})
+        return jsonify({"target": target, "metrics": metrics})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @bp.route("/host/<int:host_id>/configure", methods=["POST"])
 def configure(host_id):
     """Update IPMI configuration for a host."""
