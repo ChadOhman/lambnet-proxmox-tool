@@ -963,6 +963,29 @@
                 </div>
             </div>
 
+            <!-- PLAN ANALYSIS -->
+            <div class="mb-4">
+                <h6 class="text-muted mb-2"><i class="bi bi-graph-up"></i> Plan Analysis</h6>
+                <p class="text-muted small mb-2">
+                    Runs <code>EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)</code> and checks for performance issues.
+                    <strong>This executes the query against your database.</strong>
+                </p>
+                <div class="row g-2 mb-2">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small text-muted" for="pgAnalyzeDb">Database</label>
+                        <select id="pgAnalyzeDb" class="form-select form-select-sm bg-dark text-light border-secondary">
+                            {% for db_item in stats.databases %}<option value="{{ db_item.name }}">{{ db_item.name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <textarea id="pgAnalyzeQuery" class="form-control form-control-sm bg-dark text-light border-secondary font-monospace mb-2"
+                          rows="4" placeholder="SELECT ..."></textarea>
+                <button class="btn btn-sm btn-outline-warning" onclick="pgRunAnalyzePlan()" id="pgAnalyzePlanBtn">
+                    <i class="bi bi-graph-up"></i> Analyze Plan
+                </button>
+                <div id="pgAnalyzePlanResult" class="mt-3" style="display:none"></div>
+            </div>
+
             {% endif %}{# can_edit_services #}
 
             <!-- Roles -->
@@ -2796,6 +2819,85 @@ function pgRunExplain() {
         }
     })
     .catch(e => { outputEl.textContent = 'Request failed: ' + e; });
+}
+
+// --- PLAN ANALYSIS ---
+function pgRunAnalyzePlan() {
+    const db = document.getElementById('pgAnalyzeDb').value;
+    const query = document.getElementById('pgAnalyzeQuery').value.trim();
+    if (!query) { alert('Please enter a query.'); return; }
+    const resultDiv = document.getElementById('pgAnalyzePlanResult');
+    const btn = document.getElementById('pgAnalyzePlanBtn');
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm"></span> Running EXPLAIN ANALYZE…</div>';
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Analyzing…';
+
+    fetch('/services/{{ service.id }}/pg/analyze-plan', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({database: db, query: query}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-graph-up"></i> Analyze Plan';
+        if (!data.ok) {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-2 small">${escHtml(data.message || 'Error')}</div>`;
+            return;
+        }
+        const findings = data.findings || [];
+        const timeMs = data.query_time_ms != null ? ` — executed in ${data.query_time_ms.toFixed(1)} ms` : '';
+
+        let html = `<div class="mb-2 text-muted small">`;
+        html += findings.length === 0
+            ? `<i class="bi bi-check-circle text-success"></i> No issues found${timeMs}.`
+            : `Found <strong>${findings.length}</strong> finding(s)${timeMs}.`;
+        html += `</div>`;
+
+        const severityConfig = {
+            critical: {cls: 'danger',   icon: 'bi-exclamation-octagon-fill', textCls: ''},
+            warning:  {cls: 'warning',  icon: 'bi-exclamation-triangle-fill', textCls: 'text-dark'},
+            info:     {cls: 'info',     icon: 'bi-info-circle-fill',          textCls: 'text-dark'},
+        };
+
+        findings.forEach(f => {
+            const cfg = severityConfig[f.severity] || severityConfig.info;
+            html += `<div class="alert alert-${cfg.cls} py-2 mb-2 ${cfg.textCls}">
+                <div class="d-flex align-items-start gap-2">
+                    <i class="bi ${cfg.icon} flex-shrink-0 mt-1"></i>
+                    <div>
+                        <div><strong>${escHtml(f.rule)}</strong>
+                            <span class="badge bg-${cfg.cls} ${cfg.textCls} ms-1">${escHtml(f.severity)}</span>
+                        </div>
+                        <div class="small mt-1">${escHtml(f.message)}</div>
+                        ${f.recommendation ? `<div class="small mt-1 opacity-75"><i class="bi bi-lightbulb"></i> ${escHtml(f.recommendation)}</div>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        });
+
+        if (data.plan_json) {
+            const collapseId = 'pgPlanJsonCollapse';
+            const planText = typeof data.plan_json === 'string' ? data.plan_json : JSON.stringify(data.plan_json, null, 2);
+            html += `<div class="mt-2">
+                <button class="btn btn-sm btn-outline-secondary" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false">
+                    <i class="bi bi-code"></i> Raw JSON Plan
+                </button>
+                <div class="collapse mt-2" id="${collapseId}">
+                    <pre style="background:#1a1a2e;color:#e0e0e0;font-size:0.75rem;max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-word" class="p-3 rounded">${escHtml(planText)}</pre>
+                </div>
+            </div>`;
+        }
+
+        resultDiv.innerHTML = html;
+    })
+    .catch(e => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-graph-up"></i> Analyze Plan';
+        resultDiv.innerHTML = `<div class="alert alert-danger py-2 small">Request failed: ${escHtml(String(e))}</div>`;
+    });
 }
 
 // --- ROLES ---
