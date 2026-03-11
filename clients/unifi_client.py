@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import threading
 
@@ -405,34 +404,28 @@ class UniFiClient:
 # Module-level cached client
 # ---------------------------------------------------------------------------
 _cached_client: "UniFiClient | None" = None
-_cached_settings_hash: "str | None" = None
+_cached_settings_key: "tuple | None" = None
 _client_lock = threading.Lock()
-
-
-def _settings_hash(base_url, username, password, site, is_udm, verify_ssl):
-    """Compute a hash of connection settings to detect changes."""
-    key = f"{base_url}\0{username}\0{password}\0{site}\0{is_udm}\0{verify_ssl}"
-    return hashlib.sha256(key.encode()).hexdigest()
 
 
 def get_cached_client(base_url, username, password, site="default", is_udm=True, verify_ssl=False):
     """Return a cached UniFiClient, creating a new one only if settings changed."""
-    global _cached_client, _cached_settings_hash
-    h = _settings_hash(base_url, username, password, site, is_udm, verify_ssl)
-    if _cached_client is not None and _cached_settings_hash == h:
+    global _cached_client, _cached_settings_key
+    key = (base_url, username, password, site, is_udm, verify_ssl)
+    if _cached_client is not None and _cached_settings_key == key:
         return _cached_client
     with _client_lock:
         # Double-check after acquiring lock
-        if _cached_client is not None and _cached_settings_hash == h:
+        if _cached_client is not None and _cached_settings_key == key:
             return _cached_client
         _cached_client = UniFiClient(base_url, username, password, site=site, is_udm=is_udm, verify_ssl=verify_ssl)
-        _cached_settings_hash = h
+        _cached_settings_key = key
         return _cached_client
 
 
 def invalidate_cached_client():
     """Discard the cached client (e.g. after settings change)."""
-    global _cached_client, _cached_settings_hash
+    global _cached_client, _cached_settings_key
     with _client_lock:
         _cached_client = None
-        _cached_settings_hash = None
+        _cached_settings_key = None

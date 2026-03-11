@@ -245,7 +245,7 @@ class TestCachedClient:
     def setup_method(self):
         """Clear cache before each test."""
         unifi_module._cached_client = None
-        unifi_module._cached_settings_hash = None
+        unifi_module._cached_settings_key = None
 
     def test_returns_client_instance(self):
         from clients.unifi_client import get_cached_client
