@@ -1,56 +1,66 @@
 /* ==========================================================================
-   Industrial/Utilitarian Design System
+   Refined/Modern Dark Design System
    Proxmox Datacenter Administration Tool
+   Inspired by Linear, Vercel, Raycast
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
    1. DESIGN TOKENS — Bootstrap 5.3 dark theme overrides + custom properties
    -------------------------------------------------------------------------- */
 [data-bs-theme="dark"] {
-    /* Backgrounds */
-    --bs-body-bg: #0a0e14;
-    --bs-body-color: #d4d4d8;
-    --bs-secondary-color: #6b7280;
-    --bs-dark-rgb: 10, 14, 20;
-    --bs-dark-bg-subtle: #12171e;
-    --bs-tertiary-bg: #12171e;
+    /* Backgrounds — layered surfaces for depth */
+    --bs-body-bg: #09090b;
+    --bs-body-color: #fafafa;
+    --bs-secondary-color: #a1a1aa;
+    --bs-dark-rgb: 20, 20, 23;
+    --bs-dark-bg-subtle: #141417;
+    --bs-tertiary-bg: #141417;
+    --bs-secondary-bg: #1c1c20;
 
-    /* Borders — sharp, defined */
-    --bs-border-color: #1e2733;
-    --bs-border-color-translucent: rgba(255, 255, 255, 0.08);
-    --bs-border-radius: 2px;
-    --bs-border-radius-sm: 1px;
-    --bs-border-radius-lg: 3px;
-    --bs-border-radius-xl: 4px;
-    --bs-border-radius-xxl: 4px;
-    --bs-border-radius-pill: 2px;
+    /* Borders — subtle, near-invisible */
+    --bs-border-color: #27272a;
+    --bs-border-color-translucent: rgba(255, 255, 255, 0.06);
+    --bs-secondary-border-subtle: #27272a;
+    --bs-border-radius: 8px;
+    --bs-border-radius-sm: 6px;
+    --bs-border-radius-lg: 12px;
+    --bs-border-radius-xl: 16px;
+    --bs-border-radius-xxl: 16px;
+    --bs-border-radius-pill: 50rem;
 
     /* Typography */
-    --bs-body-font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
-    --bs-font-monospace: 'IBM Plex Mono', 'JetBrains Mono', 'Cascadia Code', monospace;
+    --bs-body-font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --bs-font-monospace: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
 
     /* Bootstrap component overrides */
-    --bs-card-bg: #12171e;
-    --bs-card-border-color: #1e2733;
-    --bs-modal-bg: #12171e;
-    --bs-modal-border-color: #1e2733;
+    --bs-card-bg: #141417;
+    --bs-card-border-color: #27272a;
+    --bs-modal-bg: #141417;
+    --bs-modal-border-color: #27272a;
 
-    /* Industrial custom tokens */
-    --ind-surface: #12171e;
-    --ind-surface-raised: #1a2029;
-    --ind-accent: #e8a317;
-    --ind-accent-hover: #f0b42e;
-    --ind-accent-muted: rgba(232, 163, 23, 0.12);
-    --ind-border: #1e2733;
-    --ind-border-accent: #e8a317;
-    --ind-text-primary: #d4d4d8;
-    --ind-text-muted: #6b7280;
-    --ind-status-running: #22c55e;
-    --ind-status-stopped: #ef4444;
-    --ind-status-warning: #eab308;
-    --ind-status-info: #3b82f6;
-    --ind-glow-running: 0 0 8px rgba(34, 197, 94, 0.4);
-    --ind-glow-accent: 0 0 0 3px rgba(232, 163, 23, 0.4);
+    /* Refined custom tokens */
+    --rf-bg: #09090b;
+    --rf-surface: #141417;
+    --rf-surface-raised: #1c1c20;
+    --rf-surface-hover: #222226;
+    --rf-border: #27272a;
+    --rf-border-subtle: #1e1e21;
+    --rf-text-primary: #fafafa;
+    --rf-text-secondary: #a1a1aa;
+    --rf-text-muted: #71717a;
+    --rf-text-muted-on-surface: #8a8a93;
+    --rf-accent: #818cf8;
+    --rf-accent-hover: #a5b4fc;
+    --rf-accent-strong: #6366f1;
+    --rf-accent-muted: rgba(129, 140, 248, 0.10);
+    --rf-status-running: #4ade80;
+    --rf-status-stopped: #f87171;
+    --rf-status-warning: #fbbf24;
+    --rf-status-info: #60a5fa;
+    --rf-glow-running: 0 0 12px rgba(74, 222, 128, 0.3);
+    --rf-focus-ring: 0 0 0 2px #09090b, 0 0 0 4px #818cf8;
+    --rf-transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    --rf-transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* --------------------------------------------------------------------------
@@ -62,115 +72,96 @@ body {
     flex-direction: column;
 }
 
-/* Subtle grid-line background for industrial atmosphere */
-body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background-image:
-        linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
-    background-size: 40px 40px;
-}
-
 main {
     flex: 1;
 }
 
 h1, h2, h3, h4, h5, h6 {
-    font-family: var(--bs-font-monospace);
     font-weight: 600;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
 }
 
 a {
-    transition: color 0.15s ease;
+    transition: color var(--rf-transition);
 }
 
 a:hover {
-    color: var(--ind-accent) !important;
+    color: var(--rf-accent) !important;
 }
 
 hr {
-    border-color: var(--ind-border);
+    border-color: var(--rf-border);
 }
 
 code {
     font-family: var(--bs-font-monospace);
-    color: var(--ind-accent);
+    color: var(--rf-accent);
 }
 
 /* --------------------------------------------------------------------------
-   3. NAVBAR
+   3. NAVBAR — Glass-morphism
    -------------------------------------------------------------------------- */
 .navbar {
-    background: var(--ind-surface) !important;
-    border-bottom: 2px solid var(--ind-accent) !important;
+    background: rgba(20, 20, 23, 0.8) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--rf-border) !important;
 }
 
 .navbar-brand {
-    font-family: var(--bs-font-monospace);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
     font-weight: 700;
     font-size: 0.95rem;
+    letter-spacing: -0.01em;
 }
 
 .navbar .nav-link {
-    font-family: var(--bs-font-monospace);
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: 0.875rem;
+    font-weight: 500;
     padding-bottom: 0.75rem;
     border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    transition: color 0.15s ease, border-color 0.15s ease;
+    margin-bottom: -1px;
+    transition: color var(--rf-transition), border-color var(--rf-transition);
 }
 
 .navbar .nav-link:hover {
-    color: var(--ind-accent) !important;
+    color: var(--rf-accent) !important;
 }
 
 .navbar .nav-link.active {
-    color: var(--ind-accent) !important;
-    border-bottom-color: var(--ind-accent);
+    color: var(--rf-accent) !important;
+    border-bottom-color: var(--rf-accent);
 }
 
 .navbar-toggler {
-    border-color: var(--ind-border);
+    border-color: var(--rf-border);
 }
 
 /* --------------------------------------------------------------------------
    4. CARDS
    -------------------------------------------------------------------------- */
 .card {
-    background: var(--ind-surface) !important;
-    border: 1px solid var(--ind-border) !important;
-    border-left: 3px solid var(--ind-accent) !important;
+    background: var(--rf-surface) !important;
+    border: 1px solid var(--rf-border) !important;
     border-radius: var(--bs-border-radius) !important;
 }
 
 .card-header {
-    background: rgba(255, 255, 255, 0.02) !important;
-    border-bottom: 1px solid var(--ind-border) !important;
-    font-family: var(--bs-font-monospace);
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    background: var(--rf-surface-raised) !important;
+    border-bottom: 1px solid var(--rf-border) !important;
+    font-weight: 600;
+    font-size: 0.875rem;
 }
 
-/* Stat cards — control panel feel */
+/* Stat cards — refined hover */
 .stat-card {
-    transition: transform 0.15s ease-in-out, border-color 0.15s ease-in-out,
-                box-shadow 0.15s ease-in-out;
+    transition: transform var(--rf-transition), border-color var(--rf-transition),
+                box-shadow var(--rf-transition);
 }
 
 .stat-card:hover {
-    transform: translateY(-2px);
-    border-color: var(--ind-accent) !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transform: scale(1.015);
+    border-color: var(--rf-accent) !important;
+    box-shadow: 0 0 20px rgba(129, 140, 248, 0.08);
 }
 
 a.stat-card {
@@ -181,39 +172,35 @@ a.stat-card {
 .stat-card .stat-number {
     font-size: 2.5rem;
     font-weight: 700;
-    font-family: var(--bs-font-monospace);
+    letter-spacing: -0.02em;
     line-height: 1;
 }
 
 .stat-card .stat-label {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-family: var(--bs-font-monospace);
-    color: var(--ind-text-muted);
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--rf-text-secondary);
 }
 
 /* --------------------------------------------------------------------------
-   5. TABLES — Grid-like, dense data display
+   5. TABLES — Clean, minimal
    -------------------------------------------------------------------------- */
 .table {
     --bs-table-bg: transparent;
     --bs-table-striped-bg: rgba(255, 255, 255, 0.02);
-    border-color: var(--ind-border);
+    border-color: var(--rf-border-subtle);
 }
 
 .table-dark {
     --bs-table-bg: transparent !important;
-    --bs-table-color: var(--ind-text-primary);
+    --bs-table-color: var(--rf-text-primary);
 }
 
 .table > thead > tr > th {
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-size: 0.75rem;
-    font-family: var(--bs-font-monospace);
-    color: var(--ind-text-muted);
-    border-bottom: 2px solid var(--ind-border) !important;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    color: var(--rf-text-secondary);
+    border-bottom: 1px solid var(--rf-border) !important;
     padding: 0.6rem 0.75rem;
 }
 
@@ -222,58 +209,56 @@ a.stat-card {
 }
 
 .table-hover > tbody > tr:hover {
-    --bs-table-hover-bg: var(--ind-accent-muted);
+    --bs-table-hover-bg: var(--rf-surface-hover);
 }
 
 /* --------------------------------------------------------------------------
    6. BUTTONS
    -------------------------------------------------------------------------- */
 .btn {
-    border-radius: var(--bs-border-radius);
-    font-family: var(--bs-font-monospace);
-    font-size: 0.85rem;
-    letter-spacing: 0.02em;
-    transition: all 0.15s ease;
+    border-radius: var(--bs-border-radius-sm);
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all var(--rf-transition);
 }
 
 .btn-primary {
-    background: var(--ind-accent) !important;
-    border-color: var(--ind-accent) !important;
-    color: #000 !important;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 100%),
+                var(--rf-accent-strong) !important;
+    border-color: var(--rf-accent-strong) !important;
+    color: #fff !important;
 }
 
 .btn-primary:hover,
 .btn-primary:active {
-    background: var(--ind-accent-hover) !important;
-    border-color: var(--ind-accent-hover) !important;
-    color: #000 !important;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, transparent 100%),
+                var(--rf-accent) !important;
+    border-color: var(--rf-accent) !important;
+    color: #fff !important;
 }
 
 .btn:focus-visible {
-    box-shadow: var(--ind-glow-accent) !important;
+    box-shadow: var(--rf-focus-ring) !important;
     outline: none;
 }
 
 .btn-outline-primary {
-    color: var(--ind-accent);
-    border-color: var(--ind-accent);
+    color: var(--rf-accent);
+    border-color: var(--rf-accent);
 }
 
 .btn-outline-primary:hover {
-    background: var(--ind-accent);
-    border-color: var(--ind-accent);
-    color: #000;
+    background: var(--rf-accent-strong);
+    border-color: var(--rf-accent-strong);
+    color: #fff;
 }
 
 /* --------------------------------------------------------------------------
    7. BADGES
    -------------------------------------------------------------------------- */
 .badge {
-    border-radius: var(--bs-border-radius);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-family: var(--bs-font-monospace);
-    font-size: 0.7rem;
+    border-radius: var(--bs-border-radius-sm);
+    font-size: 0.75rem;
     font-weight: 500;
 }
 
@@ -282,64 +267,60 @@ a.stat-card {
    -------------------------------------------------------------------------- */
 .form-control,
 .form-select {
-    background: var(--ind-surface) !important;
-    border: 1px solid var(--ind-border) !important;
+    background: var(--rf-surface) !important;
+    border: 1px solid var(--rf-border) !important;
     border-radius: var(--bs-border-radius) !important;
-    color: var(--ind-text-primary) !important;
-    font-family: var(--bs-body-font-family);
+    color: var(--rf-text-primary) !important;
 }
 
 .form-control:focus,
 .form-select:focus {
-    border-color: var(--ind-accent) !important;
-    box-shadow: 0 0 0 2px rgba(232, 163, 23, 0.25) !important;
+    border-color: var(--rf-accent) !important;
+    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.15) !important;
 }
 
 .form-control::placeholder {
-    color: var(--ind-text-muted);
+    color: var(--rf-text-muted);
 }
 
 .form-label {
-    font-family: var(--bs-font-monospace);
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--ind-text-muted);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--rf-text-secondary);
 }
 
 .form-check-input:checked {
-    background-color: var(--ind-accent);
-    border-color: var(--ind-accent);
+    background-color: var(--rf-accent-strong);
+    border-color: var(--rf-accent-strong);
 }
 
 .form-check-input:focus {
-    box-shadow: 0 0 0 2px rgba(232, 163, 23, 0.25);
-    border-color: var(--ind-accent);
+    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.15);
+    border-color: var(--rf-accent);
 }
 
 /* --------------------------------------------------------------------------
-   9. MODALS
+   9. MODALS — Glass-morphism
    -------------------------------------------------------------------------- */
 .modal-content {
-    background: var(--ind-surface) !important;
-    border: 1px solid var(--ind-border) !important;
-    border-top: 3px solid var(--ind-accent) !important;
-    border-radius: var(--bs-border-radius) !important;
+    background: rgba(20, 20, 23, 0.95) !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--rf-border) !important;
+    border-radius: var(--bs-border-radius-lg) !important;
 }
 
 .modal-header {
-    border-bottom-color: var(--ind-border) !important;
+    border-bottom-color: var(--rf-border) !important;
 }
 
 .modal-footer {
-    border-top-color: var(--ind-border) !important;
+    border-top-color: var(--rf-border) !important;
 }
 
 .modal-title {
-    font-family: var(--bs-font-monospace);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 0.95rem;
+    font-weight: 600;
+    font-size: 1rem;
 }
 
 /* --------------------------------------------------------------------------
@@ -347,55 +328,59 @@ a.stat-card {
    -------------------------------------------------------------------------- */
 .alert {
     border-radius: var(--bs-border-radius);
-    border-left: 4px solid;
+    border-left: 2px solid;
 }
 
 /* --------------------------------------------------------------------------
-   11. DROPDOWNS
+   11. DROPDOWNS — Glass-morphism
    -------------------------------------------------------------------------- */
 .dropdown-menu {
-    background: var(--ind-surface) !important;
-    border: 1px solid var(--ind-border) !important;
+    background: rgba(20, 20, 23, 0.95) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--rf-border) !important;
     border-radius: var(--bs-border-radius) !important;
 }
 
 .dropdown-item {
-    font-size: 0.85rem;
-    transition: background 0.1s ease;
+    font-size: 0.875rem;
+    transition: background var(--rf-transition);
+    border-radius: 4px;
+    margin: 1px 4px;
+    padding-left: 8px;
+    padding-right: 8px;
 }
 
 .dropdown-item:hover,
 .dropdown-item:focus {
-    background: var(--ind-accent-muted) !important;
-    color: var(--ind-text-primary);
+    background: var(--rf-surface-hover) !important;
+    color: var(--rf-text-primary);
 }
 
 .dropdown-item.active,
 .dropdown-item:active {
-    background: var(--ind-accent) !important;
-    color: #000;
+    background: var(--rf-accent-strong) !important;
+    color: #fff;
 }
 
 /* --------------------------------------------------------------------------
-   12. NAV PILLS & TABS (security.html tab interface)
+   12. NAV PILLS & TABS
    -------------------------------------------------------------------------- */
 .nav-pills .nav-link {
-    border-radius: var(--bs-border-radius);
-    font-family: var(--bs-font-monospace);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 0.8rem;
-    color: var(--ind-text-muted);
-    transition: all 0.15s ease;
+    border-radius: var(--bs-border-radius-sm);
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--rf-text-secondary);
+    transition: all var(--rf-transition);
 }
 
 .nav-pills .nav-link:hover {
-    color: var(--ind-accent);
+    color: var(--rf-accent);
 }
 
 .nav-pills .nav-link.active {
-    background: var(--ind-accent) !important;
-    color: #000 !important;
+    background: var(--rf-accent-strong) !important;
+    color: #fff !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -403,27 +388,27 @@ a.stat-card {
    -------------------------------------------------------------------------- */
 .progress {
     background: rgba(255, 255, 255, 0.05);
-    border-radius: 1px;
+    border-radius: var(--bs-border-radius-sm);
+    height: 6px;
 }
 
 /* --------------------------------------------------------------------------
    14. FOOTER
    -------------------------------------------------------------------------- */
 footer {
-    font-family: var(--bs-font-monospace);
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    border-top: 1px solid var(--ind-border) !important;
+    font-size: 0.75rem;
+    color: var(--rf-text-muted);
+    border-top: 1px solid var(--rf-border) !important;
 }
 
 /* --------------------------------------------------------------------------
-   15. TOASTS
+   15. TOASTS — Glass-morphism
    -------------------------------------------------------------------------- */
 .toast {
-    background: var(--ind-surface) !important;
-    border: 1px solid var(--ind-border) !important;
-    border-left: 3px solid var(--ind-accent) !important;
+    background: rgba(20, 20, 23, 0.95) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--rf-border) !important;
     border-radius: var(--bs-border-radius) !important;
 }
 
@@ -431,8 +416,8 @@ footer {
    16. PRESENCE BAR & COLLABORATION
    -------------------------------------------------------------------------- */
 #presenceBar {
-    background: var(--ind-surface) !important;
-    border-bottom: 1px solid var(--ind-border) !important;
+    background: var(--rf-surface) !important;
+    border-bottom: 1px solid var(--rf-border) !important;
 }
 
 .collab-avatar {
@@ -444,12 +429,11 @@ footer {
     border-radius: 50%;
     font-size: 10px;
     font-weight: 600;
-    font-family: var(--bs-font-monospace);
     color: #fff;
     border: none;
     padding: 0;
     cursor: pointer;
-    transition: transform 0.15s;
+    transition: transform var(--rf-transition);
 }
 
 .collab-avatar:hover {
@@ -468,19 +452,18 @@ footer {
     width: 14px;
     height: 14px;
     border-radius: 50% 50% 50% 0;
-    background: var(--cur-color, #3b82f6);
+    background: var(--cur-color, #818cf8);
     border: 2px solid rgba(255, 255, 255, 0.85);
     transform: rotate(-45deg);
 }
 
 .collab-cursor-name {
-    background: var(--cur-color, #3b82f6);
+    background: var(--cur-color, #818cf8);
     color: #fff;
     font-size: 0.6rem;
     font-weight: 600;
-    font-family: var(--bs-font-monospace);
     padding: 1px 5px;
-    border-radius: 3px;
+    border-radius: var(--bs-border-radius-sm);
     white-space: nowrap;
     margin-top: 3px;
     margin-left: 8px;
@@ -495,68 +478,67 @@ footer {
    visually-hidden text. */
 
 .severity-critical {
-    color: var(--ind-status-stopped);
+    color: var(--rf-status-stopped);
     font-weight: 600;
 }
 
 .severity-important {
-    color: var(--ind-status-warning);
+    color: var(--rf-status-warning);
 }
 
 .severity-normal {
-    color: var(--ind-text-muted);
+    color: var(--rf-text-muted);
 }
 
 .badge-critical {
-    background-color: var(--ind-status-stopped) !important;
+    background-color: var(--rf-status-stopped) !important;
 }
 
 .badge-important {
-    background-color: var(--ind-status-warning) !important;
+    background-color: var(--rf-status-warning) !important;
     color: #000 !important;
 }
 
 .badge-normal {
-    background-color: var(--ind-text-muted) !important;
+    background-color: var(--rf-text-muted) !important;
 }
 
 .status-up-to-date {
-    color: var(--ind-status-running);
+    color: var(--rf-status-running);
 }
 
 .status-updates-available {
-    color: var(--ind-status-warning);
+    color: var(--rf-status-warning);
 }
 
 .status-error {
-    color: var(--ind-status-stopped);
+    color: var(--rf-status-stopped);
 }
 
 .status-unknown {
-    color: var(--ind-text-muted);
+    color: var(--rf-text-muted);
 }
 
 /* --------------------------------------------------------------------------
    18. STATUS INDICATOR ANIMATIONS
    -------------------------------------------------------------------------- */
-/* Running status — green glow + pulse */
 .text-success .bi-circle-fill {
-    text-shadow: var(--ind-glow-running);
-    animation: ind-pulse 2s ease-in-out infinite;
+    text-shadow: var(--rf-glow-running);
+    animation: rf-pulse 3s ease-in-out infinite;
 }
 
-@keyframes ind-pulse {
+@keyframes rf-pulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
+    50% { opacity: 0.7; }
 }
 
 /* --------------------------------------------------------------------------
    19. STAGGERED CARD FADE-IN
    -------------------------------------------------------------------------- */
-@keyframes ind-fade-in {
+@keyframes rf-fade-in {
     from {
         opacity: 0;
-        transform: translateY(8px);
+        transform: translateY(6px);
     }
     to {
         opacity: 1;
@@ -565,18 +547,18 @@ footer {
 }
 
 .row > [class*="col-"] > .card {
-    animation: ind-fade-in 0.3s ease-out both;
+    animation: rf-fade-in var(--rf-transition-slow) both;
 }
 
 .row > [class*="col-"]:nth-child(1) > .card { animation-delay: 0s; }
-.row > [class*="col-"]:nth-child(2) > .card { animation-delay: 0.05s; }
-.row > [class*="col-"]:nth-child(3) > .card { animation-delay: 0.05s; }
-.row > [class*="col-"]:nth-child(4) > .card { animation-delay: 0.1s; }
-.row > [class*="col-"]:nth-child(5) > .card { animation-delay: 0.1s; }
-.row > [class*="col-"]:nth-child(6) > .card { animation-delay: 0.15s; }
-.row > [class*="col-"]:nth-child(7) > .card { animation-delay: 0.15s; }
-.row > [class*="col-"]:nth-child(8) > .card { animation-delay: 0.2s; }
-.row > [class*="col-"]:nth-child(n+9) > .card { animation-delay: 0.25s; }
+.row > [class*="col-"]:nth-child(2) > .card { animation-delay: 0.04s; }
+.row > [class*="col-"]:nth-child(3) > .card { animation-delay: 0.04s; }
+.row > [class*="col-"]:nth-child(4) > .card { animation-delay: 0.08s; }
+.row > [class*="col-"]:nth-child(5) > .card { animation-delay: 0.08s; }
+.row > [class*="col-"]:nth-child(6) > .card { animation-delay: 0.12s; }
+.row > [class*="col-"]:nth-child(7) > .card { animation-delay: 0.12s; }
+.row > [class*="col-"]:nth-child(8) > .card { animation-delay: 0.16s; }
+.row > [class*="col-"]:nth-child(n+9) > .card { animation-delay: 0.2s; }
 
 /* --------------------------------------------------------------------------
    20. WCAG 2.3.3 / 1.4.3: Respect reduced-motion preference
@@ -612,12 +594,11 @@ footer {
     top: -100%;
     left: 0;
     padding: 0.5rem 1rem;
-    background: var(--ind-accent);
-    color: #000;
+    background: var(--rf-accent-strong);
+    color: #fff;
     z-index: 10000;
     text-decoration: none;
     font-weight: 600;
-    font-family: var(--bs-font-monospace);
     border-radius: 0 0 var(--bs-border-radius) 0;
 }
 
@@ -644,8 +625,6 @@ footer {
 /* --------------------------------------------------------------------------
    23. UTILITY / LAYOUT
    -------------------------------------------------------------------------- */
-
-/* Constrain query text in table cells so text-truncate can take effect */
 .query-cell {
     max-width: min(420px, 50vw);
 }
@@ -667,45 +646,45 @@ footer {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bs-body-bg);
+    background:
+        radial-gradient(ellipse at 50% 0%, rgba(129, 140, 248, 0.08) 0%, transparent 70%),
+        var(--rf-bg, #09090b);
 }
 
 .login-card {
-    max-width: 400px;
+    max-width: 420px;
     width: 100%;
 }
 
 .login-card .card {
-    border-top: 3px solid var(--ind-accent) !important;
-    border-left: 1px solid var(--ind-border) !important;
+    border-radius: var(--bs-border-radius-lg) !important;
 }
 
 .login-card h2 {
-    font-family: var(--bs-font-monospace);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.login-card h2 .bi {
+    color: var(--rf-accent);
 }
 
 /* --------------------------------------------------------------------------
    26. BREADCRUMBS
    -------------------------------------------------------------------------- */
 .breadcrumb {
-    font-family: var(--bs-font-monospace);
-    font-size: 0.8rem;
+    font-size: 0.8125rem;
 }
 
 /* --------------------------------------------------------------------------
    27. RESPONSIVE — WCAG 2.5.5: Touch targets
    -------------------------------------------------------------------------- */
 @media (max-width: 575.98px) {
-    /* Slightly larger touch targets for small buttons */
     .btn-sm {
         min-height: 2rem;
         min-width: 2rem;
     }
 
-    /* Reclaim horizontal space on narrow screens */
     .card-body {
         padding: 0.75rem;
     }
