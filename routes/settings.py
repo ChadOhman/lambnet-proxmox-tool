@@ -74,6 +74,7 @@ def _get_settings_dict():
         "unifi_site": Setting.get("unifi_site", "default"),
         "unifi_is_udm": Setting.get("unifi_is_udm", "true"),
         "unifi_filter_subnet": Setting.get("unifi_filter_subnet", ""),
+        "unifi_verify_ssl": Setting.get("unifi_verify_ssl", "false"),
         "unifi_geoip_enabled": Setting.get("unifi_geoip_enabled", "false"),
         "unifi_geoip_db_path": Setting.get("unifi_geoip_db_path", ""),
         "unifi_api_poll_enabled": Setting.get("unifi_api_poll_enabled", "true"),
@@ -338,6 +339,8 @@ def save_unifi():
     Setting.set("unifi_site", site or "default")
     Setting.set("unifi_is_udm", "true" if is_udm else "false")
     Setting.set("unifi_filter_subnet", filter_subnet)
+    verify_ssl = "unifi_verify_ssl" in request.form
+    Setting.set("unifi_verify_ssl", "true" if verify_ssl else "false")
 
     log_action("settings_unifi_save", "settings", resource_name="unifi")
     db.session.commit()
