@@ -9,9 +9,9 @@ import json
 import logging
 import os.path as _osp
 import re
-import time
-from datetime import datetime
 from urllib.request import Request, urlopen
+
+from apps.backup import backup_guest, snapshot_guest
 
 # Shared shell-safety and output helpers from the Mastodon module
 from apps.utils import _log_cmd_output, _validate_shell_param, _version_gt
@@ -56,76 +56,6 @@ def check_ghost_release():
     except Exception as e:
         logger.error("Failed to check Ghost releases: %s", e)
         return False, "", ""
-
-
-# ---------------------------------------------------------------------------
-# Proxmox protection helpers (Ghost-specific snapshot/backup names)
-# ---------------------------------------------------------------------------
-
-def _snapshot_ghost_guest(guest):
-    """Create a Proxmox snapshot of a guest before Ghost upgrade.
-
-    Returns (success, message).
-    """
-    if not guest.proxmox_host:
-        return False, f"Guest '{guest.name}' has no Proxmox host configured"
-
-    try:
-        client = ProxmoxClient(guest.proxmox_host)
-        node = client.find_guest_node(guest.vmid)
-        if not node:
-            return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
-
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        snapname = f"pre-ghost-{timestamp}"
-        description = f"Auto-snapshot before Ghost upgrade at {timestamp}"
-
-        return client.create_snapshot(node, guest.vmid, guest.guest_type, snapname, description)
-    except Exception as e:
-        logger.error("Snapshot of %s failed: %s", guest.name, e)
-        return False, f"Snapshot failed: {e}"
-
-
-def _backup_ghost_guest(guest, storage, mode="snapshot"):
-    """Create a vzdump backup of a guest before Ghost upgrade. Polls until complete.
-
-    mode: "snapshot" (live, no downtime), "suspend" (brief pause), "stop" (shut down).
-    Returns (success, message).
-    """
-    if not guest.proxmox_host:
-        return False, f"Guest '{guest.name}' has no Proxmox host configured"
-
-    try:
-        client = ProxmoxClient(guest.proxmox_host)
-        node = client.find_guest_node(guest.vmid)
-        if not node:
-            return False, f"Could not find {guest.guest_type}/{guest.vmid} on any node"
-
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        notes = f"pre-ghost-{timestamp}"
-
-        ok, upid = client.create_backup(node, guest.vmid, storage, mode=mode, notes=notes)
-        if not ok:
-            return False, f"Failed to start backup: {upid}"
-
-        timeout = 1800  # 30 minutes
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            time.sleep(5)
-            try:
-                status = client.get_task_status(node, upid)
-                if status.get("status") == "stopped":
-                    exit_status = status.get("exitstatus", "")
-                    if exit_status == "OK":
-                        return True, f"Backup of '{guest.name}' to '{storage}' completed"
-                    return False, f"Backup task failed: {exit_status}"
-            except Exception as e:
-                logger.debug("Error polling backup task for %s: %s", guest.name, e)
-
-        return False, f"Backup of '{guest.name}' timed out after {timeout // 60} minutes"
-    except Exception as e:
-        logger.error("Backup of %s failed: %s", guest.name, e)
-        return False, f"Backup failed: {e}"
 
 
 # ---------------------------------------------------------------------------
@@ -537,13 +467,13 @@ def run_ghost_upgrade(log_callback=None, skip_protection=False):
             log(f"=== Step 1: Creating vzdump backup to storage '{backup_storage}' "
                 f"(mode: {backup_mode}) ===")
             log("(This may take several minutes — please be patient)")
-            ok, msg = _backup_ghost_guest(ghost_guest, backup_storage, mode=backup_mode)
+            ok, msg = backup_guest(ghost_guest, backup_storage, "ghost", mode=backup_mode)
             log(f"Backup {ghost_guest.name}: {msg}")
             if not ok:
                 return False, "\n".join(log_lines)
         else:
             log(f"=== Step 1: Creating Proxmox snapshot of {ghost_guest.name} ===")
-            ok, msg = _snapshot_ghost_guest(ghost_guest)
+            ok, msg = snapshot_guest(ghost_guest, "ghost")
             log(f"Snapshot {ghost_guest.name}: {msg}")
             if not ok:
                 return False, "\n".join(log_lines)
