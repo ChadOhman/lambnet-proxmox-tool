@@ -615,6 +615,7 @@ def run_ghost_upgrade(log_callback=None, skip_protection=False):
                 m = re.search(r'"active-version"\s*:\s*"([^"]+)"', stdout)
                 if m:
                     Setting.set("ghost_current_version", m.group(1))
+                    Setting.set("ghost_update_available", "false")
                     log(f"Updated Ghost version: {m.group(1)}")
 
     except Exception as e:

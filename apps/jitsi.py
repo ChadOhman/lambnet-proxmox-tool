@@ -830,6 +830,7 @@ def run_jitsi_install(log_callback=None):
                 version = re.sub(r'-\d+$', '', version)
                 if version:
                     Setting.set("jitsi_current_version", version)
+                    Setting.set("jitsi_update_available", "false")
                     Setting.set("jitsi_installed", "true")
                     Setting.set("jitsi_url", f"https://{hostname}")
                     from models import db
@@ -977,6 +978,7 @@ def run_jitsi_upgrade(log_callback=None, skip_protection=False):
                 version = re.sub(r'-\d+$', '', version)
                 if version:
                     Setting.set("jitsi_current_version", version)
+                    Setting.set("jitsi_update_available", "false")
                     from models import db
                     db.session.commit()
                     log(f"Jitsi Meet is now at v{version}")
