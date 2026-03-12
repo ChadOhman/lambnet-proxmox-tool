@@ -1126,6 +1126,7 @@ def run_mastodon_upgrade(log_callback=None, skip_protection=False):
     latest = config["latest_version"] or config["current_version"]
     now = datetime.now(timezone.utc).isoformat()
     Setting.set("mastodon_current_version", latest)
+    Setting.set("mastodon_update_available", "false")
     Setting.set("mastodon_last_upgrade_at", now)
     Setting.set("mastodon_last_upgrade_status", "success")
     Setting.set("mastodon_last_upgrade_log", "\n".join(log_lines))

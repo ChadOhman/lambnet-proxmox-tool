@@ -842,6 +842,7 @@ def run_elk_install(log_callback=None):
                 v = stdout.strip().splitlines()[0].strip()
                 if re.match(r'^\d+\.\d+', v):
                     Setting.set("elk_current_version", v)
+                    Setting.set("elk_update_available", "false")
                     log(f"Installed Elk version: {v}")
 
             Setting.set("elk_installed", "true")
@@ -1049,6 +1050,7 @@ def run_elk_upgrade(log_callback=None, skip_protection=False):
                 v = stdout.strip().splitlines()[0].strip()
                 if re.match(r'^\d+\.\d+', v):
                     Setting.set("elk_current_version", v)
+                    Setting.set("elk_update_available", "false")
                     log(f"Updated Elk version: {v}")
 
     except Exception as e:

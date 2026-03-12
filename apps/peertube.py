@@ -754,6 +754,7 @@ def run_peertube_install(log_callback=None):
             step = 13
             log(f"=== Step {step}: Detecting installed version ===")
             Setting.set("peertube_current_version", version_num)
+            Setting.set("peertube_update_available", "false")
             log(f"Installed PeerTube version: {version_num}")
 
             Setting.set("peertube_installed", "true")
@@ -1262,6 +1263,7 @@ def run_peertube_upgrade(log_callback=None, skip_protection=False):
                 m = re.search(r'/versions?/(\d+\.\d+\.\d+)', stdout.strip())
                 if m:
                     Setting.set("peertube_current_version", m.group(1))
+                    Setting.set("peertube_update_available", "false")
                     log(f"Updated PeerTube version: {m.group(1)}")
                 else:
                     # Fallback: try package.json
@@ -1275,6 +1277,7 @@ def run_peertube_upgrade(log_callback=None, skip_protection=False):
                         v = stdout2.strip().splitlines()[0].strip()
                         if re.match(r'^\d+\.\d+', v):
                             Setting.set("peertube_current_version", v)
+                            Setting.set("peertube_update_available", "false")
                             log(f"Updated PeerTube version: {v}")
 
             log("")
